@@ -12,7 +12,7 @@ from scripts.voiceops_operator_state import (
     validate_operator_state,
     write_operator_state,
 )
-from scripts.voiceops_provisioning_probe import build_kame_action_evidence
+from scripts.voiceops_provisioning_probe import KAME_ACTION_PROMOTED_FIELDS, build_kame_action_evidence
 
 
 def _sync_approval_contract(state, approval):
@@ -65,6 +65,13 @@ def test_operator_state_contains_required_dashboard_sections_and_boundaries():
     )
     assert "approval_packet_required_for_any_spend" in budget["controls"]
 
+    tool_disclosure = state["tool_disclosure"]
+    assert tool_disclosure["schema_version"] == "voiceops.tool_disclosure_proof.v1"
+    assert tool_disclosure["ok"] is True
+    assert tool_disclosure["config"] == {"enabled": "on", "defer_core": "all"}
+    assert tool_disclosure["visible_tool_names"] == ["tool_call", "tool_describe", "tool_search"]
+    assert tool_disclosure["hidden_core_tool_names"] == ["read_file", "terminal"]
+
     assert state["pending_approvals"]
     assert set(state["approval_contracts"]) == {approval["action_id"] for approval in state["pending_approvals"]}
     approval_ids = {approval["approval_id"] for approval in state["pending_approvals"]}
@@ -82,6 +89,11 @@ def test_operator_state_contains_required_dashboard_sections_and_boundaries():
         assert evidence["transcript_hypotheses_promoted"] is False
         assert set(evidence["required_promotions"]) == {"interpreter_promoted", "oracle_promoted"}
         assert evidence["promoted_fields"]
+        assert set(evidence["promotion_required_before"]) == set(KAME_ACTION_PROMOTED_FIELDS[approval["action_id"]])
+        for field in KAME_ACTION_PROMOTED_FIELDS[approval["action_id"]]:
+            assert field in evidence["promoted_fields"]
+            assert evidence["promoted_fields"][field]["source"]
+            assert evidence["promoted_fields"][field]["ref"]
         assert {
             item["evidence_label"]
             for item in evidence["promoted_fields"].values()
@@ -177,6 +189,18 @@ def test_operator_state_validates_blocked_capabilities_and_budget_controls():
         "missing_budget_control:approval_packet_required_for_any_spend"
     ]
 
+    missing_tool_disclosure = json.loads(json.dumps(state))
+    missing_tool_disclosure.pop("tool_disclosure")
+    assert validate_operator_state(missing_tool_disclosure) == ["missing_tool_disclosure"]
+
+    invalid_tool_disclosure = json.loads(json.dumps(state))
+    invalid_tool_disclosure["tool_disclosure"]["config"]["defer_core"] = "none"
+    invalid_tool_disclosure["tool_disclosure"]["visible_tool_names"].remove("tool_search")
+    assert validate_operator_state(invalid_tool_disclosure) == [
+        "tool_disclosure_defer_core_not_all",
+        "tool_disclosure_visible_tool_missing:tool_search",
+    ]
+
     mismatched_approvals = json.loads(json.dumps(state))
     mismatched_approvals["pending_approvals"][0]["budget_impact_cents"] = 1
     assert validate_operator_state(mismatched_approvals) == ["pending_approval_budget_mismatch"]
@@ -254,6 +278,31 @@ def test_operator_state_validates_pending_approval_contracts():
     missing_tool_disclosure["pending_approvals"][0].pop("tool_disclosure_ref")
     assert validate_operator_state(missing_tool_disclosure) == [
         "tool_disclosure_ref_missing:vops-m5-approval-001",
+    ]
+
+    missing_required_field = json.loads(json.dumps(state))
+    missing_required_field["pending_approvals"][0]["kame_evidence"]["promoted_fields"].pop("provider_selection")
+    assert validate_operator_state(missing_required_field) == [
+        "kame_evidence_missing_required_promoted_fields:vops-m5-approval-001:provider_selection",
+    ]
+
+    mismatched_required_fields = json.loads(json.dumps(state))
+    mismatched_required_fields["pending_approvals"][0]["kame_evidence"]["promotion_required_before"].remove(
+        "provider_selection"
+    )
+    assert validate_operator_state(mismatched_required_fields) == [
+        "kame_evidence_promotion_required_fields_mismatch:vops-m5-approval-001",
+    ]
+
+    missing_field_provenance = json.loads(json.dumps(state))
+    user_request = missing_field_provenance["pending_approvals"][0]["kame_evidence"]["promoted_fields"][
+        "user_request"
+    ]
+    user_request["source"] = ""
+    user_request["ref"] = ""
+    assert validate_operator_state(missing_field_provenance) == [
+        "kame_evidence_promoted_field_missing_ref:vops-m5-approval-001:user_request",
+        "kame_evidence_promoted_field_missing_source:vops-m5-approval-001:user_request",
     ]
 
 

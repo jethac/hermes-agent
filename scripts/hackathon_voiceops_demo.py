@@ -1646,6 +1646,7 @@ def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> d
             "approval_required_over_cents": demo["spend_policy"]["approval_required_over_cents"],
             "held_budget_cents": demo["totals"]["held_budget_cents"],
         },
+        "tool_disclosure": build_tool_disclosure_proof(),
         "pending_approvals": pending_approvals,
         "approval_contracts": {
             approval["action_id"]: approval["approval_contract"]

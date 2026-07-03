@@ -21,7 +21,12 @@ from typing import Any
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.voiceops_provisioning_probe import build_kame_action_evidence
+from scripts.voiceops_provisioning_probe import (
+    KAME_ACTION_PROMOTED_FIELDS,
+    TOOL_DISCLOSURE_TEST_REFS,
+    build_kame_action_evidence,
+    build_tool_disclosure_proof,
+)
 
 
 DEFAULT_OUTPUT_DIR = Path("artifacts/voiceops-operator-state/current")
@@ -488,6 +493,7 @@ def build_operator_state() -> dict[str, Any]:
         },
         "active_voice_surface": asdict(default_voice_surface()),
         "budget_status": asdict(budget),
+        "tool_disclosure": build_tool_disclosure_proof(),
         "pending_approvals": pending_approvals,
         "approval_contracts": {
             approval["action_id"]: approval["approval_contract"]
@@ -548,6 +554,15 @@ def _validate_kame_approval_evidence(
     if not isinstance(promoted_fields, dict) or not promoted_fields:
         issues.append(f"kame_evidence_missing_promoted_fields:{approval_id}")
     else:
+        required_fields = tuple(
+            KAME_ACTION_PROMOTED_FIELDS.get(action_id, ("user_request", "oracle_action_plan", "action_rationale"))
+        )
+        promotion_required_before = tuple(evidence.get("promotion_required_before") or ())
+        if set(promotion_required_before) != set(required_fields):
+            issues.append(f"kame_evidence_promotion_required_fields_mismatch:{approval_id}")
+        missing_fields = sorted(field for field in required_fields if field not in promoted_fields)
+        if missing_fields:
+            issues.append(f"kame_evidence_missing_required_promoted_fields:{approval_id}:{','.join(missing_fields)}")
         labels = _evidence_labels(evidence)
         if not labels:
             issues.append(f"kame_evidence_missing_promoted_field_labels:{approval_id}")
@@ -557,9 +572,45 @@ def _validate_kame_approval_evidence(
         invalid_labels = sorted(set(labels) - REQUIRED_KAME_PROMOTIONS)
         if invalid_labels:
             issues.append(f"kame_evidence_invalid_promoted_labels:{approval_id}:{','.join(invalid_labels)}")
+        for field in required_fields:
+            promoted = promoted_fields.get(field) if isinstance(promoted_fields.get(field), dict) else {}
+            if not promoted:
+                continue
+            if not promoted.get("source"):
+                issues.append(f"kame_evidence_promoted_field_missing_source:{approval_id}:{field}")
+            if not promoted.get("ref"):
+                issues.append(f"kame_evidence_promoted_field_missing_ref:{approval_id}:{field}")
 
     if approval.get("tool_disclosure_ref") != "tool_disclosure":
         issues.append(f"tool_disclosure_ref_missing:{approval_id}")
+    return issues
+
+
+def _validate_tool_disclosure(tool_disclosure: Any) -> list[str]:
+    issues: list[str] = []
+    if not isinstance(tool_disclosure, dict):
+        return ["missing_tool_disclosure"]
+    if tool_disclosure.get("schema_version") != "voiceops.tool_disclosure_proof.v1":
+        issues.append("tool_disclosure_schema_invalid")
+    if tool_disclosure.get("ok") is not True:
+        issues.append("tool_disclosure_not_ok")
+    config = tool_disclosure.get("config") if isinstance(tool_disclosure.get("config"), dict) else {}
+    if config.get("enabled") != "on":
+        issues.append("tool_disclosure_enabled_not_on")
+    if config.get("defer_core") != "all":
+        issues.append("tool_disclosure_defer_core_not_all")
+    visible_tools = set(tool_disclosure.get("visible_tool_names") or [])
+    for tool_name in ("tool_call", "tool_describe", "tool_search"):
+        if tool_name not in visible_tools:
+            issues.append(f"tool_disclosure_visible_tool_missing:{tool_name}")
+    hidden_tools = set(tool_disclosure.get("hidden_core_tool_names") or [])
+    for tool_name in ("read_file", "terminal"):
+        if tool_name not in hidden_tools:
+            issues.append(f"tool_disclosure_hidden_core_tool_missing:{tool_name}")
+    external_test_refs = set(tool_disclosure.get("external_test_refs") or [])
+    for test_ref in TOOL_DISCLOSURE_TEST_REFS:
+        if test_ref not in external_test_refs:
+            issues.append(f"tool_disclosure_missing_test_ref:{test_ref}")
     return issues
 
 
@@ -610,6 +661,8 @@ def validate_operator_state(state: dict[str, Any]) -> list[str]:
     ):
         if required_control not in controls:
             issues.append(f"missing_budget_control:{required_control}")
+
+    issues.extend(_validate_tool_disclosure(state.get("tool_disclosure")))
 
     pending_approvals = state.get("pending_approvals", [])
     approval_contracts = state.get("approval_contracts", {})

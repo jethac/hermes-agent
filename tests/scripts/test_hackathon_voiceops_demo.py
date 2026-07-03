@@ -589,6 +589,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert operator_state["readiness_closure"]["closure_status"] == "needs_external_evidence"
     assert operator_state["current_mode"] == "approval-required"
     assert operator_state["active_voice_surface"]["surface_id"] == "discord_voice"
+    assert operator_state["tool_disclosure"] == nemoclaw["tool_disclosure"]
     assert all("kame_evidence" in approval for approval in operator_state["pending_approvals"])
     assert all(approval["tool_disclosure_ref"] == "tool_disclosure" for approval in operator_state["pending_approvals"])
     assert operator_state["provisioned_services"]

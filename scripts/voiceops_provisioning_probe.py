@@ -53,6 +53,7 @@ KAME_ACTION_PROMOTED_FIELDS = {
     "provision-voip-provider": ("user_request", "oracle_action_plan", "provider_selection"),
     "buy-service-credit": ("user_request", "oracle_action_plan", "spend_reason"),
     "call-user-phone": ("user_request", "oracle_action_plan", "phone_handoff_context"),
+    "enable-whatsapp-egress": ("user_request", "oracle_action_plan", "channel_policy"),
     "publish-status": ("user_request", "oracle_action_plan", "channel_policy"),
 }
 TOOL_DISCLOSURE_TEST_REFS = (

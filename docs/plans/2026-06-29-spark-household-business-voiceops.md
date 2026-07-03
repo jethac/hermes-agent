@@ -171,9 +171,11 @@ Target KAME layout:
   request clarification, or populate an audit trail, but it cannot authorize
   irreversible work.
 - Operator-state rule: pending approval records must carry the same promoted
-  KAME evidence used by the NemoClaw packet, plus a tool-disclosure reference.
-  A dashboard or GUI approval row that drops this evidence is invalid even if
-  the visible command, budget, and provider fields look correct.
+  KAME evidence used by the NemoClaw packet, plus a reference to the artifact's
+  tool-disclosure proof. The operator-state artifact itself must include that
+  tool-disclosure proof so a dashboard or GUI cannot silently lose the context
+  pressure guard. A dashboard or GUI approval row that drops this evidence is
+  invalid even if the visible command, budget, and provider fields look correct.
 - Tool-pressure rule: high-risk action artifacts should also prove that broad
   Hermes tools were not carried through the live voice context unnecessarily.
   The VoiceOps package should record the `tool_search`/bridge-tool deferral
@@ -922,7 +924,7 @@ The command writes:
 - `operator-state.md`
 - `operator-state-events.jsonl`
 
-The operator-state generator is artifact-only. It does not read environment secrets, perform network I/O, send Discord/WhatsApp/SMS messages, place calls, provision services, or spend money. It gives the recording dashboard and future GUI a durable state contract for current mode, active/fallback voice surface, budget status, pending approvals, audit events, planned/provisioned services, and household/business tasks. Each pending approval must include `voiceops.kame_action_evidence.v1` with `interpreter_promoted` and `oracle_promoted` fields, `hypotheses_allowed_for_action=false`, `transcript_hypotheses_promoted=false`, and `tool_disclosure_ref=tool_disclosure`. Moshi/open-S2S, VoiceClaw/OpenClaw, reflex, or classic-ASR transcript hypotheses can be shown in the audit trail, but they cannot satisfy an operator approval row without promotion.
+The operator-state generator is artifact-only. It does not read environment secrets, perform network I/O, send Discord/WhatsApp/SMS messages, place calls, provision services, or spend money. It gives the recording dashboard and future GUI a durable state contract for current mode, active/fallback voice surface, budget status, pending approvals, audit events, planned/provisioned services, and household/business tasks. The artifact must include `voiceops.tool_disclosure_proof.v1`, and each pending approval must include `voiceops.kame_action_evidence.v1` with the action-specific promoted fields, `interpreter_promoted` and `oracle_promoted` evidence labels, `hypotheses_allowed_for_action=false`, `transcript_hypotheses_promoted=false`, and `tool_disclosure_ref=tool_disclosure`. Moshi/open-S2S, VoiceClaw/OpenClaw, reflex, or classic-ASR transcript hypotheses can be shown in the audit trail, but they cannot satisfy an operator approval row without promotion.
 
 For the hackathon demo, the generated `operator-dashboard.html` from Milestone 0 should visibly show the same operator state shape: current mode, active voice surface, fallback reason, full budget status, pending approvals, recent audit events, planned services, and a link to `operator-state.json`.
 
