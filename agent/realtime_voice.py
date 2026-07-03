@@ -483,7 +483,58 @@ def realtime_voice_session_contract_payload(config: RealtimeVoiceSessionConfig) 
         value = metadata.get(key)
         if isinstance(value, Mapping):
             payload[key] = dict(value)
+    if config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+        payload["kame_stack"] = _kame_stack_contract_payload(config, metadata)
     return payload
+
+
+def _kame_stack_contract_payload(config: RealtimeVoiceSessionConfig, metadata: Mapping[str, Any]) -> Dict[str, Any]:
+    """Return a redacted KAME stack summary for status/session events."""
+
+    interpreter = metadata.get("interpreter")
+    interpreter = interpreter if isinstance(interpreter, Mapping) else {}
+    return {
+        "engine": config.engine.value,
+        "reflex": {
+            "provider": config.frontend_provider or "",
+            "model": config.frontend_model or "",
+            "audio_input": normalize_realtime_voice_interface_audio_input(config.interface_audio_input) or "auto",
+            "base_url_configured": bool(config.interface_base_url),
+            "timeout_seconds": config.interface_timeout_seconds,
+            "max_audio_seconds": config.interface_max_audio_seconds,
+        },
+        "interpreter": {
+            "provider": _optional_str(interpreter.get("provider")) or _optional_str(metadata.get("interpreter_provider")) or "",
+            "model": _optional_str(interpreter.get("model")) or _optional_str(metadata.get("interpreter_model")) or "",
+            "audio_input": (
+                normalize_realtime_voice_interface_audio_input(interpreter.get("audio_input"))
+                or normalize_realtime_voice_interface_audio_input(metadata.get("interpreter_audio_input"))
+                or "native_audio"
+            ),
+            "base_url_configured": bool(_optional_str(interpreter.get("base_url")) or _optional_str(metadata.get("interpreter_base_url"))),
+            "role": "raw_audio_evidence_adjudicator",
+        },
+        "transcript_evidence": {
+            "mode": config.asr_mode.value,
+            "provider": config.asr_provider or "",
+            "model": config.asr_model or "",
+            "base_url_configured": bool(config.asr_base_url),
+            "authority": "hypothesis",
+            "schedule_oracle_from_transcript": False,
+        },
+        "oracle": {
+            "mode": "hermes_active_model",
+            "preferred_local_model": config.preferred_local_oracle_model or "",
+            "timeout_seconds": config.oracle_timeout_seconds,
+        },
+        "tts": {
+            "provider": config.tts_provider or "",
+            "model": config.tts_model or "",
+            "voice_configured": bool(config.tts_voice),
+            "base_url_configured": bool(config.tts_base_url),
+        },
+        "fallback_policy": config.fallback_policy or "",
+    }
 
 
 def binary_audio_frame_from_event(event: VoiceEvent) -> Optional[bytes]:

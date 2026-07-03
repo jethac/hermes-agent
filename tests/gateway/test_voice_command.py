@@ -1879,6 +1879,31 @@ class TestDiscordVoiceChannelMethods:
         assert status["oracle_timeout_seconds"] == 19.0
         assert status["max_spoken_sentences"] == 3
         assert status["tts_base_url"] == "http://tts.local:8768"
+        assert status["kame_stack"]["reflex"] == {
+            "provider": "elevenlabs",
+            "model": "realtime-voice",
+            "audio_input": "auto",
+            "base_url_configured": True,
+            "timeout_seconds": 0.6,
+            "max_audio_seconds": 14.0,
+        }
+        assert status["kame_stack"]["transcript_evidence"] == {
+            "mode": "on_escalation",
+            "provider": "",
+            "model": "",
+            "base_url_configured": True,
+            "authority": "hypothesis",
+            "schedule_oracle_from_transcript": False,
+        }
+        assert status["kame_stack"]["oracle"] == {
+            "mode": "hermes_active_model",
+            "preferred_local_model": "gemma-4-26B-A4B-it",
+            "timeout_seconds": 19.0,
+        }
+        assert status["kame_stack"]["tts"]["base_url_configured"] is True
+        assert "interface.local" not in json.dumps(status["kame_stack"])
+        assert "asr.local" not in json.dumps(status["kame_stack"])
+        assert "tts.local" not in json.dumps(status["kame_stack"])
         assert status["routing"] == {
             "allow_local_greetings": True,
             "allow_local_clarifications": False,

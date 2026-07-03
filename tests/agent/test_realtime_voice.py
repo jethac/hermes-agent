@@ -21,6 +21,7 @@ from agent.realtime_voice import (
     binary_audio_frame_from_event,
     event_from_binary_audio_frame,
     put_realtime_voice_event,
+    realtime_voice_session_contract_payload,
     transcript_event_payload_from_payload,
     validate_client_event,
     validate_server_event,
@@ -274,6 +275,85 @@ def test_session_config_round_trips_kame_fields():
     assert restored.output_events == {"caption_aliases": True}
     assert restored.quality_targets_ms == {"kame_speech_end_to_playback_start_ms": 2500}
     assert restored.barge_in_policy == {"min_rms": 350, "min_speech_ms": 120}
+
+
+def test_kame_session_contract_reports_redacted_stack_choices():
+    config = RealtimeVoiceSessionConfig(
+        session_id="voice-123",
+        engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        frontend_provider="moshi",
+        frontend_model="moshi-reflex",
+        interface_audio_input="native_audio",
+        interface_base_url="http://reflex.local:8000/v1?token=secret-reflex",
+        interface_timeout_seconds=0.55,
+        interface_max_audio_seconds=10.0,
+        asr_mode=RealtimeVoiceASRMode.SPECULATIVE,
+        asr_provider="nemotron-speech",
+        asr_model="fastconformer",
+        asr_base_url="http://asr.local:8765/secret-asr",
+        preferred_local_oracle_model="nemotron-3-super",
+        oracle_timeout_seconds=42.0,
+        tts_provider="magpie",
+        tts_model="magpie-preview",
+        tts_voice="voice-secret-id",
+        tts_base_url="http://tts.local:8766/secret-tts",
+        fallback_policy="fail_closed",
+        metadata={
+            "interpreter": {
+                "provider": "gemma4",
+                "model": "gemma-4-e2b-it",
+                "audio_input": "native_audio",
+                "base_url": "http://gemma.local:8001/v1?api_key=secret-gemma",
+            }
+        },
+    )
+
+    payload = realtime_voice_session_contract_payload(config)
+
+    assert payload["kame_stack"] == {
+        "engine": RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE.value,
+        "reflex": {
+            "provider": "moshi",
+            "model": "moshi-reflex",
+            "audio_input": "native_audio",
+            "base_url_configured": True,
+            "timeout_seconds": 0.55,
+            "max_audio_seconds": 10.0,
+        },
+        "interpreter": {
+            "provider": "gemma4",
+            "model": "gemma-4-e2b-it",
+            "audio_input": "native_audio",
+            "base_url_configured": True,
+            "role": "raw_audio_evidence_adjudicator",
+        },
+        "transcript_evidence": {
+            "mode": RealtimeVoiceASRMode.SPECULATIVE.value,
+            "provider": "nemotron-speech",
+            "model": "fastconformer",
+            "base_url_configured": True,
+            "authority": "hypothesis",
+            "schedule_oracle_from_transcript": False,
+        },
+        "oracle": {
+            "mode": "hermes_active_model",
+            "preferred_local_model": "nemotron-3-super",
+            "timeout_seconds": 42.0,
+        },
+        "tts": {
+            "provider": "magpie",
+            "model": "magpie-preview",
+            "voice_configured": True,
+            "base_url_configured": True,
+        },
+        "fallback_policy": "fail_closed",
+    }
+    serialized = json.dumps(payload)
+    assert "reflex.local" not in serialized
+    assert "gemma.local" not in serialized
+    assert "asr.local" not in serialized
+    assert "tts.local" not in serialized
+    assert "secret-" not in serialized
 
 
 def test_session_config_normalizes_kame_interface_audio_input():

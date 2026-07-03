@@ -111,6 +111,7 @@ class DiscordVoiceSessionState:
     latency_metrics_ms: Dict[str, int] = field(default_factory=dict)
     quality_target_misses: List[Dict[str, Any]] = field(default_factory=list)
     frontend_state: Dict[str, Any] = field(default_factory=dict)
+    kame_stack: Dict[str, Any] = field(default_factory=dict)
     oracle_jobs: Dict[str, Any] = field(default_factory=dict)
     oracle_tool_router: Dict[str, Any] = field(default_factory=dict)
     updated_at: float = field(default_factory=time.monotonic)
@@ -214,6 +215,102 @@ def _discord_voice_frontend_state(value: Any) -> Dict[str, Any]:
         if key in value and isinstance(value.get(key), bool):
             state[key] = value[key]
     return state
+
+
+def _discord_voice_kame_stack(value: Any) -> Dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    stack: Dict[str, Any] = {}
+    for key in ("engine", "fallback_policy"):
+        text = str(value.get(key) or "").strip()
+        if text:
+            stack[key] = text
+    section_keys = {
+        "reflex": {
+            "provider",
+            "model",
+            "audio_input",
+            "base_url_configured",
+            "timeout_seconds",
+            "max_audio_seconds",
+        },
+        "interpreter": {
+            "provider",
+            "model",
+            "audio_input",
+            "base_url_configured",
+            "role",
+        },
+        "transcript_evidence": {
+            "mode",
+            "provider",
+            "model",
+            "base_url_configured",
+            "authority",
+            "schedule_oracle_from_transcript",
+        },
+        "oracle": {
+            "mode",
+            "preferred_local_model",
+            "timeout_seconds",
+        },
+        "tts": {
+            "provider",
+            "model",
+            "voice_configured",
+            "base_url_configured",
+        },
+    }
+    for key, allowed_keys in section_keys.items():
+        section = value.get(key)
+        if isinstance(section, Mapping):
+            stack[key] = {
+                str(section_key): section_value
+                for section_key, section_value in section.items()
+                if section_key in allowed_keys and isinstance(section_value, (str, int, float, bool))
+            }
+    return stack
+
+
+def _discord_voice_kame_stack_from_status(status: Mapping[str, Any]) -> Dict[str, Any]:
+    return {
+        "engine": str(status.get("engine") or "kame_interface_oracle"),
+        "reflex": {
+            "provider": str(status.get("frontend_provider") or ""),
+            "model": str(status.get("frontend_model") or ""),
+            "audio_input": str(status.get("interface_audio_input") or "auto"),
+            "base_url_configured": bool(status.get("interface_base_url")),
+            "timeout_seconds": float(status.get("interface_timeout_seconds") or 0.8),
+            "max_audio_seconds": float(status.get("interface_max_audio_seconds") or 30.0),
+        },
+        "interpreter": {
+            "provider": str(status.get("interpreter_provider") or ""),
+            "model": str(status.get("interpreter_model") or ""),
+            "audio_input": str(status.get("interpreter_audio_input") or "native_audio"),
+            "base_url_configured": bool(status.get("interpreter_base_url")),
+            "role": "raw_audio_evidence_adjudicator",
+        },
+        "transcript_evidence": {
+            "mode": str(status.get("asr_mode") or "on_escalation"),
+            "provider": str(status.get("asr_provider") or ""),
+            "model": str(status.get("asr_model") or ""),
+            "base_url_configured": bool(status.get("asr_base_url")),
+            "authority": "hypothesis",
+            "schedule_oracle_from_transcript": False,
+        },
+        "oracle": {
+            "mode": "hermes_active_model",
+            "preferred_local_model": str(status.get("preferred_local_oracle_model") or ""),
+            "timeout_seconds": float(status.get("oracle_timeout_seconds") or 60.0),
+        },
+        "tts": {
+            "provider": str(status.get("tts_provider") or ""),
+            "model": str(status.get("tts_model") or ""),
+            "voice_configured": bool(status.get("tts_voice")),
+            "base_url_configured": bool(status.get("tts_base_url")),
+        },
+        "fallback_policy": str(status.get("fallback_policy") or ""),
+    }
 
 
 def _discord_voice_oracle_jobs_update(
@@ -3783,7 +3880,7 @@ class DiscordAdapter(BasePlatformAdapter):
 
     def _voice_architecture_status(self) -> Dict[str, Any]:
         cfg = getattr(self, "_realtime_voice_cfg", {}) or {}
-        return {
+        status = {
             "voice_architecture": DISCORD_VOICE_ARCHITECTURE_KAME,
             "frontend_role": DISCORD_VOICE_FRONTEND_ROLE,
             "oracle_role": DISCORD_VOICE_ORACLE_ROLE,
@@ -3815,6 +3912,9 @@ class DiscordAdapter(BasePlatformAdapter):
             "fallback_policy": _discord_realtime_voice_fallback_policy(cfg),
             "routing": dict(cfg.get("routing")) if isinstance(cfg.get("routing"), dict) else {},
         }
+        configured_stack = _discord_voice_kame_stack(cfg.get("kame_stack"))
+        status["kame_stack"] = configured_stack or _discord_voice_kame_stack_from_status(status)
+        return status
 
     def _voice_playback_status(self, guild_id: int) -> Dict[str, Any]:
         mixer = getattr(self, "_voice_mixers", {}).get(guild_id)
@@ -3908,6 +4008,7 @@ class DiscordAdapter(BasePlatformAdapter):
             "latency_metrics_ms": dict(state.latency_metrics_ms),
             "quality_target_misses": [dict(item) for item in state.quality_target_misses],
             "frontend_state": dict(state.frontend_state),
+            "kame_stack": dict(state.kame_stack or architecture.get("kame_stack") or {}),
             "oracle_jobs": {
                 "enabled": bool(getattr(state, "oracle_jobs", {}).get("enabled")),
                 "capacity": dict(getattr(state, "oracle_jobs", {}).get("capacity") or {}),
@@ -4174,6 +4275,9 @@ class DiscordAdapter(BasePlatformAdapter):
             current_frontend_state = dict(self._voice_state(guild_id).frontend_state)
             current_frontend_state.update(frontend_state)
             updates["frontend_state"] = current_frontend_state
+        kame_stack = _discord_voice_kame_stack(payload.get("kame_stack"))
+        if kame_stack:
+            updates["kame_stack"] = kame_stack
         oracle_jobs = _discord_voice_oracle_jobs_update(
             self._voice_state(guild_id).oracle_jobs,
             event_type,

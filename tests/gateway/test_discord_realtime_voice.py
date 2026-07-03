@@ -1213,6 +1213,77 @@ async def test_discord_adapter_live_voice_status_overrides_stale_oracle_snapshot
     assert adapter.get_voice_session_status(111)["oracle_jobs"]["jobs"][0]["job_id"] == "voice-oracle-live"
 
 
+def test_discord_realtime_event_tracks_redacted_kame_stack_status():
+    from plugins.platforms.discord.adapter import DiscordAdapter
+
+    adapter = DiscordAdapter.__new__(DiscordAdapter)
+    adapter._voice_session_states = {}
+
+    adapter._handle_realtime_voice_event(
+        111,
+        "session.started",
+        {
+            "kame_stack": {
+                "engine": "kame_interface_oracle",
+                "reflex": {
+                    "provider": "moshi",
+                    "model": "moshi-reflex",
+                    "audio_input": "native_audio",
+                    "base_url_configured": True,
+                    "base_url": "http://reflex.local/secret",
+                },
+                "interpreter": {
+                    "provider": "gemma4",
+                    "model": "gemma-4-e2b-it",
+                    "audio_input": "native_audio",
+                    "base_url_configured": True,
+                    "base_url": "http://gemma.local/secret",
+                    "role": "raw_audio_evidence_adjudicator",
+                },
+                "transcript_evidence": {
+                    "mode": "speculative",
+                    "provider": "nemotron-speech",
+                    "model": "fastconformer",
+                    "base_url_configured": True,
+                    "authority": "hypothesis",
+                    "schedule_oracle_from_transcript": False,
+                },
+                "oracle": {
+                    "mode": "hermes_active_model",
+                    "preferred_local_model": "nemotron-3-super",
+                    "timeout_seconds": 60.0,
+                },
+                "tts": {
+                    "provider": "magpie",
+                    "model": "magpie-preview",
+                    "voice_configured": True,
+                    "base_url_configured": True,
+                },
+                "fallback_policy": "fail_closed",
+            }
+        },
+    )
+
+    stack = adapter.get_voice_session_status(111)["kame_stack"]
+
+    assert stack["reflex"] == {
+        "provider": "moshi",
+        "model": "moshi-reflex",
+        "audio_input": "native_audio",
+        "base_url_configured": True,
+    }
+    assert stack["interpreter"] == {
+        "provider": "gemma4",
+        "model": "gemma-4-e2b-it",
+        "audio_input": "native_audio",
+        "base_url_configured": True,
+        "role": "raw_audio_evidence_adjudicator",
+    }
+    assert stack["oracle"]["mode"] == "hermes_active_model"
+    assert "reflex.local" not in repr(stack)
+    assert "gemma.local" not in repr(stack)
+
+
 def test_discord_realtime_event_records_tts_failure_provenance():
     from plugins.platforms.discord.adapter import DiscordAdapter
 
