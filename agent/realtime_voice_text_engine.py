@@ -3429,6 +3429,10 @@ def _oracle_job_payload(job: OracleJob) -> dict[str, Any]:
             payload["auxiliary_transcript_hypotheses"] = [
                 dict(item) for item in request.auxiliary_transcript_hypotheses
             ]
+        if request.transcript_hypotheses:
+            payload["transcript_hypotheses"] = [
+                dict(item) for item in request.transcript_hypotheses
+            ]
     return payload
 
 
@@ -3525,6 +3529,8 @@ def _oracle_job_update_event_payload(job: OracleJob, *, reason: str) -> dict[str
             "reflex_transcript_confidence",
             "auxiliary_transcript_hypotheses_count",
             "auxiliary_transcript_hypotheses",
+            "transcript_hypotheses_count",
+            "transcript_hypotheses",
         ):
             if key in status:
                 payload[key] = status[key]
@@ -3653,6 +3659,10 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
     if request.auxiliary_transcript_hypotheses:
         payload["auxiliary_transcript_hypotheses"] = [
             dict(item) for item in request.auxiliary_transcript_hypotheses
+        ]
+    if request.transcript_hypotheses:
+        payload["transcript_hypotheses"] = [
+            dict(item) for item in request.transcript_hypotheses
         ]
     if request.interface_already_said:
         payload["interface_already_said"] = request.interface_already_said

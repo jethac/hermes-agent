@@ -166,6 +166,29 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
     assert job_status["reflex_transcript_source"] == "reflex_audio"
     assert job_status["reflex_transcript_confidence"] == 0.71
     assert job_status["auxiliary_transcript_hypotheses_count"] == 2
+    assert job_status["transcript_hypotheses_count"] == 3
+    assert job_status["transcript_hypotheses"][0]["kind"] == "reflex_transcript_hypothesis"
+    assert job_status["transcript_hypotheses"][0]["source"] == "reflex_audio"
+    assert job_status["transcript_hypotheses"][0]["authority"] == "reflex_hypothesis"
+    assert job_status["transcript_hypotheses"][0]["confidence"] == 0.71
+    assert job_status["transcript_hypotheses"][0]["text"].startswith("three to the power of seventeen with")
+    assert "sk_test" not in job_status["transcript_hypotheses"][0]["text"]
+    assert job_status["transcript_hypotheses"][1:] == (
+        {
+            "kind": "s2s_transcript_hypothesis",
+            "source": "moshi",
+            "text": "three to the power of seventeen",
+            "authority": "auxiliary_hypothesis",
+            "confidence": 0.78,
+        },
+        {
+            "kind": "classic_asr_hypothesis",
+            "source": "asr",
+            "text": "what is three to the power of seventeen",
+            "authority": "auxiliary_hypothesis",
+            "confidence": 0.92,
+        },
+    )
     assert job_status["interpreter_corrected_transcript"] == "what is three to the power of seventeen"
     assert job_status["interpreter_confidence"] == 0.94
     assert job_status["interpreter_entities"] == ({"type": "math_expression", "value": "3^17"},)

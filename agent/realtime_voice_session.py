@@ -573,6 +573,7 @@ def _durable_oracle_payload(event: VoiceEvent) -> Mapping[str, Any]:
         "reflex_transcript_hypothesis",
         "reflex_transcript_confidence",
         "auxiliary_transcript_hypotheses",
+        "transcript_hypotheses",
     ):
         payload.pop(key, None)
 

@@ -442,6 +442,80 @@ class KameOracleRequest:
             authority["auxiliary_transcript_hypotheses"] = "auxiliary_hypothesis"
         return authority
 
+    @property
+    def transcript_hypotheses(self) -> tuple[dict[str, Any], ...]:
+        """Return the canonical evidence-bundle transcript hypothesis view."""
+
+        items: list[dict[str, Any]] = []
+        reflex_text = self.reflex_transcript_hypothesis.strip()
+        reflex_source = self.reflex_transcript_source or "reflex_audio"
+        reflex_confidence = self.reflex_transcript_confidence
+        if not reflex_text and self.transcript and self.transcript_source == "reflex_audio":
+            reflex_text = self.transcript.strip()
+            reflex_source = self.transcript_source or "reflex_audio"
+            reflex_confidence = self.transcript_confidence
+        if reflex_text:
+            item: dict[str, Any] = {
+                "kind": "reflex_transcript_hypothesis",
+                "source": reflex_source,
+                "text": reflex_text,
+                "authority": "reflex_hypothesis",
+            }
+            if reflex_confidence is not None:
+                item["confidence"] = reflex_confidence
+            items.append(item)
+
+        if self.asr_transcript:
+            item = {
+                "kind": "classic_asr_hypothesis",
+                "source": self.asr_transcript_source or "asr",
+                "text": self.asr_transcript.strip(),
+                "authority": "auxiliary_hypothesis",
+            }
+            if self.asr_transcript_confidence is not None:
+                item["confidence"] = self.asr_transcript_confidence
+            items.append(item)
+
+        for hypothesis in self.auxiliary_transcript_hypotheses:
+            if not isinstance(hypothesis, Mapping):
+                continue
+            text = _optional_text(
+                hypothesis.get("text")
+                or hypothesis.get("transcript")
+                or hypothesis.get("hypothesis")
+            )
+            if not text:
+                continue
+            source = _optional_text(hypothesis.get("source")) or _optional_text(hypothesis.get("provider")) or "unknown"
+            item = {
+                "kind": _transcript_hypothesis_kind(source, default="s2s_transcript_hypothesis"),
+                "source": source,
+                "text": text,
+                "authority": "auxiliary_hypothesis",
+            }
+            confidence = _confidence(hypothesis.get("confidence"))
+            if confidence is not None:
+                item["confidence"] = confidence
+            latency_ms = _non_negative_int(hypothesis.get("latency_ms"))
+            if latency_ms is not None:
+                item["latency_ms"] = latency_ms
+            language = _optional_text(hypothesis.get("language"))
+            if language:
+                item["language"] = language
+            items.append(item)
+
+        compact: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str]] = set()
+        for item in items:
+            key = (str(item.get("kind") or ""), str(item.get("source") or ""), str(item.get("text") or ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            compact.append(item)
+            if len(compact) >= 8:
+                break
+        return tuple(compact)
+
     def to_metadata(self) -> dict[str, Any]:
         response_style = _response_style(
             self.requested_response_style,
@@ -485,6 +559,9 @@ class KameOracleRequest:
             metadata["kame_reflex_transcript_source"] = self.reflex_transcript_source or "reflex_audio"
         if self.reflex_transcript_confidence is not None:
             metadata["kame_reflex_transcript_confidence"] = self.reflex_transcript_confidence
+        transcript_hypotheses = self.transcript_hypotheses
+        if transcript_hypotheses:
+            metadata["kame_transcript_hypotheses"] = transcript_hypotheses
         if self.audio_segment_ref:
             metadata["kame_audio_segment_ref"] = self.audio_segment_ref
         if self.audio_time_range_ms:
@@ -761,6 +838,17 @@ def _kame_source_authority(source: str, *, default: str) -> str:
         return "auxiliary_hypothesis"
     if "reflex" in text or "s2s" in text or "moshi" in text or "voiceclaw" in text or "openclaw" in text:
         return "reflex_hypothesis" if "reflex" in text else "auxiliary_hypothesis"
+    return default
+
+
+def _transcript_hypothesis_kind(source: str, *, default: str) -> str:
+    text = _optional_text(source).lower()
+    if "classic_asr" in text or text in {"asr", "stt"} or text.startswith("asr"):
+        return "classic_asr_hypothesis"
+    if "reflex" in text:
+        return "reflex_transcript_hypothesis"
+    if "moshi" in text or "s2s" in text or "voiceclaw" in text or "openclaw" in text:
+        return "s2s_transcript_hypothesis"
     return default
 
 

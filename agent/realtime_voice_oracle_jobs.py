@@ -130,6 +130,10 @@ class OracleJob:
         if self.auxiliary_transcript_hypotheses:
             status["auxiliary_transcript_hypotheses_count"] = len(self.auxiliary_transcript_hypotheses)
             status["auxiliary_transcript_hypotheses"] = tuple(self.auxiliary_transcript_hypotheses)
+        transcript_hypotheses = _job_transcript_hypotheses(self)
+        if transcript_hypotheses:
+            status["transcript_hypotheses_count"] = len(transcript_hypotheses)
+            status["transcript_hypotheses"] = transcript_hypotheses
         if self.interpreter_corrected_transcript:
             status["interpreter_corrected_transcript"] = self.interpreter_corrected_transcript
         if self.interpreter_normalized_intent:
@@ -821,6 +825,67 @@ def _job_evidence_authority(job: OracleJob) -> dict[str, str]:
     if job.result_summary or job.result_text:
         authority["oracle_result"] = "oracle_promoted"
     return authority
+
+
+def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
+    hypotheses: list[dict[str, Any]] = []
+    if job.reflex_transcript_hypothesis:
+        item: dict[str, Any] = {
+            "kind": "reflex_transcript_hypothesis",
+            "source": job.reflex_transcript_source or "reflex_audio",
+            "text": job.reflex_transcript_hypothesis,
+            "authority": "reflex_hypothesis",
+        }
+        if job.reflex_transcript_confidence is not None:
+            item["confidence"] = job.reflex_transcript_confidence
+        hypotheses.append(item)
+    for value in job.auxiliary_transcript_hypotheses:
+        if not isinstance(value, Mapping):
+            continue
+        text = _compact_evidence_text(
+            value.get("text") or value.get("transcript") or value.get("hypothesis"),
+            limit=500,
+        )
+        if not text:
+            continue
+        source = _compact_evidence_text(value.get("source") or value.get("provider"), limit=40) or "unknown"
+        item = {
+            "kind": _job_transcript_hypothesis_kind(source),
+            "source": source,
+            "text": text,
+            "authority": "auxiliary_hypothesis",
+        }
+        confidence = _compact_confidence(value.get("confidence"))  # type: ignore[arg-type]
+        if confidence is not None:
+            item["confidence"] = confidence
+        latency_ms = _compact_nonnegative_int(value.get("latency_ms"))
+        if latency_ms is not None:
+            item["latency_ms"] = latency_ms
+        hypotheses.append(item)
+        if len(hypotheses) >= 8:
+            break
+    return tuple(hypotheses)
+
+
+def _job_transcript_hypothesis_kind(source: str) -> str:
+    normalized = _compact_evidence_text(source, limit=40).lower()
+    if "classic_asr" in normalized or normalized in {"asr", "stt"} or normalized.startswith("asr"):
+        return "classic_asr_hypothesis"
+    if "reflex" in normalized:
+        return "reflex_transcript_hypothesis"
+    return "s2s_transcript_hypothesis"
+
+
+def _compact_nonnegative_int(value: object) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if parsed < 0:
+        return None
+    return parsed
 
 
 def _result_summary(result: Any) -> str:

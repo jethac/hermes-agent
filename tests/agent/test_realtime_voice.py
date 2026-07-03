@@ -1298,7 +1298,8 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
         job_updates=("also check the Stripe receipt before answering",),
     )
 
-    prompt = _voice_oracle_prompt(request.oracle_text, request.to_metadata())
+    metadata = request.to_metadata()
+    prompt = _voice_oracle_prompt(request.oracle_text, metadata)
 
     assert "KAME request" in prompt
     assert "Reflex interpreted intent (reflex_audio): Find the note" in prompt
@@ -1321,6 +1322,30 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
     assert "The voice reflex already told the user: One moment." in prompt
     assert "User added updates for this oracle job: also check the Stripe receipt before answering" in prompt
     assert "Requested response style: spoken=true; policy=sentence_cap; avoid automatic follow-up offers." in prompt
+    assert metadata["kame_transcript_hypotheses"] == (
+        {
+            "kind": "reflex_transcript_hypothesis",
+            "source": "reflex_audio",
+            "text": "find the note from yesterday's meeting",
+            "authority": "reflex_hypothesis",
+            "confidence": 0.73,
+        },
+        {
+            "kind": "classic_asr_hypothesis",
+            "source": "asr",
+            "text": "find the node from yesterday's meeting",
+            "authority": "auxiliary_hypothesis",
+            "confidence": 0.68,
+        },
+        {
+            "kind": "s2s_transcript_hypothesis",
+            "source": "moshi",
+            "text": "find the note from yesterday's meeting",
+            "authority": "auxiliary_hypothesis",
+            "confidence": 0.74,
+            "latency_ms": 140,
+        },
+    )
 
 
 def test_kame_oracle_request_accepts_transport_and_speaker_aliases():
@@ -12839,6 +12864,20 @@ def test_external_kame_ask_brain_bridge_becomes_oracle_request():
     assert metadata["kame_interface_tool_call_id"] == "call-voiceclaw-1"
     assert metadata["kame_reflex_transcript_hypothesis"] == "use my Stripe budget to prepare a VoIP provisioning plan"
     assert metadata["kame_reflex_transcript_source"] == "reflex_audio"
+    assert metadata["kame_transcript_hypotheses"] == (
+        {
+            "kind": "reflex_transcript_hypothesis",
+            "source": "reflex_audio",
+            "text": "use my Stripe budget to prepare a VoIP provisioning plan",
+            "authority": "reflex_hypothesis",
+        },
+        {
+            "kind": "s2s_transcript_hypothesis",
+            "source": "s2s",
+            "text": "use my stripe budget to prepare a voip provisioning plan",
+            "authority": "auxiliary_hypothesis",
+        },
+    )
     assert metadata["kame_evidence_authority"] == {
         "intent": "reflex_hypothesis",
         "oracle_text": "reflex_hypothesis",
@@ -15457,6 +15496,14 @@ def test_session_does_not_persist_kame_oracle_request_hypothesis_fields_as_durab
                 "asr_transcript_confidence": 0.82,
                 "auxiliary_transcript_hypotheses": [
                     {"source": "moshi", "text": "find the node", "authority": "hypothesis"}
+                ],
+                "transcript_hypotheses": [
+                    {
+                        "kind": "s2s_transcript_hypothesis",
+                        "source": "moshi",
+                        "text": "find the node",
+                        "authority": "auxiliary_hypothesis",
+                    }
                 ],
                 "playback_generation": 1,
             },
