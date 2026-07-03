@@ -188,6 +188,123 @@ def test_reference_sidecar_forwards_speakable_oracle_result_to_gemini_live(monke
     }
 
 
+def test_reference_sidecar_forwards_oracle_result_suppression_to_gemini_live(monkeypatch):
+    FakeGeminiSession.started = []
+    monkeypatch.setattr(
+        "agent.realtime_voice_gemini.GeminiLiveFrontendSession",
+        FakeGeminiSession,
+    )
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(gemini_live_api_key="gemini-secret")
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-1",
+                frontend_provider="gemini_live",
+                frontend_model="gemini-3.1-flash-live-preview",
+            )
+        )
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if len(seen) == 3:
+                break
+        await sidecar.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED,
+                session_id="voice-1",
+                sequence=8,
+                payload={
+                    "job_id": "job-1",
+                    "state": "cancelled",
+                    "result_suppressed": True,
+                    "suppression_reason": "cancelled_job_returned_result",
+                },
+            )
+        )
+        await sidecar.close()
+        return FakeGeminiSession.started[0]
+
+    provider = asyncio.run(run())
+
+    forwarded = next(
+        event for event in provider.received if event.type == VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED
+    )
+    assert forwarded.payload == {
+        "job_id": "job-1",
+        "state": "cancelled",
+        "result_suppressed": True,
+        "suppression_reason": "cancelled_job_returned_result",
+    }
+
+
+def test_reference_sidecar_forwards_interpreter_evidence_events_to_gemini_live(monkeypatch):
+    FakeGeminiSession.started = []
+    monkeypatch.setattr(
+        "agent.realtime_voice_gemini.GeminiLiveFrontendSession",
+        FakeGeminiSession,
+    )
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(gemini_live_api_key="gemini-secret")
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-1",
+                frontend_provider="gemini_live",
+                frontend_model="gemini-3.1-flash-live-preview",
+            )
+        )
+        seen = []
+        async for event in sidecar.events():
+            seen.append(event)
+            if len(seen) == 3:
+                break
+        for sequence, event_type, late in (
+            (9, VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_ATTACHED, False),
+            (10, VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_LATE, True),
+        ):
+            await sidecar.receive_event(
+                VoiceEvent(
+                    type=event_type,
+                    session_id="voice-1",
+                    sequence=sequence,
+                    payload={
+                        "job_id": "job-1",
+                        "state": "running" if late else "queued",
+                        "latest_interpreter_evidence": "Gemma heard the invoice amount as nineteen dollars.",
+                        "latest_interpreter_evidence_source": "gemma_interpreter",
+                        "interpreter_evidence_count": sequence - 8,
+                        "interpreter_evidence_late": late,
+                    },
+                )
+            )
+        await sidecar.close()
+        return FakeGeminiSession.started[0]
+
+    provider = asyncio.run(run())
+
+    forwarded = [
+        event
+        for event in provider.received
+        if event.type
+        in {
+            VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_ATTACHED,
+            VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_LATE,
+        }
+    ]
+    assert [event.type for event in forwarded] == [
+        VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_ATTACHED,
+        VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_LATE,
+    ]
+    assert forwarded[0].payload["latest_interpreter_evidence_source"] == "gemma_interpreter"
+    assert forwarded[0].payload["interpreter_evidence_late"] is False
+    assert forwarded[1].payload["interpreter_evidence_late"] is True
+
+
 def test_reference_sidecar_degrades_gemini_live_without_key_and_keeps_local_path():
     async def run():
         sidecar = ReferenceRealtimeVoiceSidecarSession(ReferenceSidecarRuntimeConfig())

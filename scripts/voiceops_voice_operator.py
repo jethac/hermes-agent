@@ -157,7 +157,11 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_session_persists_durable_async_oracle_job_records",
         "tests/agent/test_realtime_voice.py::test_session_redacts_durable_async_oracle_record_scalars",
         "tests/agent/test_realtime_voice_reference_sidecar_openai.py::test_reference_sidecar_forwards_speakable_oracle_result_to_openai_realtime",
+        "tests/agent/test_realtime_voice_reference_sidecar_openai.py::test_reference_sidecar_forwards_oracle_result_suppression_to_openai_realtime",
+        "tests/agent/test_realtime_voice_reference_sidecar_openai.py::test_reference_sidecar_forwards_interpreter_evidence_events_to_openai_realtime",
         "tests/agent/test_realtime_voice_reference_sidecar_gemini.py::test_reference_sidecar_forwards_speakable_oracle_result_to_gemini_live",
+        "tests/agent/test_realtime_voice_reference_sidecar_gemini.py::test_reference_sidecar_forwards_oracle_result_suppression_to_gemini_live",
+        "tests/agent/test_realtime_voice_reference_sidecar_gemini.py::test_reference_sidecar_forwards_interpreter_evidence_events_to_gemini_live",
     ],
     "discord_session": [
         "tests/gateway/test_voice_command.py::TestDiscordVoiceChannelMethods::test_leave_voice_channel_cleans_up",

@@ -72,12 +72,15 @@ ORACLE_JOB_EVENT_TYPES = frozenset(
         VoiceEventType.ORACLE_JOB_ACCEPTED,
         VoiceEventType.ORACLE_JOB_QUEUED,
         VoiceEventType.ORACLE_JOB_STARTED,
+        VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_ATTACHED,
+        VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_LATE,
         VoiceEventType.ORACLE_JOB_PROGRESS,
         VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL,
         VoiceEventType.ORACLE_JOB_COMPLETED,
         VoiceEventType.ORACLE_JOB_FAILED,
         VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED,
         VoiceEventType.ORACLE_JOB_CANCELLED,
+        VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED,
     }
 )
 
