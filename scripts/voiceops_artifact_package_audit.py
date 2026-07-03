@@ -1873,6 +1873,36 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "terminal_result_unsolicited_spoken": bool(async_smoke.get("terminal_result_unsolicited_spoken")),
             "terminal_result_status_available": bool(async_smoke.get("terminal_result_status_available")),
             "terminal_result_status_text": async_smoke.get("terminal_result_status_text"),
+            "external_frontend_bridge_smoke_ok": bool(async_smoke.get("external_frontend_bridge_smoke_ok")),
+            "external_frontend_request_accepted": bool(async_smoke.get("external_frontend_request_accepted")),
+            "external_frontend_tool_result_observed": bool(
+                async_smoke.get("external_frontend_tool_result_observed")
+            ),
+            "external_frontend_job_id": async_smoke.get("external_frontend_job_id"),
+            "external_frontend_provider": async_smoke.get("external_frontend_provider"),
+            "external_frontend_tool": async_smoke.get("external_frontend_tool"),
+            "external_frontend_tool_call_id": async_smoke.get("external_frontend_tool_call_id"),
+            "external_frontend_completion_tool_call_id": async_smoke.get(
+                "external_frontend_completion_tool_call_id"
+            ),
+            "external_frontend_status_tool_call_id": async_smoke.get("external_frontend_status_tool_call_id"),
+            "external_frontend_terminal_correlation_observed": bool(
+                async_smoke.get("external_frontend_terminal_correlation_observed")
+            ),
+            "external_frontend_accepted_observed": bool(async_smoke.get("external_frontend_accepted_observed")),
+            "external_frontend_started_observed": bool(async_smoke.get("external_frontend_started_observed")),
+            "external_frontend_completion_observed": bool(async_smoke.get("external_frontend_completion_observed")),
+            "external_frontend_status_state": async_smoke.get("external_frontend_status_state"),
+            "external_frontend_source_reached_oracle": bool(
+                async_smoke.get("external_frontend_source_reached_oracle")
+            ),
+            "external_frontend_input_source": async_smoke.get("external_frontend_input_source"),
+            "external_frontend_evidence_bundle_propagated": bool(
+                async_smoke.get("external_frontend_evidence_bundle_propagated")
+            ),
+            "external_frontend_direct_tool_authority_exposed": bool(
+                async_smoke.get("external_frontend_direct_tool_authority_exposed")
+            ),
             "audit_scalar_smoke_ok": bool(async_smoke.get("audit_scalar_smoke_ok")),
             "audit_scalar_payload_redacted": bool(async_smoke.get("audit_scalar_payload_redacted")),
             "audit_scalar_secret_canary_checked": bool(async_smoke.get("audit_scalar_secret_canary_checked")),

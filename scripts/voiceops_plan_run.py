@@ -1701,6 +1701,58 @@ async def build_plan_run_async(
                     "terminal_result_status_text": voice_operator["proofs"]["async_oracle_jobs"][
                         "terminal_result_status_text"
                     ],
+                    "external_frontend_bridge_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_bridge_smoke_ok"
+                    ],
+                    "external_frontend_request_accepted": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_request_accepted"
+                    ],
+                    "external_frontend_tool_result_observed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_tool_result_observed"
+                    ],
+                    "external_frontend_job_id": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_job_id"
+                    ],
+                    "external_frontend_provider": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_provider"
+                    ],
+                    "external_frontend_tool": voice_operator["proofs"]["async_oracle_jobs"]["external_frontend_tool"],
+                    "external_frontend_tool_call_id": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_tool_call_id"
+                    ],
+                    "external_frontend_completion_tool_call_id": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_completion_tool_call_id"
+                    ],
+                    "external_frontend_status_tool_call_id": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_status_tool_call_id"
+                    ],
+                    "external_frontend_terminal_correlation_observed": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_terminal_correlation_observed"],
+                    "external_frontend_accepted_observed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_accepted_observed"
+                    ],
+                    "external_frontend_started_observed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_started_observed"
+                    ],
+                    "external_frontend_completion_observed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_completion_observed"
+                    ],
+                    "external_frontend_status_state": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_status_state"
+                    ],
+                    "external_frontend_source_reached_oracle": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_source_reached_oracle"
+                    ],
+                    "external_frontend_input_source": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_input_source"
+                    ],
+                    "external_frontend_evidence_bundle_propagated": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_evidence_bundle_propagated"],
+                    "external_frontend_direct_tool_authority_exposed": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_direct_tool_authority_exposed"],
                     "audit_scalar_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
                         "audit_scalar_smoke_ok"
                     ],

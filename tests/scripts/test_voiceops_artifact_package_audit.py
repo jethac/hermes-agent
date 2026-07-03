@@ -183,6 +183,8 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["worker_overlap_within_capacity"] = False
     readiness["proofs"]["async_oracle_jobs"]["shutdown_bounded_close_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["audit_scalar_payload_redacted"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_terminal_correlation_observed"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_completion_tool_call_id"] = "wrong-call"
     _write_json(readiness_path, readiness)
 
     report = audit_package(artifact_root)
@@ -199,6 +201,14 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.audit_scalar_payload_redacted_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_terminal_correlation_observed_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_completion_tool_call_id_mismatch"
         in report["issues"]
     )
 

@@ -1233,6 +1233,21 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "completed: Finished Suppress terminal result." in voice_result["details"]["async_oracle_smoke"][
         "terminal_result_status_text"
     ]
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_bridge_smoke_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_tool_call_id"] == "voiceclaw-call-1"
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["external_frontend_completion_tool_call_id"]
+        == "voiceclaw-call-1"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["external_frontend_status_tool_call_id"]
+        == "voiceclaw-call-1"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["external_frontend_terminal_correlation_observed"]
+        is True
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_direct_tool_authority_exposed"] is False
     assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_smoke_ok"] is True
     assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_payload_redacted"] is True
     assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_secret_canary_checked"] is True
