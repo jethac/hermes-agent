@@ -504,6 +504,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "held_budget",
     }
     assert all(event["result"] != "executed" for event in audit_events)
+    audit_events_by_action = {event["action"]: event for event in audit_events}
     approval_contracts = nemoclaw["approval_contracts"]
     assert set(approval_contracts) == {action["action_id"] for action in nemoclaw["approval_required_actions"]}
     for action in nemoclaw["approval_required_actions"]:
@@ -516,6 +517,8 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         assert contract["required_preflight_gates"]
         assert action["tool_disclosure_ref"] == "tool_disclosure"
         evidence = action["kame_evidence"]
+        assert audit_events_by_action[action["action_id"]]["kame_evidence"] == evidence
+        assert audit_events_by_action[action["action_id"]]["tool_disclosure_ref"] == "tool_disclosure"
         assert evidence["hypotheses_allowed_for_action"] is False
         assert evidence["transcript_hypotheses_promoted"] is False
         assert evidence["required_promotions"] == ["interpreter_promoted", "oracle_promoted"]
@@ -718,6 +721,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "Pending Approvals" in dashboard
     assert "provision-voip-provider" in dashboard
     assert "call-user-phone" in dashboard
+    assert "interpreter_promoted+oracle_promoted; audio=artifact://voiceops-demo/discord-budget-turn.wav; tool=tool_disclosure" in dashboard
     assert "Action Ledger" in dashboard
     assert "Recent Audit Events" in dashboard
     assert "evt-001" in dashboard

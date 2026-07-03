@@ -388,6 +388,22 @@ def _assert_dashboard_table(
         issues.append(f"dashboard:{heading}:rows_mismatch")
 
 
+def _approval_evidence_summary(approval: Mapping[str, Any]) -> str:
+    evidence = approval.get("kame_evidence") if isinstance(approval.get("kame_evidence"), Mapping) else {}
+    promoted_fields = evidence.get("promoted_fields") if isinstance(evidence.get("promoted_fields"), Mapping) else {}
+    labels = sorted(
+        {
+            str(field.get("evidence_label"))
+            for field in promoted_fields.values()
+            if isinstance(field, Mapping) and field.get("evidence_label")
+        }
+    )
+    label_text = "+".join(labels) if labels else "missing_promoted_evidence"
+    audio_ref = str(evidence.get("audio_segment_ref") or "missing_audio_ref")
+    tool_ref = str(approval.get("tool_disclosure_ref") or "missing_tool_disclosure")
+    return f"{label_text}; audio={audio_ref}; tool={tool_ref}"
+
+
 def _audit_dashboard_consistency(
     *,
     demo: Mapping[str, Any],
@@ -431,13 +447,14 @@ def _audit_dashboard_consistency(
     _assert_dashboard_table(
         tables,
         "Pending Approvals",
-        [["Action", "Provider", "Spend", "Purpose"]]
+        [["Action", "Provider", "Spend", "Purpose", "Evidence"]]
         + [
             [
                 str(approval.get("action_id")),
                 str(approval.get("provider")),
                 _dollars(approval.get("budget_impact_cents")),
                 str(approval.get("title")),
+                _approval_evidence_summary(approval),
             ]
             for approval in operator_state.get("pending_approvals", [])
             if isinstance(approval, Mapping)
@@ -791,6 +808,14 @@ def _audit_action_consistency(
             issues.append(f"operator_state:{action_id}:approval_contract_mismatch")
         if _approval_contract_subset(pending_contract) != _approval_contract_subset(contract):
             issues.append(f"operator_state:{action_id}:pending_contract_mismatch")
+        action_evidence = action.get("kame_evidence") if isinstance(action.get("kame_evidence"), Mapping) else {}
+        action_tool_ref = action.get("tool_disclosure_ref")
+        if pending_item.get("kame_evidence") != action_evidence:
+            issues.append(f"operator_state:{action_id}:pending_kame_evidence_mismatch")
+        if pending_item.get("tool_disclosure_ref") != action_tool_ref:
+            issues.append(f"operator_state:{action_id}:pending_tool_disclosure_ref_mismatch")
+        if action_tool_ref != "tool_disclosure":
+            issues.append(f"nemoclaw:{action_id}:tool_disclosure_ref_missing")
         if pending_item.get("execution_status") != "not_executed":
             issues.append(f"operator_state:{action_id}:pending_approval_executed")
         if pending_item.get("status") not in {"pending", "held"}:
@@ -812,6 +837,10 @@ def _audit_action_consistency(
                 issues.append(f"audit_ledger:{action_id}:result_executed")
             if audit.get("status") not in {"queued", "held-budget", "blocked"}:
                 issues.append(f"audit_ledger:{action_id}:status_invalid")
+            if audit.get("kame_evidence") != action_evidence:
+                issues.append(f"audit_ledger:{action_id}:kame_evidence_mismatch")
+            if audit.get("tool_disclosure_ref") != action_tool_ref:
+                issues.append(f"audit_ledger:{action_id}:tool_disclosure_ref_mismatch")
 
         dry_run = dry_run_by_action.get(action_id)
         if not dry_run:

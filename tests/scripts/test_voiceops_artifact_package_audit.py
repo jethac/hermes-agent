@@ -342,6 +342,21 @@ def test_package_audit_rejects_audit_ledger_drift_from_demo(tmp_path):
     assert "audit_ledger:rows_mismatch_demo_audit_events" in report["issues"]
 
 
+def test_package_audit_rejects_nemoclaw_kame_evidence_drift_from_operator_and_audit(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    packet_path = artifact_root / "hackathon-voiceops-demo" / "current" / "nemoclaw-action-packet.json"
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    packet["approval_required_actions"][0]["kame_evidence"]["audio_segment_ref"] = "artifact://tampered.wav"
+    packet_path.write_text(json.dumps(packet, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    report = audit_package(artifact_root)
+
+    action_id = packet["approval_required_actions"][0]["action_id"]
+    assert report["ok"] is False
+    assert f"operator_state:{action_id}:pending_kame_evidence_mismatch" in report["issues"]
+    assert f"audit_ledger:{action_id}:kame_evidence_mismatch" in report["issues"]
+
+
 def test_package_audit_rejects_operator_state_event_drift_from_operator_state(tmp_path):
     artifact_root = _generate_package(tmp_path)
     events_path = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-state-events.jsonl"
@@ -453,6 +468,24 @@ def test_package_audit_rejects_dashboard_table_row_drift(tmp_path):
 
     assert report["ok"] is False
     assert "dashboard:Action Ledger:rows_mismatch" in report["issues"]
+
+
+def test_package_audit_rejects_dashboard_pending_approval_evidence_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    dashboard = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-dashboard.html"
+    dashboard.write_text(
+        dashboard.read_text(encoding="utf-8").replace(
+            "interpreter_promoted+oracle_promoted; audio=artifact://voiceops-demo/discord-budget-turn.wav; tool=tool_disclosure",
+            "reflex_hypothesis; audio=missing_audio_ref; tool=missing_tool_disclosure",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "dashboard:Pending Approvals:rows_mismatch" in report["issues"]
 
 
 def test_package_audit_rejects_spark_readiness_claim_drift(tmp_path):

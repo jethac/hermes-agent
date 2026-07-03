@@ -107,6 +107,8 @@ class AuditEvent:
     command: str
     approval_required: bool
     approval_status: str
+    kame_evidence: dict[str, Any] | None
+    tool_disclosure_ref: str | None
     result: str
     receipt_ref: str | None
     credential_location_ref: str | None
@@ -1473,6 +1475,11 @@ def _receipt_ref(action_id: str) -> str | None:
 def _audit_events(actions: Iterable[OpsAction]) -> list[AuditEvent]:
     events: list[AuditEvent] = []
     for index, action in enumerate(actions, start=1):
+        kame_evidence = (
+            build_kame_action_evidence(action.action_id, DEFAULT_SOURCE_CONTEXT)
+            if action.requires_approval
+            else None
+        )
         events.append(
             AuditEvent(
                 event_id=f"evt-{index:03d}",
@@ -1488,6 +1495,8 @@ def _audit_events(actions: Iterable[OpsAction]) -> list[AuditEvent]:
                 command=action.command,
                 approval_required=action.requires_approval,
                 approval_status=_approval_status(action),
+                kame_evidence=kame_evidence,
+                tool_disclosure_ref="tool_disclosure" if action.requires_approval else None,
                 result=_action_result(action),
                 receipt_ref=_receipt_ref(action.action_id),
                 credential_location_ref=_credential_location_ref(action.action_id),
@@ -2684,6 +2693,22 @@ def _status_class(status: Any) -> str:
     return "neutral"
 
 
+def _approval_evidence_summary(approval: Mapping[str, Any]) -> str:
+    evidence = approval.get("kame_evidence") if isinstance(approval.get("kame_evidence"), Mapping) else {}
+    promoted_fields = evidence.get("promoted_fields") if isinstance(evidence.get("promoted_fields"), Mapping) else {}
+    labels = sorted(
+        {
+            str(field.get("evidence_label"))
+            for field in promoted_fields.values()
+            if isinstance(field, Mapping) and field.get("evidence_label")
+        }
+    )
+    label_text = "+".join(labels) if labels else "missing_promoted_evidence"
+    audio_ref = str(evidence.get("audio_segment_ref") or "missing_audio_ref")
+    tool_ref = str(approval.get("tool_disclosure_ref") or "missing_tool_disclosure")
+    return f"{label_text}; audio={audio_ref}; tool={tool_ref}"
+
+
 def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
     nemoclaw = _nemoclaw_action_packet(demo)
     phone_context = _phone_context_packet(demo)
@@ -2707,10 +2732,11 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
             f"<td>{_h(approval['provider'])}</td>"
             f"<td>{_h(_dollars(approval['budget_impact_cents']))}</td>"
             f"<td>{_h(approval['title'])}</td>"
+            f"<td>{_h(_approval_evidence_summary(approval))}</td>"
             "</tr>"
         )
     if not pending_rows:
-        pending_rows.append("<tr><td colspan=\"4\">No queued approvals.</td></tr>")
+        pending_rows.append("<tr><td colspan=\"5\">No queued approvals.</td></tr>")
     action_rows = []
     for action in demo["ops_actions"]:
         approval = "approval required" if action["requires_approval"] else "no approval"
@@ -3019,7 +3045,7 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         <div class="panel">
           <h2>Pending Approvals</h2>
           <table>
-            <thead><tr><th>Action</th><th>Provider</th><th>Spend</th><th>Purpose</th></tr></thead>
+            <thead><tr><th>Action</th><th>Provider</th><th>Spend</th><th>Purpose</th><th>Evidence</th></tr></thead>
             <tbody>{''.join(pending_rows)}</tbody>
           </table>
         </div>
