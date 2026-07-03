@@ -17,6 +17,7 @@ from scripts.hackathon_voiceops_demo import (
 )
 from scripts.voiceops_operator_state import validate_operator_state
 from scripts.voiceops_provisioning_probe import validate_nemoclaw_action_packet
+from toolsets import _HERMES_CORE_TOOLS
 
 
 def _dot_get(payload, ref):
@@ -471,7 +472,15 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert nemoclaw["tool_disclosure"]["ok"] is True
     assert nemoclaw["tool_disclosure"]["config"] == {"enabled": "on", "defer_core": "all"}
     assert nemoclaw["tool_disclosure"]["visible_tool_names"] == ["tool_call", "tool_describe", "tool_search"]
-    assert nemoclaw["tool_disclosure"]["hidden_core_tool_names"] == ["read_file", "terminal"]
+    assert nemoclaw["tool_disclosure"]["visible_non_bridge_tool_names"] == []
+    assert nemoclaw["tool_disclosure"]["input_core_tools"] == sorted(_HERMES_CORE_TOOLS)
+    assert nemoclaw["tool_disclosure"]["hidden_core_tool_names"] == sorted(_HERMES_CORE_TOOLS)
+    assert nemoclaw["tool_disclosure"]["input_core_tool_count"] == len(_HERMES_CORE_TOOLS)
+    assert nemoclaw["tool_disclosure"]["hidden_core_tool_count"] == len(_HERMES_CORE_TOOLS)
+    assert nemoclaw["tool_disclosure"]["core_tools_hidden_all"] is True
+    assert nemoclaw["tool_disclosure"]["broad_core_tools_visible"] is False
+    assert nemoclaw["tool_disclosure"]["deferred_count"] == len(_HERMES_CORE_TOOLS)
+    assert nemoclaw["tool_disclosure"]["token_reduction_estimate"] > 0
     assert "unapproved_purchase" in nemoclaw["blocked_capabilities"]
     assert "discord_or_whatsapp_send_without_channel_policy_approval" in nemoclaw["blocked_capabilities"]
     assert "status_summary_draft" in nemoclaw["allowed_capabilities"]

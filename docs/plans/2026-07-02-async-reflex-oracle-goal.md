@@ -255,6 +255,14 @@ pending packet. If it arrives after the interpreter request starts, attach it as
 late evidence on the same packet. It must never create a duplicate oracle job,
 durable transcript, or approval-capable action record by itself.
 
+Tool-pressure rule: the realtime voice oracle path should not keep the broad
+Hermes core tool surface in the active voice context. Headless acceptance should
+prove that `tools.tool_search.defer_core = all` hides every Hermes core tool
+behind `tool_search`, `tool_describe`, and `tool_call`, leaves no non-bridge
+core tools visible, and records a positive estimated schema-token reduction.
+This proof must be generated from the current core tool list so it catches
+future core-tool additions that would otherwise leak into voice context.
+
 2026-07-04 amendment: the headless action-gate proof must also include a
 degraded text-only frontend path. A VoiceClaw/OpenClaw/Moshi bridge that can
 send only witness text remains useful for audit and clarification, but it must

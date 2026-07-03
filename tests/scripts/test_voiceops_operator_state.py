@@ -13,6 +13,7 @@ from scripts.voiceops_operator_state import (
     write_operator_state,
 )
 from scripts.voiceops_provisioning_probe import KAME_ACTION_PROMOTED_FIELDS, build_kame_action_evidence
+from toolsets import _HERMES_CORE_TOOLS
 
 
 def _sync_approval_contract(state, approval):
@@ -70,7 +71,15 @@ def test_operator_state_contains_required_dashboard_sections_and_boundaries():
     assert tool_disclosure["ok"] is True
     assert tool_disclosure["config"] == {"enabled": "on", "defer_core": "all"}
     assert tool_disclosure["visible_tool_names"] == ["tool_call", "tool_describe", "tool_search"]
-    assert tool_disclosure["hidden_core_tool_names"] == ["read_file", "terminal"]
+    assert tool_disclosure["visible_non_bridge_tool_names"] == []
+    assert tool_disclosure["input_core_tools"] == sorted(_HERMES_CORE_TOOLS)
+    assert tool_disclosure["hidden_core_tool_names"] == sorted(_HERMES_CORE_TOOLS)
+    assert tool_disclosure["input_core_tool_count"] == len(_HERMES_CORE_TOOLS)
+    assert tool_disclosure["hidden_core_tool_count"] == len(_HERMES_CORE_TOOLS)
+    assert tool_disclosure["core_tools_hidden_all"] is True
+    assert tool_disclosure["broad_core_tools_visible"] is False
+    assert tool_disclosure["deferred_count"] == len(_HERMES_CORE_TOOLS)
+    assert tool_disclosure["token_reduction_estimate"] > 0
 
     assert state["pending_approvals"]
     assert set(state["approval_contracts"]) == {approval["action_id"] for approval in state["pending_approvals"]}

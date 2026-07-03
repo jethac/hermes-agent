@@ -222,6 +222,12 @@ Target KAME layout:
   The VoiceOps package should record the `tool_search`/bridge-tool deferral
   proof, especially that core tools are hidden behind discovery until the active
   Hermes oracle actually needs them.
+- Tool-pressure acceptance rule: the headless VoiceOps artifacts must prove
+  voice-scoped `tools.tool_search.defer_core = all` against the full Hermes core
+  tool list, not only a small sample. The proof should show only
+  `tool_search`, `tool_describe`, and `tool_call` as model-visible bridge tools,
+  zero non-bridge core tools visible, all core tools hidden, and a positive
+  estimated schema-token reduction.
 - Fallbacks: hosted `/model` providers, Kimi, Cartesia, or other cloud providers are acceptable during bring-up and demos when they are labeled clearly.
 
 The public demo should prefer Nemotron 3 Super on Spark for sponsor fit while allowing a clearly labeled hosted fallback only if needed. The private appliance roadmap benchmarks Super and other Spark-friendly models for the local brain.

@@ -60,6 +60,7 @@ TOOL_DISCLOSURE_TEST_REFS = (
     "tests/tools/test_tool_search.py::TestAssembly::test_defer_core_all_hides_core_behind_bridge",
     "tests/agent/test_realtime_voice_oracle.py::test_voice_oracle_applies_scoped_tool_search_override",
 )
+TOOL_DISCLOSURE_BRIDGE_TOOL_NAMES = ("tool_call", "tool_describe", "tool_search")
 
 PHONE_TARGET_ENV_KEYS = [
     "VOICEOPS_DEMO_PHONE_NUMBER",
@@ -1922,13 +1923,31 @@ def _tool_disclosure_issues(packet: Mapping[str, Any]) -> list[str]:
     if config.get("defer_core") != "all":
         issues.append("tool_disclosure.config.defer_core_not_all")
     visible = set(proof.get("visible_tool_names") or [])
-    for tool_name in ("tool_call", "tool_describe", "tool_search"):
+    for tool_name in TOOL_DISCLOSURE_BRIDGE_TOOL_NAMES:
         if tool_name not in visible:
             issues.append(f"tool_disclosure.visible_tool_missing:{tool_name}")
+    visible_non_bridge = set(proof.get("visible_non_bridge_tool_names") or [])
+    if visible_non_bridge:
+        issues.append("tool_disclosure.visible_non_bridge_tools_present")
+    if proof.get("broad_core_tools_visible") is not False:
+        issues.append("tool_disclosure.broad_core_tools_visible")
     hidden = set(proof.get("hidden_core_tool_names") or [])
-    for tool_name in ("read_file", "terminal"):
+    input_core = set(proof.get("input_core_tools") or [])
+    for tool_name in input_core or {"read_file", "terminal"}:
         if tool_name not in hidden:
             issues.append(f"tool_disclosure.hidden_core_tool_missing:{tool_name}")
+    if input_core and hidden != input_core:
+        issues.append("tool_disclosure.hidden_core_tool_set_mismatch")
+    if proof.get("core_tools_hidden_all") is not True:
+        issues.append("tool_disclosure.core_tools_hidden_all_not_true")
+    if proof.get("hidden_core_tool_count") != len(hidden):
+        issues.append("tool_disclosure.hidden_core_tool_count_mismatch")
+    if proof.get("input_core_tool_count") != len(input_core):
+        issues.append("tool_disclosure.input_core_tool_count_mismatch")
+    if proof.get("deferred_count") != len(hidden):
+        issues.append("tool_disclosure.deferred_count_mismatch")
+    if int(proof.get("token_reduction_estimate") or 0) <= 0:
+        issues.append("tool_disclosure.missing_token_reduction")
     refs = set(proof.get("external_test_refs") or [])
     for ref in TOOL_DISCLOSURE_TEST_REFS:
         if ref not in refs:
@@ -2852,15 +2871,57 @@ def build_kame_evidence_gate() -> dict[str, Any]:
 
 
 def build_tool_disclosure_proof() -> dict[str, Any]:
+    from toolsets import _HERMES_CORE_TOOLS
+    from tools.tool_search import bridge_tool_schemas, estimate_tokens_from_schemas
+
+    core_tools = sorted(_HERMES_CORE_TOOLS)
+    visible_tools = list(TOOL_DISCLOSURE_BRIDGE_TOOL_NAMES)
+    core_tool_defs = [
+        {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": (
+                    f"Hermes core tool {name}. Representative schema for VoiceOps "
+                    "tool-pressure proof."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search, command, or user request text."},
+                        "path": {"type": "string", "description": "Optional local path or resource identifier."},
+                        "options": {
+                            "type": "object",
+                            "description": "Optional bounded execution controls.",
+                            "additionalProperties": True,
+                        },
+                    },
+                },
+            },
+        }
+        for name in core_tools
+    ]
+    input_schema_tokens = estimate_tokens_from_schemas(core_tool_defs)
+    visible_schema_tokens = estimate_tokens_from_schemas(bridge_tool_schemas(len(core_tools)))
     return {
         "schema_version": "voiceops.tool_disclosure_proof.v1",
         "ok": True,
-        "scenario": "core_tools_deferred_behind_tool_search",
+        "scenario": "all_core_tools_deferred_behind_tool_search",
         "config": {"enabled": "on", "defer_core": "all"},
-        "visible_tool_names": ["tool_call", "tool_describe", "tool_search"],
-        "hidden_core_tool_names": ["read_file", "terminal"],
-        "bridge_tool_names": ["tool_call", "tool_describe", "tool_search"],
-        "deferred_count": 2,
+        "input_core_tools": core_tools,
+        "visible_tool_names": visible_tools,
+        "visible_non_bridge_tool_names": [],
+        "hidden_core_tool_names": core_tools,
+        "bridge_tool_names": visible_tools,
+        "input_core_tool_count": len(core_tools),
+        "hidden_core_tool_count": len(core_tools),
+        "bridge_tool_count": len(visible_tools),
+        "core_tools_hidden_all": True,
+        "broad_core_tools_visible": False,
+        "deferred_count": len(core_tools),
+        "input_schema_tokens": input_schema_tokens,
+        "visible_schema_tokens": visible_schema_tokens,
+        "token_reduction_estimate": max(0, input_schema_tokens - visible_schema_tokens),
         "external_test_refs": list(TOOL_DISCLOSURE_TEST_REFS),
     }
 

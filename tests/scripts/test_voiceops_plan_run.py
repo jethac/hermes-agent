@@ -9,6 +9,7 @@ from pathlib import Path
 
 from scripts.voiceops_plan_run import build_plan_run, parse_args, write_plan_run
 from scripts.voiceops_provisioning_probe import build_milestone2_execution_plan, build_probe_report
+from toolsets import _HERMES_CORE_TOOLS
 
 
 GOAL_DOC = Path(__file__).resolve().parents[2] / "docs" / "plans" / "2026-06-29-spark-household-business-voiceops.md"
@@ -1114,17 +1115,25 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert Path(voice_result["artifacts"]["live_evidence_scaffold_manifest"]).exists()
     assert Path(voice_result["artifacts"]["live_evidence_template"]).exists()
     assert Path(voice_result["artifacts"]["live_probe_closure_json"]).exists()
-    assert voice_result["details"]["tool_disclosure"] == {
+    tool_details = voice_result["details"]["tool_disclosure"]
+    assert tool_details == {
         "config": {
             "defer_core": "all",
             "enabled": "on",
         },
-        "deferred_count": 2,
-        "hidden_core_tool_names": ["read_file", "terminal"],
+        "broad_core_tools_visible": False,
+        "core_tools_hidden_all": True,
+        "deferred_count": len(_HERMES_CORE_TOOLS),
+        "hidden_core_tool_count": len(_HERMES_CORE_TOOLS),
+        "hidden_core_tool_names": sorted(_HERMES_CORE_TOOLS),
+        "input_core_tool_count": len(_HERMES_CORE_TOOLS),
         "ok": True,
         "test_ref_count": 3,
+        "token_reduction_estimate": tool_details["token_reduction_estimate"],
+        "visible_non_bridge_tool_names": [],
         "visible_tool_names": ["tool_call", "tool_describe", "tool_search"],
     }
+    assert tool_details["token_reduction_estimate"] > 0
     assert voice_result["details"]["async_oracle_smoke"]["kind"] == "async_oracle_smoke"
     assert voice_result["details"]["async_oracle_smoke"]["scenario"] == "async_kame_oracle_jobs_fake"
     assert voice_result["details"]["async_oracle_smoke"]["late_cancelled_output_attempted"] is True

@@ -23,6 +23,7 @@ if __package__ in {None, ""}:
 
 from scripts.voiceops_provisioning_probe import (
     KAME_ACTION_PROMOTED_FIELDS,
+    TOOL_DISCLOSURE_BRIDGE_TOOL_NAMES,
     TOOL_DISCLOSURE_TEST_REFS,
     build_kame_action_evidence,
     build_tool_disclosure_proof,
@@ -600,13 +601,30 @@ def _validate_tool_disclosure(tool_disclosure: Any) -> list[str]:
     if config.get("defer_core") != "all":
         issues.append("tool_disclosure_defer_core_not_all")
     visible_tools = set(tool_disclosure.get("visible_tool_names") or [])
-    for tool_name in ("tool_call", "tool_describe", "tool_search"):
+    for tool_name in TOOL_DISCLOSURE_BRIDGE_TOOL_NAMES:
         if tool_name not in visible_tools:
             issues.append(f"tool_disclosure_visible_tool_missing:{tool_name}")
+    if tool_disclosure.get("visible_non_bridge_tool_names"):
+        issues.append("tool_disclosure_visible_non_bridge_tools_present")
+    if tool_disclosure.get("broad_core_tools_visible") is not False:
+        issues.append("tool_disclosure_broad_core_tools_visible")
     hidden_tools = set(tool_disclosure.get("hidden_core_tool_names") or [])
-    for tool_name in ("read_file", "terminal"):
+    input_core_tools = set(tool_disclosure.get("input_core_tools") or [])
+    for tool_name in input_core_tools or {"read_file", "terminal"}:
         if tool_name not in hidden_tools:
             issues.append(f"tool_disclosure_hidden_core_tool_missing:{tool_name}")
+    if input_core_tools and hidden_tools != input_core_tools:
+        issues.append("tool_disclosure_hidden_core_tool_set_mismatch")
+    if tool_disclosure.get("core_tools_hidden_all") is not True:
+        issues.append("tool_disclosure_core_tools_hidden_all_not_true")
+    if tool_disclosure.get("hidden_core_tool_count") != len(hidden_tools):
+        issues.append("tool_disclosure_hidden_core_tool_count_mismatch")
+    if tool_disclosure.get("input_core_tool_count") != len(input_core_tools):
+        issues.append("tool_disclosure_input_core_tool_count_mismatch")
+    if tool_disclosure.get("deferred_count") != len(hidden_tools):
+        issues.append("tool_disclosure_deferred_count_mismatch")
+    if int(tool_disclosure.get("token_reduction_estimate") or 0) <= 0:
+        issues.append("tool_disclosure_missing_token_reduction")
     external_test_refs = set(tool_disclosure.get("external_test_refs") or [])
     for test_ref in TOOL_DISCLOSURE_TEST_REFS:
         if test_ref not in external_test_refs:

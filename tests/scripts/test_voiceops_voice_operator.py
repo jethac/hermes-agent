@@ -17,6 +17,7 @@ from scripts.voiceops_voice_operator import (
     validate_voice_operator_report,
     write_voice_operator_report,
 )
+from toolsets import _HERMES_CORE_TOOLS
 
 
 def _smoke_payload() -> dict:
@@ -933,7 +934,15 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         "tool_describe",
         "tool_search",
     ]
-    assert report["proofs"]["tool_disclosure"]["hidden_core_tool_names"] == ["read_file", "terminal"]
+    assert report["proofs"]["tool_disclosure"]["visible_non_bridge_tool_names"] == []
+    assert report["proofs"]["tool_disclosure"]["input_core_tools"] == sorted(_HERMES_CORE_TOOLS)
+    assert report["proofs"]["tool_disclosure"]["hidden_core_tool_names"] == sorted(_HERMES_CORE_TOOLS)
+    assert report["proofs"]["tool_disclosure"]["input_core_tool_count"] == len(_HERMES_CORE_TOOLS)
+    assert report["proofs"]["tool_disclosure"]["hidden_core_tool_count"] == len(_HERMES_CORE_TOOLS)
+    assert report["proofs"]["tool_disclosure"]["core_tools_hidden_all"] is True
+    assert report["proofs"]["tool_disclosure"]["broad_core_tools_visible"] is False
+    assert report["proofs"]["tool_disclosure"]["deferred_count"] == len(_HERMES_CORE_TOOLS)
+    assert report["proofs"]["tool_disclosure"]["token_reduction_estimate"] > 0
     assert report["tool_disclosure_smoke"]["ok"] is True
     overflow_policy = report["async_oracle_acceptance"]["fifth_job_obeys_overflow_policy"]
     assert overflow_policy["ok"] is True

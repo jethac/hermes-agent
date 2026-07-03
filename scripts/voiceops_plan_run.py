@@ -1903,10 +1903,29 @@ async def build_plan_run_async(
                     "ok": voice_operator["proofs"]["tool_disclosure"]["ok"],
                     "config": voice_operator["proofs"]["tool_disclosure"]["config"],
                     "visible_tool_names": voice_operator["proofs"]["tool_disclosure"]["visible_tool_names"],
+                    "visible_non_bridge_tool_names": voice_operator["proofs"]["tool_disclosure"].get(
+                        "visible_non_bridge_tool_names"
+                    )
+                    or [],
                     "hidden_core_tool_names": voice_operator["proofs"]["tool_disclosure"][
                         "hidden_core_tool_names"
                     ],
+                    "input_core_tool_count": voice_operator["proofs"]["tool_disclosure"].get(
+                        "input_core_tool_count"
+                    ),
+                    "hidden_core_tool_count": voice_operator["proofs"]["tool_disclosure"].get(
+                        "hidden_core_tool_count"
+                    ),
+                    "core_tools_hidden_all": voice_operator["proofs"]["tool_disclosure"].get(
+                        "core_tools_hidden_all"
+                    ),
+                    "broad_core_tools_visible": voice_operator["proofs"]["tool_disclosure"].get(
+                        "broad_core_tools_visible"
+                    ),
                     "deferred_count": voice_operator["proofs"]["tool_disclosure"]["deferred_count"],
+                    "token_reduction_estimate": voice_operator["proofs"]["tool_disclosure"].get(
+                        "token_reduction_estimate"
+                    ),
                     "test_ref_count": len(
                         voice_operator["proofs"]["tool_disclosure"].get("external_test_refs") or []
                     ),
