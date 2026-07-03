@@ -30,6 +30,15 @@ ASR output. Gemma-style raw-audio interpretation is the promotion step for
 durable wording. Hermes' active `/model` remains the only oracle and action
 brain.
 
+2026-07-03 operating decision: do not require ASR evidence in the normal path.
+The runtime should collect Moshi/open-S2S or classic ASR text when available,
+but only as transcript hypotheses attached to the same `turn_id` and
+`audio_segment_ref` as the raw voice. The interpreter receives the raw waveform
+and those hypotheses together; it decides which wording, if any, is promoted for
+the oracle. This keeps the fast reflex from waiting on STT while still giving
+Gemma useful hints about names, numbers, clipped prefixes, code-switching, and
+hallucinated commands.
+
 ## Purpose
 
 Hermes currently has KAME-compatible realtime voice plumbing: Discord voice transport, a realtime sidecar, streaming STT/TTS provider bridges, barge-in handling, mixer playback, and latency metrics. It is not yet a full KAME-style implementation because there is no lightweight, low-latency interface model acting as the human-facing conversational front end.
@@ -94,6 +103,22 @@ captions or diagnostics. Gemma can consume both, plus the raw audio, as context.
 Only the interpreter/oracle promotion result may become durable user text,
 Stripe/NemoClaw spend rationale, phone-call payload, memory, file content, or
 tool argument.
+
+In implementation terms, the packet should look like one raw-audio turn with
+multiple evidence attachments, not multiple turns competing for authority:
+
+```text
+speech cut
+  -> raw_audio: primary interpreter evidence
+  -> reflex: route, acknowledgement, provisional intent
+  -> transcript_hypotheses[]: Moshi/open-S2S/classic-ASR clues
+  -> Gemma interpreter: corrected evidence and oracle request patch
+  -> Hermes active /model: action, tools, memory, spend, calls
+```
+
+If the Moshi text arrives first, it can help the reflex narrate what it thinks
+it is doing, but it still cannot bypass the interpreter merge point for durable
+history or tool-critical arguments.
 
 ## Signal Authority Rules
 

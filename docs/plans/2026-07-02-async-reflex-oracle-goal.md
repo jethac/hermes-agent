@@ -148,6 +148,12 @@ has already routed the turn and a raw-audio interpreter request is possible.
 The first available transcript is useful for latency analysis; it is not
 authority.
 
+Implementation corollary: remove "wait for ASR evidence" from the normal KAME
+path. Moshi/open-S2S transcript text and classic ASR text are allowed to enrich
+the interpreter request, but neither should delay acknowledgement, create a
+second oracle request, or be treated as the user's durable message before
+interpreter/oracle promotion.
+
 The oracle is the worker. It owns:
 
 - tool execution
@@ -346,6 +352,10 @@ Additional jobs can be summarized behind a bounded "+N more" suffix.
 Spoken control commands should resolve against this same reflex-safe projection
 so "the fourth one" means the fourth job the user could hear or see, not a
 hidden raw scheduler ordering.
+When a job is waiting for approval, the reflex-safe projection should include a
+compact approval reason so the user can distinguish "model is still thinking"
+from "Hermes is blocked on spend/provisioning approval" without receiving raw
+approval payloads, credentials, or tool arguments.
 
 The interpreter gets a different compact view: the current turn id, clipped
 audio reference, speaker/channel metadata, reflex hypothesis, optional

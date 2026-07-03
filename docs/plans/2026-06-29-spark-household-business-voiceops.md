@@ -359,6 +359,14 @@ Target:
 - local Magpie/Riva-style TTS when available
 - Cartesia or similar cloud TTS remains an acceptable bring-up fallback
 
+The operating rule is one voice turn, one evidence bundle. Moshi/open-S2S text,
+classic ASR text, and reflex transcript text may arrive at different times, but
+they all attach to the same raw-audio turn as hypotheses. They do not schedule a
+second oracle turn, overwrite `oracle_text`, or become spend/call/tool arguments
+until Gemma or the Hermes oracle promotes them. This lets the demo keep the
+acknowledgement path fast while still using transcript-like output as useful
+context for multilingual correction and business-critical actions.
+
 The voice runtime must distinguish transport state from agent state. VAD,
 semantic endpointing, playback buffers, provider response ids, and carrier
 playout cursors are session-layer facts. The reflex/oracle policy consumes
