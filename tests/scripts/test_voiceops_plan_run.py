@@ -1298,6 +1298,12 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_with_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_late_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_no_duplicate_oracle_jobs"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_adjudications"] == {
+        "early": ["corrected_by_audio"],
+        "with": ["accepted_as_supporting_evidence"],
+        "late": ["rejected_or_diagnostic_only"],
+    }
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_adjudication_outcomes_observed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_smoke_ok"] is True
     assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_hypothesis_only_ok"] is False
     assert "missing_promoted_evidence" in voice_result["details"]["async_oracle_smoke"][
@@ -1342,6 +1348,27 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_promoted_consumed_before_action"]
         is True
     )
+    assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_self_attested_ok"] is False
+    assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_self_attested_issues"] == [
+        "missing_promoted_evidence"
+    ]
+    assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_self_attested_authorities"] == []
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "runtime_kame_action_gate_self_attested_consumed_before_action"
+        ]
+        is True
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_missing_tool_disclosure_ok"]
+        is False
+    )
+    assert voice_result["details"]["async_oracle_smoke"][
+        "runtime_kame_action_gate_missing_tool_disclosure_issues"
+    ] == ["missing_tool_disclosure_ref"]
+    assert voice_result["details"]["async_oracle_smoke"][
+        "runtime_kame_action_gate_missing_tool_disclosure_authorities"
+    ] == ["interpreter_promoted"]
     assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_tool_disclosure_ref_observed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_smoke_ok"] is True
     assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_payload_redacted"] is True

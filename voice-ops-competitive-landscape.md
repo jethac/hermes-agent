@@ -18,9 +18,9 @@ The voice work in upstream Hermes is active and fragmented. There are at least f
 1. Direct Discord realtime voice using OpenAI Realtime.
 2. Generic external voice runtime protocols such as `voice_server`.
 3. Platform-native voice plugins for Daily/WebRTC, Teams CVI, PSTN calls, and Google Meet.
-4. The current branch's KAME-style sidecar/oracle architecture.
+4. The current branch's KAME-style reflex/interpreter/oracle architecture.
 
-The current branch is differentiated. It is the only work I found that explicitly centers the Sakana KAME idea: a low-latency live voice frontend model owns turn-taking, short acknowledgements, barge-in, and spoken responsiveness, while Hermes remains the backend oracle for durable reasoning, tools, files, memory, and approvals.
+The current branch is differentiated. It is the only work I found that explicitly centers the Sakana KAME idea as a Hermes-native three-tier stack: a low-latency reflex owns turn-taking, short acknowledgements, barge-in, and spoken responsiveness; a Gemma-style direct-audio interpreter adjudicates raw audio plus witness transcript hypotheses; and Hermes' active `/model` remains the backend oracle for durable reasoning, tools, files, memory, spend, calls, and approvals.
 
 Other PRs independently converge on parts of that idea:
 
@@ -30,7 +30,7 @@ Other PRs independently converge on parts of that idea:
 - `#49088` Teams CVI describes realtime delegation to Hermes via consult/task tools.
 - `#27040` voice_server splits audio runtime from Hermes and reconciles spoken history.
 
-But none of those appear to implement the full KAME-style contract as the primary product architecture: structured frontend routing, explicit no-tool authority for the frontend, sidecar isolation, frontend/oracle metadata in prompts/status, and provider-neutral KAME bridge tools.
+But none of those appear to implement the full KAME-style contract as the primary product architecture: structured reflex routing, explicit no-tool authority for the reflex, raw-audio interpreter promotion before durable/action evidence, sidecar isolation, reflex/interpreter/oracle metadata in prompts/status, and provider-neutral KAME bridge tools.
 
 ## What KAME Means Here
 
@@ -38,11 +38,12 @@ Sakana KAME is a tandem speech architecture: a fast S2S frontend starts respondi
 
 The current Hermes branch is an applied agent-system version of that pattern, not a literal trained S2S oracle-token model. Its KAME-like elements are:
 
-- Low-latency frontend/interface model owns live speech, routing, turn-taking, barge-in, and brief spoken responses.
-- Hermes backend oracle owns files, tools, memory, approvals, durable work, and session history.
-- Frontend is explicitly denied direct tool/function/MCP/file/memory authority.
-- Frontend escalates via structured routes: `local`, `defer`, `oracle_direct`, `reject_or_clarify`.
-- Runtime metadata labels the architecture as `kame_frontend_oracle`.
+- Low-latency reflex/interface model owns live speech, routing, turn-taking, barge-in, and brief spoken responses.
+- Gemma-style interpreter receives clipped raw audio plus Moshi/open-S2S/classic-ASR witness hypotheses and decides what wording can be promoted.
+- Hermes backend oracle owns files, tools, memory, approvals, durable work, and session history through the existing active `/model`.
+- Reflex and witness transcripts are explicitly denied direct tool/function/MCP/file/memory/payment/call authority.
+- Reflex escalates via structured routes: `local`, `defer`, `oracle_direct`, `reject_or_clarify`.
+- Runtime metadata labels the architecture as `kame_interface_oracle` with separate reflex, interpreter, and oracle evidence fields.
 - Provider-neutral sidecar path supports reference/local, OpenAI Realtime, Gemini Live, and text-oracle/TTS fallback.
 - Evidence and diagnostics are first-class: smoke reports, live evidence artifacts, doctor/status surfaces, replayable event contracts.
 
@@ -53,9 +54,9 @@ The main difference from Sakana KAME is that this branch does not depend on a tr
 | PR | Status | Author | Area | Relevance | KAME Similarity |
 | --- | --- | --- | --- | --- | --- |
 | [#42611](https://github.com/NousResearch/hermes-agent/pull/42611) | Open | joelneleber | Discord live voice transcription | Bounds Discord utterance buffers, prevents every transcript from forcing agent turns by default, refreshes inactivity on inbound voice. | Low. Valuable hygiene for Discord voice input, not an architecture. |
-| [#21504](https://github.com/NousResearch/hermes-agent/pull/21504) | Open | RationallyPrime | Discord realtime mode | Large MVP: OpenAI Realtime wrapper, continuous Discord `AudioSource`, `/voice realtime`, streamed audio deltas, barge-in clearing, tools disabled by default. | Medium-low. Strong transport/playback reference, but mostly direct realtime provider mode rather than frontend/oracle split. |
+| [#21504](https://github.com/NousResearch/hermes-agent/pull/21504) | Open | RationallyPrime | Discord realtime mode | Large MVP: OpenAI Realtime wrapper, continuous Discord `AudioSource`, `/voice realtime`, streamed audio deltas, barge-in clearing, tools disabled by default. | Medium-low. Strong transport/playback reference, but mostly direct realtime provider mode rather than reflex/interpreter/oracle split. |
 | [#27650](https://github.com/NousResearch/hermes-agent/pull/27650) | Open | Solvely-Colin | Discord OpenAI Realtime | Compact OpenAI Realtime Discord implementation with managed auth, live Discord smoke, response cancel, tool-call bridge, continuous stream playback. | Medium. Has live proof and tool bridging, but it lets the realtime provider invoke Hermes tools directly rather than preserving an oracle boundary. |
-| [#51827](https://github.com/NousResearch/hermes-agent/pull/51827) | Open | yungalgo | Browser/WebRTC voice platform | Daily + Deepgram Flux + Cartesia, in-process gateway plugin, barge-in via `agent.interrupt()`, latency telemetry, persistent TTS socket, `voice_model` slot. | Medium. Good production voice-loop patterns, but it is STT -> agent -> TTS/in-process, not KAME sidecar/oracle. |
+| [#51827](https://github.com/NousResearch/hermes-agent/pull/51827) | Open | yungalgo | Browser/WebRTC voice platform | Daily + Deepgram Flux + Cartesia, in-process gateway plugin, barge-in via `agent.interrupt()`, latency telemetry, persistent TTS socket, `voice_model` slot. | Medium. Good production voice-loop patterns, but it is STT -> agent -> TTS/in-process, not KAME reflex/interpreter/oracle. |
 | [#49088](https://github.com/NousResearch/hermes-agent/pull/49088) | Open | ahenawy | Microsoft Teams CVI | Massive Teams voice/video/chat/governance platform. Includes realtime speech-to-speech, video perception, avatar rendering, group gate, realtime delegation via Hermes consult/task. | Medium-high conceptually. Delegation resembles KAME, but scope is Teams-specific and heavy; not a clean provider-neutral KAME substrate. |
 | [#27040](https://github.com/NousResearch/hermes-agent/pull/27040) | Open | tmylk | Generic `voice_server` gateway | External voice runtime owns audio, STT, TTS, turn-taking, barge-in; Hermes owns routing, persistence, auth, history reconciliation; streams assistant deltas to runtime. | High on separation of concerns, medium on KAME. It splits runtime/Hermes cleanly but does not describe a frontend model that reasons locally then escalates via oracle routes. |
 | [#54462](https://github.com/NousResearch/hermes-agent/pull/54462) | Open | fritzpaz | Realtime orchestration API | Adds low-latency `/v1/realtime/*` API: immediate no-tools talker response plus action to start slower background work. | High conceptually. It mirrors fast/deep routing, but is API/chat orchestration rather than full voice sidecar/audio implementation. |
@@ -91,7 +92,7 @@ Weaknesses:
 
 Recommendation:
 
-Borrow transport proof, auth handling, event mapping, response cancel, playback details, and smoke scripts. Do not adopt the direct tool-call architecture as the main design. Keep OpenAI Realtime as a frontend provider behind the KAME sidecar/oracle boundary.
+Borrow transport proof, auth handling, event mapping, response cancel, playback details, and smoke scripts. Do not adopt the direct tool-call architecture as the main design. Keep OpenAI Realtime as a reflex/provider candidate behind the KAME interpreter and oracle authority boundary.
 
 ### 2. Generic External Voice Runtime
 
@@ -110,7 +111,7 @@ Weaknesses:
 
 - The external runtime is not necessarily a low-latency reasoning frontend. It may just be STT/TTS/transport.
 - It adds a new platform protocol surface in core.
-- It does not encode KAME routes, oracle authority boundaries, or frontend capability flags.
+- It does not encode KAME routes, interpreter promotion, oracle authority boundaries, or reflex capability flags.
 
 Recommendation:
 
@@ -139,7 +140,7 @@ Weaknesses:
 
 Recommendation:
 
-Use these PRs as evidence that voice is not one Discord feature; it is a product category. The current KAME sidecar/oracle protocol can be positioned as the shared substrate that platform plugins can target over time.
+Use these PRs as evidence that voice is not one Discord feature; it is a product category. The current KAME reflex/interpreter/oracle protocol can be positioned as the shared substrate that platform plugins can target over time.
 
 ### 4. Realtime Orchestration Without Audio
 
@@ -171,12 +172,12 @@ No other PR I found implements the full hybrid KAME-style approach as the centra
 The current branch appears unique in combining:
 
 - Explicit KAME vocabulary and role metadata.
-- Frontend/oracle split.
+- Reflex/interpreter/oracle split.
 - Provider-neutral sidecar.
 - Structured reflex routes.
-- Frontend no-tool-authority rule.
+- Reflex and witness-transcript no-tool-authority rule.
 - Hermes backend oracle prompt context.
-- OpenAI/Gemini frontend-provider integration without granting them direct Hermes authority by default.
+- OpenAI/Gemini reflex/provider integration without granting them direct Hermes authority by default.
 - Replayable diagnostics and evidence gates.
 
 ### Closest Analogues
@@ -184,7 +185,7 @@ The current branch appears unique in combining:
 1. `#36903` Google Meet issue:
    - Fast conversation path plus deep Hermes/tool background path.
    - Wake gate, immediate acknowledgement, async worker.
-   - Closest conceptual match, but not Discord, not merged, and not framed around sidecar/oracle protocol.
+   - Closest conceptual match, but not Discord, not merged, and not framed around reflex/interpreter/oracle protocol.
 
 2. `#54462` realtime orchestration API:
    - Immediate talker response plus deferred tasks.
@@ -229,25 +230,25 @@ user keeps speaking -> reflex keeps conversing
 
 The logical capacity limit should come from the available oracle compute and safety policy. For a DGX Spark running Nemotron-3 Super, a plausible first bound is four concurrent oracle tasks. The reflex should expose that limit conversationally: accept work until the pool is full, summarize active work, prioritize or cancel tasks when asked, and avoid pretending that background work is complete before the oracle reports evidence.
 
-This is also where the current branch can learn from `#36903` and `#54462`. Those efforts explicitly model fast/deep routing and background task lifecycle. Our advantage is the stricter voice frontend/oracle authority model; their useful lesson is that the oracle side should become a real async task queue with progress, cancellation, and capacity management.
+This is also where the current branch can learn from `#36903` and `#54462`. Those efforts explicitly model fast/deep routing and background task lifecycle. Our advantage is the stricter reflex/interpreter/oracle authority model: witness text is context for Gemma, promoted evidence is required for durable/action work, and the oracle side becomes a real async task queue with progress, cancellation, and capacity management.
 
 ## Strategic Positioning
 
 The strongest argument for the current branch is not "we added Discord voice." Others have also done that. The strongest argument is:
 
-Hermes needs a realtime voice architecture that preserves Hermes' agent boundary. Direct realtime providers are good interfaces, but they should not become the agent. The KAME sidecar/oracle split lets Hermes get low-latency voice while keeping tools, memory, approvals, and durable work inside Hermes.
+Hermes needs a realtime voice architecture that preserves Hermes' agent boundary. Direct realtime providers are good interfaces, but they should not become the agent. The KAME reflex/interpreter/oracle split lets Hermes get low-latency voice while keeping tools, memory, approvals, spend, calls, and durable work inside Hermes.
 
 Positioning points:
 
 - Direct OpenAI Realtime PRs prove the demo, but KAME proves the product architecture.
-- `voice_server` proves runtime separation, but KAME adds the frontend/oracle authority model.
+- `voice_server` proves runtime separation, but KAME adds the reflex/interpreter/oracle authority model.
 - Platform plugins prove demand across Discord, Meet, Teams, Daily, and PSTN, but KAME offers a common substrate.
-- The current branch already incorporates lessons from the direct PRs: bounded STT, persistent playback, barge-in cancellation, provider event mapping, OpenAI/Gemini frontend providers, smoke evidence.
+- The current branch already incorporates lessons from the direct PRs: bounded STT, persistent playback, barge-in cancellation, provider event mapping, OpenAI/Gemini reflex providers, smoke evidence.
 
 ## Risks
 
 1. Complexity risk:
-   - KAME sidecar/oracle is harder to explain than "OpenAI Realtime in Discord."
+   - KAME reflex/interpreter/oracle is harder to explain than "OpenAI Realtime in Discord."
    - Mitigation: lead with a small stack of upstreamable PRs: bounded receiver, persistent mixer, sidecar protocol, provider adapters.
 
 2. Premature architecture risk:
@@ -256,7 +257,7 @@ Positioning points:
 
 3. Provider parity risk:
    - Direct realtime PRs may look better in live demos.
-   - Mitigation: keep OpenAI Realtime and Gemini Live as KAME frontend providers and show equal or better live evidence.
+   - Mitigation: keep OpenAI Realtime and Gemini Live as KAME reflex/provider candidates and show equal or better live evidence.
 
 4. Core footprint risk:
    - Voice can sprawl into core prompt/tool/config.
@@ -269,7 +270,7 @@ Positioning points:
 ## Recommended Next Moves
 
 1. Write the PR narrative around the authority boundary:
-   - Frontend provider can speak and route.
+   - Reflex/provider can speak and route.
    - Hermes oracle can reason and act.
    - Tools/files/memory never move into the voice vendor by accident.
 
@@ -278,7 +279,7 @@ Positioning points:
    - PR 2: persistent Discord realtime mixer/playback (`#21504`/`#44023` lessons).
    - PR 3: provider-neutral realtime voice sidecar protocol and reference provider.
    - PR 4: Discord KAME integration with status/doctor/evidence.
-   - PR 5: OpenAI/Gemini frontend providers behind the KAME boundary.
+   - PR 5: OpenAI/Gemini reflex providers behind the KAME boundary.
 
 3. Make reflex/oracle scheduling truly async:
    - Keep the reflex session live while oracle tasks run.

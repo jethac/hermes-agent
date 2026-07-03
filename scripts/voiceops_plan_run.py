@@ -1813,6 +1813,12 @@ async def build_plan_run_async(
                     "witness_fusion_no_duplicate_oracle_jobs": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_no_duplicate_oracle_jobs"
                     ],
+                    "witness_fusion_adjudications": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"]["witness_fusion_adjudications"]
+                    ),
+                    "witness_fusion_adjudication_outcomes_observed": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_fusion_adjudication_outcomes_observed"],
                     "runtime_kame_action_gate_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
                         "runtime_kame_action_gate_smoke_ok"
                     ],
@@ -1859,6 +1865,37 @@ async def build_plan_run_async(
                     "runtime_kame_action_gate_promoted_consumed_before_action": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["runtime_kame_action_gate_promoted_consumed_before_action"],
+                    "runtime_kame_action_gate_self_attested_ok": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["runtime_kame_action_gate_self_attested_ok"],
+                    "runtime_kame_action_gate_self_attested_issues": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "runtime_kame_action_gate_self_attested_issues"
+                        ]
+                    ),
+                    "runtime_kame_action_gate_self_attested_authorities": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "runtime_kame_action_gate_self_attested_authorities"
+                        ]
+                    ),
+                    "runtime_kame_action_gate_self_attested_consumed_before_action": voice_operator[
+                        "proofs"
+                    ]["async_oracle_jobs"][
+                        "runtime_kame_action_gate_self_attested_consumed_before_action"
+                    ],
+                    "runtime_kame_action_gate_missing_tool_disclosure_ok": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["runtime_kame_action_gate_missing_tool_disclosure_ok"],
+                    "runtime_kame_action_gate_missing_tool_disclosure_issues": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "runtime_kame_action_gate_missing_tool_disclosure_issues"
+                        ]
+                    ),
+                    "runtime_kame_action_gate_missing_tool_disclosure_authorities": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "runtime_kame_action_gate_missing_tool_disclosure_authorities"
+                        ]
+                    ),
                     "runtime_kame_action_gate_tool_disclosure_ref_observed": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["runtime_kame_action_gate_tool_disclosure_ref_observed"],

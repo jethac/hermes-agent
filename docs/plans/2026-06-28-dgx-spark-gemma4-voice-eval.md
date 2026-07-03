@@ -36,7 +36,7 @@ Recent DGX Spark reports suggest this ranking for Hermes:
 | Local oracle | Nemotron 3 Super via Hermes `/model` to a local Spark endpoint | Sponsor-aligned serious reasoning target with an explicit Spark-local deployment path; must be benchmarked before one-Spark readiness is claimed. | Serving image/version and memory profile details matter. |
 | Oracle comparison | Gemma 4 26B-A4B via vLLM | Reported around 24-40 decode tok/s, with strong prefill and workable memory use on single Spark. | Comparison target, not the primary VoiceOps brain. |
 | Cloud voice baseline | Cartesia bridge | We already have a Hermes STT/TTS bridge. Good for proving the voice path while local speech work proceeds. | Cloud dependency; not a local-only answer. |
-| Local voice pipeline | Nemotron Speech or Riva-like ASR + Magpie/Riva TTS | Pipecat/Nemotron/Magpie is the only well-instrumented Spark voice pipeline found, around 1.2s server-side voice-to-voice in reported runs. | Need a Hermes-compatible bridge; full Riva setup reports include install pain. |
+| Local auxiliary transcript/TTS fallback | Nemotron Speech or Riva-like ASR + Magpie/Riva TTS | Pipecat/Nemotron/Magpie is the only well-instrumented Spark speech-services stack found, around 1.2s server-side voice-to-voice in reported runs. In Hermes KAME, ASR output is an optional `classic_asr_hypothesis` for diagnostics, captions, or fallback, not the normal reflex control path. | Need a Hermes-compatible bridge; full Riva setup reports include install pain. |
 | Reflex/floor-control S2S | Moshi/PersonaPlex-class models | Useful architecture fit for immediate acknowledgement and rough transcript hypotheses; Spark reports mention choppy/unusable full-duplex audio in some deployments. | Candidate for reflex only after stable audio/noise-gate validation; transcript output is evidence, not truth. |
 | Direct speech LLM | Ultravox | No confirmed DGX Spark deployment numbers found. | Watchlist only. |
 | Any-to-any multimodal S2S | Qwen Omni-class models | Potentially useful for combined speech input/output and multimodal perception. | Watchlist until serving complexity, latency, and authority-boundary behavior are measured locally. |
@@ -311,8 +311,11 @@ Expected external service:
   - Moshi/PersonaPlex-class S2S or smaller timing/noise-gated model for reflex
     floor control and rough transcript hypotheses.
   - Gemma 4 E2B/E4B/12B for raw-audio interpreter evidence.
-  - Nemotron Speech streaming ASR + Magpie/Riva-like TTS.
-  - Riva/NVIDIA speech stack if installation is stable enough.
+  - Nemotron Speech streaming ASR + Magpie/Riva-like TTS as auxiliary
+    transcript/TTS fallback services when the full reflex/interpreter path is
+    unavailable.
+  - Riva/NVIDIA speech stack if installation is stable enough, with ASR output
+    recorded as `classic_asr_hypothesis` rather than control-path truth.
   - Pipecat as a reference latency harness, not as the Hermes brain.
 - Hermes profile preset: `nvidia_speech`, which points the local speech lane at
   the Nemotron Speech ASR proxy and Magpie TTS proxy by default when the KAME

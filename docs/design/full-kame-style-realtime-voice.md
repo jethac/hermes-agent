@@ -10,10 +10,10 @@ Preferred local oracle target: Hermes active `/model`, with Nemotron 3 Super as 
 Current pivot: raw voice is the normal evidence path into the interpreter.
 Moshi/open-S2S or classic STT text may accompany that raw voice as labeled
 context, but it must not become the scheduler, the durable transcript, or a
-second prompt competing with the interpreter. The runtime may look
-three-tier-ish rather than perfectly staged: fast reflex, direct-audio
-interpreter, optional/fallback transcript hypotheses as evidence, and Hermes's
-active model as oracle.
+second prompt competing with the interpreter. The runtime target is
+three-tier sensor fan-in: fast reflex, direct-audio interpreter,
+optional/fallback transcript hypotheses as non-authoritative witness context,
+and Hermes's active model as oracle.
 
 Current clarification: Moshi/STT transcript capture is not a fourth agent lane.
 It is an attachment producer for the interpreter evidence bundle. The session

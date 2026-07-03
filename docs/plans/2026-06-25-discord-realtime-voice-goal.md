@@ -29,7 +29,9 @@ and tests that prevent the June 9 failure shape from returning.
 This document records the June 9 hardening goal and its evidence trail. The
 current KAME architecture target is tracked in
 `docs/design/full-kame-style-realtime-voice.md`; that successor design preserves
-the June 9 reliability requirements while adding the reflex/oracle split.
+the June 9 reliability requirements while adding the reflex/interpreter/oracle
+split. The reflex owns floor control, the interpreter promotes raw-audio
+evidence, and Hermes' active `/model` remains the oracle.
 
 ---
 
@@ -423,8 +425,9 @@ Still remaining before this goal can be marked complete:
 4. Hermes connects the realtime sidecar or provider bridge.
 5. Hermes reports voice mode as realtime, not generic TTS.
 6. User speech is streamed as audio frames to the realtime session.
-7. Realtime path emits audio/reflex events first; transcript partial/final
-   events are optional auxiliary evidence when enabled.
+7. Realtime path emits audio/reflex events first; transcript-looking partial
+   or final events are optional witness hypotheses attached to the same
+   raw-audio interpreter bundle when enabled.
 8. Hermes emits a fast acknowledgement for work that will take more than a
    short moment.
 9. TTS/audio output is played through the mixer.

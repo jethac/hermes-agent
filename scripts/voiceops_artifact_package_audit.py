@@ -2060,6 +2060,10 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "witness_fusion_no_duplicate_oracle_jobs": bool(
                 async_smoke.get("witness_fusion_no_duplicate_oracle_jobs")
             ),
+            "witness_fusion_adjudications": async_smoke.get("witness_fusion_adjudications") or {},
+            "witness_fusion_adjudication_outcomes_observed": bool(
+                async_smoke.get("witness_fusion_adjudication_outcomes_observed")
+            ),
             "witness_fusion_accepted_counts": async_smoke.get("witness_fusion_accepted_counts") or {},
             "witness_fusion_started_counts": async_smoke.get("witness_fusion_started_counts") or {},
             "witness_fusion_completed_counts": async_smoke.get("witness_fusion_completed_counts") or {},
@@ -2111,6 +2115,31 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "runtime_kame_action_gate_promoted_consumed_before_action": bool(
                 async_smoke.get("runtime_kame_action_gate_promoted_consumed_before_action")
             ),
+            "runtime_kame_action_gate_self_attested_ok": async_smoke.get(
+                "runtime_kame_action_gate_self_attested_ok"
+            ),
+            "runtime_kame_action_gate_self_attested_issues": async_smoke.get(
+                "runtime_kame_action_gate_self_attested_issues"
+            )
+            or [],
+            "runtime_kame_action_gate_self_attested_authorities": async_smoke.get(
+                "runtime_kame_action_gate_self_attested_authorities"
+            )
+            or [],
+            "runtime_kame_action_gate_self_attested_consumed_before_action": bool(
+                async_smoke.get("runtime_kame_action_gate_self_attested_consumed_before_action")
+            ),
+            "runtime_kame_action_gate_missing_tool_disclosure_ok": async_smoke.get(
+                "runtime_kame_action_gate_missing_tool_disclosure_ok"
+            ),
+            "runtime_kame_action_gate_missing_tool_disclosure_issues": async_smoke.get(
+                "runtime_kame_action_gate_missing_tool_disclosure_issues"
+            )
+            or [],
+            "runtime_kame_action_gate_missing_tool_disclosure_authorities": async_smoke.get(
+                "runtime_kame_action_gate_missing_tool_disclosure_authorities"
+            )
+            or [],
             "runtime_kame_action_gate_tool_disclosure_ref_observed": bool(
                 async_smoke.get("runtime_kame_action_gate_tool_disclosure_ref_observed")
             ),
