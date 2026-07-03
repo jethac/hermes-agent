@@ -1505,6 +1505,8 @@ Integration tests:
 - sidecar unavailable fallback
 - TTS unavailable fallback
 - realtime reflex unavailable fallback to STT-fed routing
+- fail-closed sidecar failure after oracle-job acceptance emits `SESSION_ERROR`
+  and drains/cancels active oracle jobs with the configured shutdown timeout
 - escalated turn includes interpreter evidence and optional auxiliary transcript
   evidence when configured
 - interpreter evidence can patch a queued/running oracle job without blocking

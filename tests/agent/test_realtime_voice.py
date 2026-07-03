@@ -9740,6 +9740,86 @@ def test_text_engine_falls_back_to_local_stt_when_sidecar_send_fails(monkeypatch
     asyncio.run(run())
 
 
+def test_kame_engine_fail_closed_sidecar_send_failure_cancels_external_oracle_job():
+    class FailingSendSidecar(FakeSidecar):
+        async def send_event(self, event):
+            raise RuntimeError("send failed at http://user:pass@voice.local/v1?token=abc")
+
+    class BlockingOracle:
+        def __init__(self):
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            await asyncio.Event().wait()
+            yield "unreachable"
+
+    async def run():
+        oracle = BlockingOracle()
+        sidecar = FailingSendSidecar()
+        engine = KameInterfaceOracleEngine(oracle=oracle, sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                sidecar_base_url="http://voice.local:8080",
+                fallback_policy="fail_closed",
+                oracle_jobs={
+                    "enabled": True,
+                    "max_concurrent": 1,
+                    "queue_limit": 4,
+                    "shutdown_timeout_seconds": 0.2,
+                },
+            )
+        )
+
+        response = await engine.submit_external_brain_request(
+            {
+                "tool_name": "ask_brain",
+                "tool_call_id": "voiceclaw-call-1",
+                "arguments": {
+                    "query": "provision the phone bridge",
+                    "interface_already_said": "I am preparing the phone bridge.",
+                },
+            },
+            source="voiceclaw",
+        )
+
+        seen = []
+        events = engine.events()
+        while True:
+            event = await asyncio.wait_for(anext(events), timeout=1)
+            seen.append(event)
+            if any(item.type == VoiceEventType.SESSION_ERROR for item in seen) and any(
+                item.type == VoiceEventType.ORACLE_JOB_CANCELLED for item in seen
+            ):
+                break
+
+        assert response["accepted"] is True
+        assert response["job_id"] == "voice-oracle-001"
+        assert len(oracle.requests) <= 1
+        cancelled = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_CANCELLED)
+        assert cancelled.payload["job_id"] == "voice-oracle-001"
+        assert cancelled.payload["state"] == "cancelled"
+        assert cancelled.payload["cancel_reason"] == "sidecar_send_failed"
+        error = next(event for event in seen if event.type == VoiceEventType.SESSION_ERROR)
+        assert error.payload["reason"] == "sidecar_send_failed"
+        assert error.payload["sidecar"] is False
+        assert "fallback_policy=fail_closed" in error.payload["error"]
+        assert "send failed" in error.payload["error"]
+        assert "user:pass" not in error.payload["error"]
+        assert "token=abc" not in error.payload["error"]
+        status = await engine.get_oracle_job_status()
+        assert status["jobs"][0]["state"] == "cancelled"
+        assert status["capacity"]["active"] == 0
+        assert engine._sidecar is None
+        assert sidecar.closed is True
+        await engine.close()
+
+    asyncio.run(run())
+
+
 def test_kame_text_engine_suppresses_blank_audio_partial_in_normal_mode(monkeypatch):
     async def run():
         async def fake_speak(self, text, playback_generation):

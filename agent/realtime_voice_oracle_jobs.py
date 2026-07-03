@@ -648,6 +648,7 @@ class OracleJobManager:
                 self.wait_for_idle(),
                 timeout=_positive_float(timeout_seconds, default=2.0),
             )
+            await self._force_cancel_remaining(reason=reason)
             return True
         except TimeoutError:
             await self._force_cancel_remaining(reason=reason)

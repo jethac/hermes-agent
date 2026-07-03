@@ -739,6 +739,9 @@ instead of adding a second hidden agent path.
   session jobs.
 - Late output from cancelled jobs is dropped from speech and durable completed
   history.
+- In `fallback_policy = "fail_closed"` mode, sidecar session errors, event-stream
+  failures, and send failures request bounded oracle-job shutdown so accepted
+  KAME work is cancelled instead of running after the realtime frontend is gone.
 
 ### Result Handling
 
@@ -817,6 +820,8 @@ Extend Discord realtime tests:
 - `/voice status` includes oracle job capacity and state
 - leaving the voice channel requests cancellation/drain for active jobs
 - sidecar crash marks active jobs failed/cancelled without hanging gateway
+- fail-closed sidecar send failure after oracle-job acceptance emits
+  `SESSION_ERROR` and transitions the accepted job out of active capacity
 
 ### External Frontend Tests
 

@@ -593,56 +593,22 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 elif event.type == VoiceEventType.SESSION_ERROR:
                     self._frontend_output_active = False
                     error = sanitize_realtime_voice_error(event.payload.get("error") or "")
-                    await self._disable_sidecar()
-                    if _realtime_voice_fail_closed(self.config):
-                        await self._emit(
-                            VoiceEventType.SESSION_ERROR,
-                            {
-                                "reason": "sidecar_session_error",
-                                "error": (
-                                    "realtime voice sidecar session error and "
-                                    f"fallback_policy=fail_closed: {error}"
-                                ),
-                                "sidecar": False,
-                            },
-                        )
-                        return
-                    await self._emit(
-                        VoiceEventType.FRONTEND_STATE,
-                        {
-                            "status": "fallback",
-                            "reason": "sidecar_session_error",
-                            "error": error,
-                            "sidecar": False,
-                        },
+                    await self._handle_sidecar_failure(
+                        reason="sidecar_session_error",
+                        error=error,
+                        fallback_status="fallback",
+                        fail_closed_error_prefix="realtime voice sidecar session error",
                     )
                     return
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            await self._disable_sidecar()
             error = sanitize_realtime_voice_error(exc)
-            if _realtime_voice_fail_closed(self.config):
-                await self._emit(
-                    VoiceEventType.SESSION_ERROR,
-                    {
-                        "reason": "sidecar_event_stream_failed",
-                        "error": (
-                            "realtime voice sidecar event stream failed and "
-                            f"fallback_policy=fail_closed: {error}"
-                        ),
-                        "sidecar": False,
-                    },
-                )
-                return
-            await self._emit(
-                VoiceEventType.FRONTEND_STATE,
-                {
-                    "status": "degraded",
-                    "reason": "sidecar_event_stream_failed",
-                    "error": error,
-                    "sidecar": False,
-                },
+            await self._handle_sidecar_failure(
+                reason="sidecar_event_stream_failed",
+                error=error,
+                fallback_status="degraded",
+                fail_closed_error_prefix="realtime voice sidecar event stream failed",
             )
 
     async def _handle_interface_intent_final(self, event: VoiceEvent, *, from_sidecar: bool = False) -> bool:
@@ -862,17 +828,62 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             await self._sidecar.send_event(event)  # type: ignore[attr-defined]
             return True
         except Exception as exc:
-            await self._disable_sidecar()
+            await self._handle_sidecar_failure(
+                reason="sidecar_send_failed",
+                error=sanitize_realtime_voice_error(exc),
+                fallback_status="fallback",
+                fail_closed_error_prefix="realtime voice sidecar send failed",
+            )
+            return False
+
+    async def _handle_sidecar_failure(
+        self,
+        *,
+        reason: str,
+        error: str,
+        fallback_status: str,
+        fail_closed_error_prefix: str,
+    ) -> None:
+        await self._disable_sidecar()
+        if _realtime_voice_fail_closed(self.config):
+            await self._shutdown_oracle_jobs_for_frontend_failure(reason)
             await self._emit(
-                VoiceEventType.FRONTEND_STATE,
+                VoiceEventType.SESSION_ERROR,
                 {
-                    "status": "fallback",
-                    "reason": "sidecar_send_failed",
-                    "error": sanitize_realtime_voice_error(exc),
+                    "reason": reason,
+                    "error": f"{fail_closed_error_prefix} and fallback_policy=fail_closed: {error}",
                     "sidecar": False,
                 },
             )
-            return False
+            return
+        await self._emit(
+            VoiceEventType.FRONTEND_STATE,
+            {
+                "status": fallback_status,
+                "reason": reason,
+                "error": error,
+                "sidecar": False,
+            },
+        )
+
+    async def _shutdown_oracle_jobs_for_frontend_failure(self, reason: str) -> None:
+        manager = self._oracle_job_manager
+        if manager is None:
+            return
+        timeout_seconds = _oracle_jobs_config_float(
+            self.config,
+            "shutdown_timeout_seconds",
+            default=2.0,
+        )
+
+        async def shutdown() -> None:
+            await manager.shutdown(
+                reason=reason,
+                timeout_seconds=timeout_seconds,
+            )
+
+        task = asyncio.create_task(shutdown())
+        task.add_done_callback(_consume_background_task_exception)
 
     async def _disable_sidecar(self) -> None:
         sidecar = self._sidecar
@@ -2862,6 +2873,11 @@ def _payload_generation(payload: dict) -> Optional[int]:
 
 def _realtime_voice_fail_closed(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
     return str(getattr(config, "fallback_policy", "") or "").strip().lower() == "fail_closed"
+
+
+def _consume_background_task_exception(task: asyncio.Task[Any]) -> None:
+    with contextlib.suppress(asyncio.CancelledError, Exception):
+        task.exception()
 
 
 def _kame_cancellation_token(config: Optional[RealtimeVoiceSessionConfig], playback_generation: int) -> str:
