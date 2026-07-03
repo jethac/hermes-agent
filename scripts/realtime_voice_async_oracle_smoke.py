@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from agent.realtime_voice import RealtimeVoiceEngineKind, RealtimeVoiceSessionConfig, VoiceEvent, VoiceEventType
-from agent.realtime_voice_kame import KameOracleRequest
+from agent.realtime_voice_kame import KameOracleRequest, KameRoute
 from agent.realtime_voice_oracle_jobs import OracleJobManager
 from agent.realtime_voice_session import RealtimeVoiceSession
 from agent.realtime_voice_text_engine import KameInterfaceOracleEngine
@@ -1685,6 +1685,221 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
     }
 
 
+async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
+    """Prove witness text joins one bundle whether it is early, with, or late."""
+
+    events: list[Any] = []
+    releases: dict[str, asyncio.Event] = {}
+
+    async def runner(job: Any) -> str:
+        key = str(getattr(job, "reflex_intent", "") or getattr(job, "intent", "") or job.oracle_text)
+        releases.setdefault(key, asyncio.Event())
+        await releases[key].wait()
+        return f"done {key}"
+
+    manager = OracleJobManager(max_concurrent=1, runner=runner, event_callback=events.append)
+
+    occupying = await manager.submit(
+        KameOracleRequest(
+            session_id="voice-smoke-witness-fusion",
+            turn_id="witness-fusion:occupying",
+            source="discord_voice",
+            user_id="42",
+            intent="occupy oracle worker",
+            route=KameRoute.DEFER,
+            interface_already_said="Starting a blocking task.",
+        )
+    )
+    await asyncio.sleep(0)
+
+    early_request = KameOracleRequest(
+        session_id="voice-smoke-witness-fusion",
+        turn_id="witness-fusion:early",
+        source="voiceclaw",
+        user_id="42",
+        intent="prepare early witness handoff",
+        route=KameRoute.DEFER,
+        transcript="prepare early witness handoff",
+        transcript_source="reflex_audio",
+        interface_input_source="ask_brain",
+        interface_already_said="Preparing the early witness handoff.",
+        auxiliary_transcript_hypotheses=(
+            {
+                "source": "moshi",
+                "text": "prepare early witness handoff",
+                "authority": "hypothesis",
+                "arrival_phase": "before_raw_audio",
+            },
+        ),
+    )
+    early = await manager.submit(early_request)
+    early_initial_bundle_id = early.request.evidence_bundle_id
+    await manager.add_interpreter_evidence(
+        early.job_id,
+        audio_segment_ref="artifact://voice/witness-early.wav",
+        audio_time_range_ms=(100, 1400),
+        auxiliary_transcript_hypotheses=(
+            {
+                "source": "moshi",
+                "text": "prepare early witness handoff",
+                "authority": "hypothesis",
+                "arrival_phase": "before_raw_audio",
+            },
+        ),
+        source="gemma_interpreter",
+    )
+    early_status = await manager.status_view()
+    early_status_job = next(job for job in early_status["jobs"] if job["job_id"] == early.job_id)
+    early_final_bundle_id = str(early_status_job.get("evidence_bundle_id") or "")
+    releases.setdefault("occupy oracle worker", asyncio.Event()).set()
+    await asyncio.sleep(0)
+    releases.setdefault("prepare early witness handoff", asyncio.Event()).set()
+    await manager.wait_for_idle()
+
+    with_raw = await manager.submit(
+        KameOracleRequest(
+            session_id="voice-smoke-witness-fusion",
+            turn_id="witness-fusion:with",
+            source="voiceclaw",
+            user_id="42",
+            intent="prepare with witness handoff",
+            route=KameRoute.DEFER,
+            transcript="prepare with witness handoff",
+            transcript_source="reflex_audio",
+            audio_segment_ref="artifact://voice/witness-with.wav",
+            audio_time_range_ms=(200, 1500),
+            interface_input_source="ask_brain",
+            interface_already_said="Preparing the with witness handoff.",
+            auxiliary_transcript_hypotheses=(
+                {
+                    "source": "moshi",
+                    "text": "prepare with witness handoff",
+                    "authority": "hypothesis",
+                    "arrival_phase": "with_raw_audio",
+                },
+            ),
+        )
+    )
+    releases.setdefault("prepare with witness handoff", asyncio.Event()).set()
+    await manager.wait_for_idle()
+    with_status = await manager.status_view()
+    with_status_job = next(job for job in with_status["jobs"] if job["job_id"] == with_raw.job_id)
+
+    late = await manager.submit(
+        KameOracleRequest(
+            session_id="voice-smoke-witness-fusion",
+            turn_id="witness-fusion:late",
+            source="voiceclaw",
+            user_id="42",
+            intent="prepare late witness handoff",
+            route=KameRoute.DEFER,
+            transcript="prepare late witness handoff",
+            transcript_source="reflex_audio",
+            audio_segment_ref="artifact://voice/witness-late.wav",
+            audio_time_range_ms=(300, 1600),
+            interface_input_source="ask_brain",
+            interface_already_said="Preparing the late witness handoff.",
+        )
+    )
+    await asyncio.sleep(0)
+    late_initial_bundle_id = late.request.evidence_bundle_id
+    await manager.add_interpreter_evidence(
+        late.job_id,
+        audio_segment_ref="artifact://voice/witness-late.wav",
+        audio_time_range_ms=(300, 1600),
+        auxiliary_transcript_hypotheses=(
+            {
+                "source": "moshi",
+                "text": "prepare late witness handoff",
+                "authority": "hypothesis",
+                "arrival_phase": "after_interpreter_start",
+            },
+        ),
+        source="gemma_interpreter",
+    )
+    late_status = await manager.status_view()
+    late_status_job = next(job for job in late_status["jobs"] if job["job_id"] == late.job_id)
+    late_final_bundle_id = str(late_status_job.get("evidence_bundle_id") or "")
+    releases.setdefault("prepare late witness handoff", asyncio.Event()).set()
+    await manager.wait_for_idle()
+
+    case_jobs = {
+        "early": early.job_id,
+        "with": with_raw.job_id,
+        "late": late.job_id,
+    }
+    def event_matches(event: Any, event_type: str, job_id: str) -> bool:
+        return str(getattr(getattr(event, "type", ""), "value", getattr(event, "type", ""))) == event_type and (
+            str(getattr(event, "job_id", "")) == job_id
+        )
+
+    accepted_counts = {
+        label: sum(
+            event_matches(event, "oracle.job.accepted", job_id)
+            for event in events
+        )
+        for label, job_id in case_jobs.items()
+    }
+    started_counts = {
+        label: sum(
+            event_matches(event, "oracle.job.started", job_id)
+            for event in events
+        )
+        for label, job_id in case_jobs.items()
+    }
+    completed_counts = {
+        label: sum(
+            event_matches(event, "oracle.job.completed", job_id)
+            for event in events
+        )
+        for label, job_id in case_jobs.items()
+    }
+    early_single_bundle = (
+        early_initial_bundle_id == early_final_bundle_id
+        and early_status_job.get("evidence_bundle", {}).get("status") == "primary_audio"
+        and early_status_job.get("evidence_bundle", {}).get("transcript_hypotheses_count") == 2
+        and early_status_job.get("evidence_bundle", {}).get("raw_audio_available") is True
+    )
+    with_single_bundle = (
+        with_raw.request.evidence_bundle_id == str(with_status_job.get("evidence_bundle_id") or "")
+        and with_status_job.get("evidence_bundle", {}).get("status") == "primary_audio"
+        and with_status_job.get("evidence_bundle", {}).get("transcript_hypotheses_count") == 2
+        and with_status_job.get("evidence_bundle", {}).get("raw_audio_available") is True
+    )
+    late_single_bundle = (
+        late_initial_bundle_id == late_final_bundle_id
+        and late_status_job.get("evidence_bundle", {}).get("status") == "primary_audio"
+        and late_status_job.get("evidence_bundle", {}).get("transcript_hypotheses_count") == 2
+        and late_status_job.get("evidence_bundle", {}).get("raw_audio_available") is True
+        and late_status_job.get("interpreter_evidence_late") is True
+    )
+    no_duplicate_oracle_jobs = all(
+        accepted_counts[label] == 1 and started_counts[label] == 1 and completed_counts[label] == 1
+        for label in case_jobs
+    )
+    return {
+        "ok": early_single_bundle and with_single_bundle and late_single_bundle and no_duplicate_oracle_jobs,
+        "witness_fusion_timing_smoke_ok": early_single_bundle
+        and with_single_bundle
+        and late_single_bundle
+        and no_duplicate_oracle_jobs,
+        "witness_fusion_arrival_phases": ["before_raw_audio", "with_raw_audio", "after_interpreter_start"],
+        "witness_fusion_case_job_ids": case_jobs,
+        "witness_fusion_early_initial_bundle_id": early_initial_bundle_id,
+        "witness_fusion_early_final_bundle_id": early_final_bundle_id,
+        "witness_fusion_early_single_bundle": early_single_bundle,
+        "witness_fusion_with_bundle_id": with_raw.request.evidence_bundle_id,
+        "witness_fusion_with_single_bundle": with_single_bundle,
+        "witness_fusion_late_initial_bundle_id": late_initial_bundle_id,
+        "witness_fusion_late_final_bundle_id": late_final_bundle_id,
+        "witness_fusion_late_single_bundle": late_single_bundle,
+        "witness_fusion_no_duplicate_oracle_jobs": no_duplicate_oracle_jobs,
+        "witness_fusion_accepted_counts": accepted_counts,
+        "witness_fusion_started_counts": started_counts,
+        "witness_fusion_completed_counts": completed_counts,
+    }
+
+
 async def _run_audit_scalar_redaction_smoke() -> dict[str, Any]:
     """Prove oracle job JSONL audit rows redact scalar payload fields."""
     release = asyncio.Event()
@@ -2137,6 +2352,7 @@ async def run_smoke() -> dict[str, Any]:
     sidecar_control_smoke = await _run_sidecar_control_smoke()
     external_frontend_bridge_smoke = await _run_external_frontend_bridge_smoke()
     unpromoted_hypothesis_smoke = await _run_unpromoted_transcript_hypothesis_smoke()
+    witness_fusion_timing_smoke = await _run_witness_fusion_timing_smoke()
     audit_scalar_smoke = await _run_audit_scalar_redaction_smoke()
 
     started = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_STARTED]
@@ -2539,6 +2755,7 @@ async def run_smoke() -> dict[str, Any]:
             and sidecar_control_smoke["ok"]
             and external_frontend_bridge_smoke["ok"]
             and unpromoted_hypothesis_smoke["ok"]
+            and witness_fusion_timing_smoke["ok"]
             and audit_scalar_smoke["ok"]
         ),
         "scenario": "async_kame_oracle_jobs_fake",
@@ -2801,6 +3018,51 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "unpromoted_hypothesis_update_summary": unpromoted_hypothesis_smoke[
             "unpromoted_hypothesis_update_summary"
+        ],
+        "witness_fusion_timing_smoke_ok": witness_fusion_timing_smoke[
+            "witness_fusion_timing_smoke_ok"
+        ],
+        "witness_fusion_arrival_phases": witness_fusion_timing_smoke[
+            "witness_fusion_arrival_phases"
+        ],
+        "witness_fusion_case_job_ids": witness_fusion_timing_smoke[
+            "witness_fusion_case_job_ids"
+        ],
+        "witness_fusion_early_initial_bundle_id": witness_fusion_timing_smoke[
+            "witness_fusion_early_initial_bundle_id"
+        ],
+        "witness_fusion_early_final_bundle_id": witness_fusion_timing_smoke[
+            "witness_fusion_early_final_bundle_id"
+        ],
+        "witness_fusion_early_single_bundle": witness_fusion_timing_smoke[
+            "witness_fusion_early_single_bundle"
+        ],
+        "witness_fusion_with_bundle_id": witness_fusion_timing_smoke[
+            "witness_fusion_with_bundle_id"
+        ],
+        "witness_fusion_with_single_bundle": witness_fusion_timing_smoke[
+            "witness_fusion_with_single_bundle"
+        ],
+        "witness_fusion_late_initial_bundle_id": witness_fusion_timing_smoke[
+            "witness_fusion_late_initial_bundle_id"
+        ],
+        "witness_fusion_late_final_bundle_id": witness_fusion_timing_smoke[
+            "witness_fusion_late_final_bundle_id"
+        ],
+        "witness_fusion_late_single_bundle": witness_fusion_timing_smoke[
+            "witness_fusion_late_single_bundle"
+        ],
+        "witness_fusion_no_duplicate_oracle_jobs": witness_fusion_timing_smoke[
+            "witness_fusion_no_duplicate_oracle_jobs"
+        ],
+        "witness_fusion_accepted_counts": witness_fusion_timing_smoke[
+            "witness_fusion_accepted_counts"
+        ],
+        "witness_fusion_started_counts": witness_fusion_timing_smoke[
+            "witness_fusion_started_counts"
+        ],
+        "witness_fusion_completed_counts": witness_fusion_timing_smoke[
+            "witness_fusion_completed_counts"
         ],
         "audit_scalar_smoke_ok": audit_scalar_smoke["ok"],
         "audit_scalar_payload_redacted": audit_scalar_smoke["audit_scalar_payload_redacted"],

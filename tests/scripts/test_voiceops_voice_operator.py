@@ -275,6 +275,29 @@ def _async_oracle_smoke_payload() -> dict:
         "unpromoted_hypothesis_promoted": False,
         "unpromoted_hypothesis_update_observed": True,
         "unpromoted_hypothesis_update_summary": "interpreter evidence: auxiliary_hypotheses=1",
+        "witness_fusion_timing_smoke_ok": True,
+        "witness_fusion_arrival_phases": [
+            "before_raw_audio",
+            "with_raw_audio",
+            "after_interpreter_start",
+        ],
+        "witness_fusion_case_job_ids": {
+            "early": "voice-oracle-003",
+            "with": "voice-oracle-004",
+            "late": "voice-oracle-005",
+        },
+        "witness_fusion_early_initial_bundle_id": "kame-evidence-witness-early",
+        "witness_fusion_early_final_bundle_id": "kame-evidence-witness-early",
+        "witness_fusion_early_single_bundle": True,
+        "witness_fusion_with_bundle_id": "kame-evidence-witness-with",
+        "witness_fusion_with_single_bundle": True,
+        "witness_fusion_late_initial_bundle_id": "kame-evidence-witness-late",
+        "witness_fusion_late_final_bundle_id": "kame-evidence-witness-late",
+        "witness_fusion_late_single_bundle": True,
+        "witness_fusion_no_duplicate_oracle_jobs": True,
+        "witness_fusion_accepted_counts": {"early": 1, "with": 1, "late": 1},
+        "witness_fusion_started_counts": {"early": 1, "with": 1, "late": 1},
+        "witness_fusion_completed_counts": {"early": 1, "with": 1, "late": 1},
         "audit_scalar_smoke_ok": True,
         "audit_scalar_payload_redacted": True,
         "audit_scalar_secret_canary_checked": True,
@@ -719,6 +742,41 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_promoted"] is False
     assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_update_observed"] is True
     assert report["requirements"]["async_oracle_transcript_hypotheses_unpromoted"] is True
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_timing_smoke_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_arrival_phases"] == [
+        "before_raw_audio",
+        "with_raw_audio",
+        "after_interpreter_start",
+    ]
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_early_initial_bundle_id"] == (
+        report["proofs"]["async_oracle_jobs"]["witness_fusion_early_final_bundle_id"]
+    )
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_early_single_bundle"] is True
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_with_single_bundle"] is True
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_late_initial_bundle_id"] == (
+        report["proofs"]["async_oracle_jobs"]["witness_fusion_late_final_bundle_id"]
+    )
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_late_single_bundle"] is True
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_no_duplicate_oracle_jobs"] is True
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_accepted_counts"] == {
+        "early": 1,
+        "with": 1,
+        "late": 1,
+    }
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_started_counts"] == {
+        "early": 1,
+        "with": 1,
+        "late": 1,
+    }
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_completed_counts"] == {
+        "early": 1,
+        "with": 1,
+        "late": 1,
+    }
+    witness_fusion = report["async_oracle_acceptance"]["witness_fusion_timing_preserves_single_bundle"]
+    assert witness_fusion["ok"] is True
+    assert witness_fusion["evidence"] == "async_oracle_smoke_plus_witness_fusion_tests"
+    assert report["requirements"]["async_oracle_witness_fusion_single_bundle"] is True
     assert report["proofs"]["async_oracle_jobs"]["audit_scalar_smoke_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["audit_scalar_payload_redacted"] is True
     assert report["proofs"]["async_oracle_jobs"]["audit_scalar_secret_canary_checked"] is True
@@ -974,6 +1032,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:failed_job_reported_without_crash" in issues
     assert "missing_async_oracle_coverage:job_control_updates_reach_oracle" in issues
     assert "missing_async_oracle_coverage:transcript_hypotheses_remain_unpromoted" in issues
+    assert "missing_async_oracle_coverage:witness_fusion_timing_preserves_single_bundle" in issues
     assert "missing_async_oracle_coverage:result_handling_bounded_and_durable" in issues
     assert "missing_async_oracle_coverage:discord_session_cleanup_preserves_oracle_state" in issues
     assert "missing_async_oracle_coverage:sidecar_fail_closed_send_failure_cancels_active_job" in issues
@@ -983,6 +1042,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_acceptance:failed_job_is_reported_without_crashing_session" in issues
     assert "missing_async_oracle_acceptance:job_control_updates_reach_oracle" in issues
     assert "missing_async_oracle_acceptance:transcript_hypotheses_stay_non_authoritative" in issues
+    assert "missing_async_oracle_acceptance:witness_fusion_timing_preserves_single_bundle" in issues
     assert "missing_async_oracle_acceptance:discord_session_cleanup_preserves_oracle_state" in issues
     assert "missing_async_oracle_acceptance:sidecar_fail_closed_send_failure_cancels_active_job" in issues
     result_handling = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]

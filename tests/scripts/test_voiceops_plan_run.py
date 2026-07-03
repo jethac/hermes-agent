@@ -1264,6 +1264,16 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_durable_oracle_text_absent"] is True
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_durable_record_count"] >= 1
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_direct_tool_authority_exposed"] is False
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_timing_smoke_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_arrival_phases"] == [
+        "before_raw_audio",
+        "with_raw_audio",
+        "after_interpreter_start",
+    ]
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_early_single_bundle"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_with_single_bundle"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_late_single_bundle"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_no_duplicate_oracle_jobs"] is True
     assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_smoke_ok"] is True
     assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_payload_redacted"] is True
     assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_secret_canary_checked"] is True

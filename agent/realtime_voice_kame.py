@@ -834,17 +834,18 @@ def kame_evidence_bundle_id(
     audio_segment_ref: str = "",
     evidence_bundle_status: str = "",
 ) -> str:
-    """Build a compact id for joining raw audio and witness transcripts.
+    """Build a compact id for one KAME speech-cut evidence bundle.
 
     The id is intentionally hash-based so logs can prove that fields share one
-    bundle without replaying local artifact paths or transcript text.
+    bundle without replaying local artifact paths or transcript text. Raw audio
+    refs and evidence status are accepted for call-site compatibility, but they
+    do not participate in the hash because those fields can arrive after a
+    reflex/witness transcript has already created the pending bundle.
     """
 
     parts = (
         _optional_text(session_id),
         _optional_text(turn_id),
-        _optional_text(audio_segment_ref),
-        _optional_text(evidence_bundle_status),
     )
     digest = hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:20]
     return f"kame-evidence-{digest}"

@@ -26,6 +26,23 @@ def _request(text: str, *, route: KameRoute = KameRoute.ORACLE_DIRECT) -> KameOr
     )
 
 
+def test_kame_evidence_bundle_id_is_stable_across_audio_availability_changes():
+    degraded = kame_evidence_bundle_id(
+        session_id="voice-session-1",
+        turn_id="turn:late-audio",
+        evidence_bundle_status="degraded_text_only",
+    )
+    primary = kame_evidence_bundle_id(
+        session_id="voice-session-1",
+        turn_id="turn:late-audio",
+        audio_segment_ref="artifact://voice/late-audio.wav",
+        evidence_bundle_status="primary_audio",
+    )
+
+    assert degraded == primary
+    assert degraded.startswith("kame-evidence-")
+
+
 def test_oracle_job_protocol_surface_is_wire_serializable():
     assert VoiceEventType("oracle.job.accepted") == VoiceEventType.ORACLE_JOB_ACCEPTED
     assert (

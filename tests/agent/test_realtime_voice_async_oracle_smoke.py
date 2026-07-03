@@ -173,6 +173,24 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["unpromoted_hypothesis_promoted"] is False
     assert report["unpromoted_hypothesis_update_observed"] is True
     assert report["unpromoted_hypothesis_update_summary"] == "interpreter evidence: auxiliary_hypotheses=1"
+    assert report["witness_fusion_timing_smoke_ok"] is True
+    assert report["witness_fusion_arrival_phases"] == [
+        "before_raw_audio",
+        "with_raw_audio",
+        "after_interpreter_start",
+    ]
+    assert report["witness_fusion_early_initial_bundle_id"].startswith("kame-evidence-")
+    assert report["witness_fusion_early_initial_bundle_id"] == report["witness_fusion_early_final_bundle_id"]
+    assert report["witness_fusion_early_single_bundle"] is True
+    assert report["witness_fusion_with_bundle_id"].startswith("kame-evidence-")
+    assert report["witness_fusion_with_single_bundle"] is True
+    assert report["witness_fusion_late_initial_bundle_id"].startswith("kame-evidence-")
+    assert report["witness_fusion_late_initial_bundle_id"] == report["witness_fusion_late_final_bundle_id"]
+    assert report["witness_fusion_late_single_bundle"] is True
+    assert report["witness_fusion_no_duplicate_oracle_jobs"] is True
+    assert report["witness_fusion_accepted_counts"] == {"early": 1, "with": 1, "late": 1}
+    assert report["witness_fusion_started_counts"] == {"early": 1, "with": 1, "late": 1}
+    assert report["witness_fusion_completed_counts"] == {"early": 1, "with": 1, "late": 1}
     assert report["event_counts"]["interface.oracle.update"] >= 2
     assert report["event_counts"]["oracle.job.progress"] >= 1
     assert report["event_counts"]["oracle.job.result_suppressed"] >= 1

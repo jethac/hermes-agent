@@ -616,6 +616,14 @@ the raw clip, or after the interpreter has already started. In every case, Herme
 records it as a hypothesis on the same interpreter bundle and never schedules a
 second oracle request from that text alone.
 
+Acceptance proof: the headless async-oracle smoke must exercise all three
+arrival phases (`before_raw_audio`, `with_raw_audio`, and
+`after_interpreter_start`) and report `witness_fusion_*` fields proving one
+stable `evidence_bundle_id`, one accepted/started/completed oracle job per
+speech cut, and no duplicate oracle job. The bundle id is keyed by
+`session_id` and `turn_id`; raw audio refs and degraded/primary status may
+arrive later and must update the bundle rather than changing its identity.
+
 External frontend adapters must preserve that shape instead of flattening it into
 one text turn. A VoiceClaw/OpenClaw/Moshi-style bridge may send an `ask_brain`
 request early, but the Hermes adapter should treat it as an interpreter/oracle

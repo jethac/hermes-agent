@@ -147,6 +147,12 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_session_client_interface_oracle_request_submits_external_kame_job",
         "tests/agent/test_realtime_voice_async_oracle_smoke.py::test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation",
     ],
+    "witness_fusion": [
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_kame_evidence_bundle_id_is_stable_across_audio_availability_changes",
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_interpreter_evidence_updates_queued_job_before_execution",
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_interpreter_evidence_late_for_running_job_is_status_visible",
+        "tests/agent/test_realtime_voice_async_oracle_smoke.py::test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation",
+    ],
     "result_handling": [
         "tests/agent/test_realtime_voice.py::test_completed_async_oracle_job_after_intervening_local_turn_is_lifecycle_only",
         "tests/agent/test_realtime_voice.py::test_kame_engine_status_recalls_recent_completed_async_oracle_job",
@@ -1714,6 +1720,13 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("external_frontend_durable_oracle_text_absent") is True
         and smoke.get("external_frontend_terminal_correlation_observed") is True
         and smoke.get("external_frontend_direct_tool_authority_exposed") is False,
+        "witness_fusion_timing_preserves_single_bundle": smoke.get("witness_fusion_timing_smoke_ok") is True
+        and smoke.get("witness_fusion_early_single_bundle") is True
+        and smoke.get("witness_fusion_with_single_bundle") is True
+        and smoke.get("witness_fusion_late_single_bundle") is True
+        and smoke.get("witness_fusion_no_duplicate_oracle_jobs") is True
+        and smoke.get("witness_fusion_arrival_phases")
+        == ["before_raw_audio", "with_raw_audio", "after_interpreter_start"],
         "result_handling_bounded_and_durable": smoke.get("verbose_result_spoken_bounded") is True
         and smoke.get("verbose_result_committed_bounded") is True
         and smoke.get("verbose_result_commit_marked_truncated") is True
@@ -1925,6 +1938,13 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             ok=smoke_ok and bool(async_oracle_coverage.get("external_frontend_bridge_submits_oracle_job")),
             evidence="async_oracle_smoke_plus_external_frontend_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["external_frontend_bridge"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "witness_fusion_timing_preserves_single_bundle": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("witness_fusion_timing_preserves_single_bundle")),
+            evidence="async_oracle_smoke_plus_witness_fusion_tests",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["witness_fusion"],
             verification_mode="loopback_smoke_plus_focused_tests",
             runtime_verified_by_this_report=True,
         ),
@@ -2449,6 +2469,51 @@ def build_voice_operator_report(
             "unpromoted_hypothesis_update_summary": async_oracle_smoke.get(
                 "unpromoted_hypothesis_update_summary"
             ),
+            "witness_fusion_timing_smoke_ok": bool(
+                async_oracle_smoke.get("witness_fusion_timing_smoke_ok")
+            ),
+            "witness_fusion_arrival_phases": list(
+                async_oracle_smoke.get("witness_fusion_arrival_phases") or []
+            ),
+            "witness_fusion_case_job_ids": dict(
+                async_oracle_smoke.get("witness_fusion_case_job_ids") or {}
+            ),
+            "witness_fusion_early_initial_bundle_id": async_oracle_smoke.get(
+                "witness_fusion_early_initial_bundle_id"
+            ),
+            "witness_fusion_early_final_bundle_id": async_oracle_smoke.get(
+                "witness_fusion_early_final_bundle_id"
+            ),
+            "witness_fusion_early_single_bundle": bool(
+                async_oracle_smoke.get("witness_fusion_early_single_bundle")
+            ),
+            "witness_fusion_with_bundle_id": async_oracle_smoke.get(
+                "witness_fusion_with_bundle_id"
+            ),
+            "witness_fusion_with_single_bundle": bool(
+                async_oracle_smoke.get("witness_fusion_with_single_bundle")
+            ),
+            "witness_fusion_late_initial_bundle_id": async_oracle_smoke.get(
+                "witness_fusion_late_initial_bundle_id"
+            ),
+            "witness_fusion_late_final_bundle_id": async_oracle_smoke.get(
+                "witness_fusion_late_final_bundle_id"
+            ),
+            "witness_fusion_late_single_bundle": bool(
+                async_oracle_smoke.get("witness_fusion_late_single_bundle")
+            ),
+            "witness_fusion_no_duplicate_oracle_jobs": bool(
+                async_oracle_smoke.get("witness_fusion_no_duplicate_oracle_jobs")
+            ),
+            "witness_fusion_accepted_counts": dict(
+                async_oracle_smoke.get("witness_fusion_accepted_counts") or {}
+            ),
+            "witness_fusion_started_counts": dict(
+                async_oracle_smoke.get("witness_fusion_started_counts") or {}
+            ),
+            "witness_fusion_completed_counts": dict(
+                async_oracle_smoke.get("witness_fusion_completed_counts") or {}
+            ),
             "audit_scalar_smoke_ok": bool(async_oracle_smoke.get("audit_scalar_smoke_ok")),
             "audit_scalar_payload_redacted": bool(async_oracle_smoke.get("audit_scalar_payload_redacted")),
             "audit_scalar_secret_canary_checked": bool(
@@ -2589,6 +2654,9 @@ def build_voice_operator_report(
             "async_oracle_transcript_hypotheses_unpromoted": async_oracle_coverage[
                 "transcript_hypotheses_remain_unpromoted"
             ],
+            "async_oracle_witness_fusion_single_bundle": async_oracle_coverage[
+                "witness_fusion_timing_preserves_single_bundle"
+            ],
             "async_oracle_late_cancelled_output_dropped": async_oracle_coverage["late_cancelled_output_not_spoken"],
             "async_oracle_late_cancelled_output_not_durable": async_oracle_coverage[
                 "late_cancelled_output_not_durable"
@@ -2717,6 +2785,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "job_control_updates_reach_oracle",
         "transcript_hypotheses_remain_unpromoted",
         "external_frontend_bridge_submits_oracle_job",
+        "witness_fusion_timing_preserves_single_bundle",
         "result_handling_bounded_and_durable",
         "discord_session_cleanup_preserves_oracle_state",
         "sidecar_fail_closed_send_failure_cancels_active_job",

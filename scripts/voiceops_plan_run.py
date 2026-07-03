@@ -1771,6 +1771,27 @@ async def build_plan_run_async(
                     "external_frontend_direct_tool_authority_exposed": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_direct_tool_authority_exposed"],
+                    "witness_fusion_timing_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
+                        "witness_fusion_timing_smoke_ok"
+                    ],
+                    "witness_fusion_arrival_phases": list(
+                        voice_operator["proofs"]["async_oracle_jobs"]["witness_fusion_arrival_phases"]
+                    ),
+                    "witness_fusion_case_job_ids": voice_operator["proofs"]["async_oracle_jobs"][
+                        "witness_fusion_case_job_ids"
+                    ],
+                    "witness_fusion_early_single_bundle": voice_operator["proofs"]["async_oracle_jobs"][
+                        "witness_fusion_early_single_bundle"
+                    ],
+                    "witness_fusion_with_single_bundle": voice_operator["proofs"]["async_oracle_jobs"][
+                        "witness_fusion_with_single_bundle"
+                    ],
+                    "witness_fusion_late_single_bundle": voice_operator["proofs"]["async_oracle_jobs"][
+                        "witness_fusion_late_single_bundle"
+                    ],
+                    "witness_fusion_no_duplicate_oracle_jobs": voice_operator["proofs"]["async_oracle_jobs"][
+                        "witness_fusion_no_duplicate_oracle_jobs"
+                    ],
                     "audit_scalar_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
                         "audit_scalar_smoke_ok"
                     ],

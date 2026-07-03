@@ -187,6 +187,9 @@ Target KAME layout:
   arrives late, it is late evidence on the same bundle. If raw audio is missing,
   the turn is degraded and cannot close Stripe, NemoClaw, phone, memory, file,
   or external-message action gates on hypothesis text alone.
+  Headless acceptance requires `witness_fusion_timing_preserves_single_bundle`
+  to pass for early, inline, and late witness arrival, with the same bundle id
+  surviving degraded-to-primary audio updates.
 - Action-authority rule: Stripe spend, provider provisioning, NemoClaw action
   packets, phone-call payloads, memory writes, file writes, and external
   messages require `interpreter_promoted` or `oracle_promoted` evidence for the

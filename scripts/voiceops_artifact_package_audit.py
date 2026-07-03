@@ -2006,6 +2006,25 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "unpromoted_hypothesis_status_bundle_transcript_hypotheses_count": async_smoke.get(
                 "unpromoted_hypothesis_status_bundle_transcript_hypotheses_count"
             ),
+            "witness_fusion_timing_smoke_ok": bool(async_smoke.get("witness_fusion_timing_smoke_ok")),
+            "witness_fusion_arrival_phases": async_smoke.get("witness_fusion_arrival_phases") or [],
+            "witness_fusion_case_job_ids": async_smoke.get("witness_fusion_case_job_ids") or {},
+            "witness_fusion_early_initial_bundle_id": async_smoke.get(
+                "witness_fusion_early_initial_bundle_id"
+            ),
+            "witness_fusion_early_final_bundle_id": async_smoke.get("witness_fusion_early_final_bundle_id"),
+            "witness_fusion_early_single_bundle": bool(async_smoke.get("witness_fusion_early_single_bundle")),
+            "witness_fusion_with_bundle_id": async_smoke.get("witness_fusion_with_bundle_id"),
+            "witness_fusion_with_single_bundle": bool(async_smoke.get("witness_fusion_with_single_bundle")),
+            "witness_fusion_late_initial_bundle_id": async_smoke.get("witness_fusion_late_initial_bundle_id"),
+            "witness_fusion_late_final_bundle_id": async_smoke.get("witness_fusion_late_final_bundle_id"),
+            "witness_fusion_late_single_bundle": bool(async_smoke.get("witness_fusion_late_single_bundle")),
+            "witness_fusion_no_duplicate_oracle_jobs": bool(
+                async_smoke.get("witness_fusion_no_duplicate_oracle_jobs")
+            ),
+            "witness_fusion_accepted_counts": async_smoke.get("witness_fusion_accepted_counts") or {},
+            "witness_fusion_started_counts": async_smoke.get("witness_fusion_started_counts") or {},
+            "witness_fusion_completed_counts": async_smoke.get("witness_fusion_completed_counts") or {},
             "audit_scalar_smoke_ok": bool(async_smoke.get("audit_scalar_smoke_ok")),
             "audit_scalar_payload_redacted": bool(async_smoke.get("audit_scalar_payload_redacted")),
             "audit_scalar_secret_canary_checked": bool(async_smoke.get("audit_scalar_secret_canary_checked")),
