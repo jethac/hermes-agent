@@ -44,6 +44,7 @@ from agent.realtime_voice_oracle_jobs import (
     OracleJobQueueFullError,
     OracleJobReprioritizationRequiredError,
     OracleJobState,
+    REFLEX_STATUS_ORDINAL_LABELS,
 )
 from agent.realtime_voice_planner import RealtimeSpeechPlanner
 from agent.realtime_voice_sidecar import RealtimeVoiceSidecarClient, wants_realtime_sidecar
@@ -3010,7 +3011,7 @@ def _kame_oracle_job_status_poll_requested(
 
 def _kame_oracle_job_status_text(status: Mapping[str, Any]) -> str:
     reflex_status = status.get("reflex") if isinstance(status.get("reflex"), Mapping) else {}
-    if reflex_status:
+    if reflex_status and isinstance(reflex_status.get("jobs"), list):
         status = reflex_status
     capacity = status.get("capacity") if isinstance(status.get("capacity"), Mapping) else {}
     jobs = [dict(job) for job in status.get("jobs", []) if isinstance(job, Mapping)]
@@ -3157,14 +3158,38 @@ def _oracle_job_control_active_jobs(status: Mapping[str, Any]) -> list[dict[str,
     reflex_status = status.get("reflex") if isinstance(status.get("reflex"), Mapping) else {}
     if reflex_status and isinstance(reflex_status.get("jobs"), list):
         jobs = reflex_status["jobs"]
+        return [
+            dict(job)
+            for job in jobs
+            if isinstance(job, Mapping)
+            and str(job.get("state") or "")
+            in {"running", "queued", "waiting_for_approval", "cancel_requested"}
+        ]
     else:
         jobs = status.get("jobs") if isinstance(status.get("jobs"), list) else []
     active_states = {"running", "queued", "waiting_for_approval", "cancel_requested"}
-    return [
-        dict(job)
+    active_jobs = [
+        job
         for job in jobs
         if isinstance(job, Mapping) and str(job.get("state") or "") in active_states
     ]
+    safe_jobs = []
+    for index, job in enumerate(active_jobs[: len(REFLEX_STATUS_ORDINAL_LABELS)]):
+        safe_job = {
+            "job_id": str(job.get("job_id") or ""),
+            "state": str(job.get("state") or ""),
+        }
+        if not safe_job["job_id"] or not safe_job["state"]:
+            continue
+        if 0 <= index < len(REFLEX_STATUS_ORDINAL_LABELS):
+            safe_job["ordinal"] = index + 1
+            safe_job["ordinal_label"] = REFLEX_STATUS_ORDINAL_LABELS[index]
+        for key in ("priority", "spoken_status", "intent"):
+            value = str(job.get(key) or "").strip()
+            if value:
+                safe_job[key] = value[:160]
+        safe_jobs.append(safe_job)
+    return safe_jobs
 
 
 def _oracle_job_control_cancel_all_requested(text: str) -> bool:

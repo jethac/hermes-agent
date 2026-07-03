@@ -67,6 +67,15 @@ TERMINAL_STATES = frozenset(
     }
 )
 
+REFLEX_STATUS_ACTIVE_STATES = frozenset(
+    {
+        OracleJobState.RUNNING.value,
+        OracleJobState.QUEUED.value,
+        OracleJobState.WAITING_FOR_APPROVAL.value,
+        OracleJobState.CANCEL_REQUESTED.value,
+    }
+)
+
 
 OracleJobRunner = Callable[["OracleJob"], Awaitable[Any]]
 OracleJobEventCallback = Callable[["OracleJobEvent"], Any]
@@ -561,11 +570,12 @@ class OracleJobManager:
     async def status_view(self) -> dict[str, Any]:
         async with self._lock:
             jobs = [job.to_status() for job in self._jobs.values()]
+            reflex_jobs = [job.to_status() for job in self._reflex_ordered_jobs_locked()]
             capacity = self._capacity_snapshot_locked()
         return {
             "capacity": capacity,
             "jobs": jobs,
-            "reflex": _reflex_status_view(capacity=capacity, jobs=jobs),
+            "reflex": _reflex_status_view(capacity=capacity, jobs=reflex_jobs),
         }
 
     async def get(self, job_id: str) -> OracleJob:
@@ -832,6 +842,20 @@ class OracleJobManager:
             )
         )
 
+    def _reflex_ordered_jobs_locked(self) -> list[OracleJob]:
+        queued_order = {job_id: index for index, job_id in enumerate(self._queue)}
+
+        def sort_key(item: tuple[int, OracleJob]) -> tuple[int, int]:
+            insertion_index, job = item
+            state = job.state.value
+            if state == OracleJobState.QUEUED.value:
+                return (1, queued_order.get(job.job_id, insertion_index))
+            if state in REFLEX_STATUS_ACTIVE_STATES:
+                return (0, insertion_index)
+            return (2, insertion_index)
+
+        return [job for _, job in sorted(enumerate(self._jobs.values()), key=sort_key)]
+
     async def _force_cancel_remaining(self, *, reason: str) -> None:
         async with self._lock:
             queued_job_ids = list(self._queue)
@@ -888,8 +912,15 @@ def _reflex_status_view(
             "cancel_requested",
         )
     }
+    ordered_jobs = sorted(
+        enumerate(jobs),
+        key=lambda item: (
+            0 if str(item[1].get("state") or "") in REFLEX_STATUS_ACTIVE_STATES else 1,
+            item[0],
+        ),
+    )
     safe_jobs = []
-    for index, job in enumerate(jobs[: len(REFLEX_STATUS_ORDINAL_LABELS)]):
+    for index, (_, job) in enumerate(ordered_jobs[: len(REFLEX_STATUS_ORDINAL_LABELS)]):
         safe_job = _reflex_job_status(job, ordinal_index=index)
         if safe_job:
             safe_jobs.append(safe_job)

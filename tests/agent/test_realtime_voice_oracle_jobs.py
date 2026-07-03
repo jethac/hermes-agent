@@ -385,6 +385,38 @@ async def test_reprioritizing_queued_job_moves_it_ahead_before_capacity_frees():
 
 
 @pytest.mark.asyncio
+async def test_reflex_status_orders_queued_jobs_by_current_priority_queue():
+    release_first = asyncio.Event()
+
+    async def runner(job):
+        if job.job_id == "voice-oracle-001":
+            await release_first.wait()
+        return f"finished {job.job_id}"
+
+    manager = OracleJobManager(max_concurrent=1, runner=runner)
+
+    await manager.submit(_request("running"))
+    second = await manager.submit(_request("second"), priority="normal")
+    third = await manager.submit(_request("third"), priority="normal")
+    await asyncio.sleep(0)
+
+    await manager.update_priority(third.job_id, priority="highest")
+
+    status = await manager.status_view()
+    assert [
+        (job["job_id"], job["state"], job["ordinal"], job["ordinal_label"], job["priority"])
+        for job in status["reflex"]["jobs"][:3]
+    ] == [
+        ("voice-oracle-001", "running", 1, "job one", "normal"),
+        (third.job_id, "queued", 2, "job two", "high"),
+        (second.job_id, "queued", 3, "job three", "normal"),
+    ]
+
+    release_first.set()
+    await manager.wait_for_idle()
+
+
+@pytest.mark.asyncio
 async def test_add_update_records_compact_status_without_running_job():
     events = []
     release = asyncio.Event()
@@ -966,6 +998,47 @@ async def test_max_concurrent_four_starts_four_and_queues_fifth():
     await manager.wait_for_idle()
     assert started[-1] == "voice-oracle-005"
     assert (await manager.get(jobs[-1].job_id)).state == OracleJobState.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_reflex_status_prioritizes_active_jobs_over_terminal_history():
+    started = []
+    release = asyncio.Event()
+
+    async def runner(job):
+        if job.oracle_text.startswith("old"):
+            return {"result_summary": f"done {job.job_id}"}
+        started.append(job.job_id)
+        await release.wait()
+        return {"result_summary": f"done {job.job_id}"}
+
+    manager = OracleJobManager(max_concurrent=4, runner=runner)
+
+    for index in range(8):
+        await manager.submit(_request(f"old completed {index}"))
+    await manager.wait_for_idle()
+
+    active_jobs = [await manager.submit(_request(f"active {index}")) for index in range(5)]
+    await asyncio.sleep(0)
+
+    status = await manager.status_view()
+    assert [job["state"] for job in status["jobs"][:8]] == ["completed"] * 8
+    assert [
+        (job["job_id"], job["state"], job["ordinal"], job["ordinal_label"])
+        for job in status["reflex"]["jobs"][:5]
+    ] == [
+        ("voice-oracle-009", "running", 1, "job one"),
+        ("voice-oracle-010", "running", 2, "job two"),
+        ("voice-oracle-011", "running", 3, "job three"),
+        ("voice-oracle-012", "running", 4, "job four"),
+        ("voice-oracle-013", "queued", 5, "job five"),
+    ]
+    assert [job["job_id"] for job in status["reflex"]["jobs"][:5]] == [
+        job.job_id for job in active_jobs
+    ]
+
+    release.set()
+    await manager.wait_for_idle()
 
 
 @pytest.mark.asyncio

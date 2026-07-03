@@ -53,6 +53,8 @@ from agent.realtime_voice_text_engine import (
     TextOracleTTSEngine,
     _external_kame_bridge_arguments,
     _kame_oracle_job_control_operation,
+    _kame_oracle_job_status_text,
+    _oracle_job_control_active_jobs,
     _take_speakable_chunk,
 )
 
@@ -4797,6 +4799,98 @@ def test_kame_oracle_job_control_uses_reflex_safe_ordinal_status():
         "priority": "high",
         "reason": "spoken request to set high priority",
     }
+
+
+def test_kame_oracle_job_control_raw_fallback_is_active_only_and_sanitized():
+    status = {
+        "reflex": {"jobs": "malformed"},
+        "jobs": [
+            {
+                "job_id": "voice-oracle-001",
+                "state": "completed",
+                "spoken_status": "Old completed task.",
+                "metadata": {"hidden": "raw evidence"},
+            },
+            {
+                "job_id": "voice-oracle-002",
+                "state": "running",
+                "spoken_status": "Checking provisioning logs.",
+                "metadata": {"hidden": "raw evidence"},
+            },
+            {
+                "job_id": "voice-oracle-003",
+                "state": "failed",
+                "spoken_status": "Old failed task.",
+                "error": "private failure detail",
+            },
+            {
+                "job_id": "voice-oracle-004",
+                "state": "queued",
+                "spoken_status": "Drafting the phone handoff.",
+                "speaker": {"display_name": "jetha"},
+            },
+        ],
+    }
+    active = _oracle_job_control_active_jobs(status)
+    assert active == [
+        {
+            "job_id": "voice-oracle-002",
+            "state": "running",
+            "ordinal": 1,
+            "ordinal_label": "job one",
+            "spoken_status": "Checking provisioning logs.",
+        },
+        {
+            "job_id": "voice-oracle-004",
+            "state": "queued",
+            "ordinal": 2,
+            "ordinal_label": "job two",
+            "spoken_status": "Drafting the phone handoff.",
+        },
+    ]
+    assert "metadata" not in str(active)
+    assert "speaker" not in str(active)
+
+    cancel_second_request = KameOracleRequest(
+        session_id="voice-123",
+        turn_id="voice-123:8",
+        source="discord_voice",
+        user_id="42",
+        intent="Cancel the second one.",
+        route=KameRoute.LOCAL,
+        local_reply="Cancelling job two.",
+    )
+
+    assert _kame_oracle_job_control_operation(cancel_second_request, status) == {
+        "kind": "cancel",
+        "job_id": "voice-oracle-004",
+        "reason": "spoken request to cancel oracle job",
+    }
+
+
+def test_kame_oracle_job_status_text_falls_back_when_reflex_jobs_malformed():
+    status = {
+        "capacity": {"active": 1, "running": 1, "max_concurrent": 4, "queued": 1},
+        "reflex": {"jobs": "malformed"},
+        "jobs": [
+            {
+                "job_id": "voice-oracle-001",
+                "state": "running",
+                "spoken_status": "Checking provisioning logs.",
+            },
+            {
+                "job_id": "voice-oracle-002",
+                "state": "queued",
+                "spoken_status": "Drafting the phone handoff.",
+            },
+        ],
+    }
+
+    assert (
+        _kame_oracle_job_status_text(status)
+        == "Oracle jobs: 1 running out of 4, 1 queued. "
+        "job one running: Checking provisioning logs. | job two queued: Drafting the phone handoff."
+    )
 
 
 def test_kame_engine_reports_async_oracle_reject_policy_without_sync_fallback(monkeypatch):
