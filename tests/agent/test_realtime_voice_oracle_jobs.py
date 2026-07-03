@@ -485,6 +485,20 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
         queued.job_id,
         corrected_transcript="what is three to the power of seventeen",
         normalized_intent="answer a math question",
+        audio_segment_ref="artifact://redacted/oracle-002.wav",
+        audio_time_range_ms=[120, 2120],
+        reflex_transcript_hypothesis={
+            "source": "moshi",
+            "text": "three to the power of seventeen",
+            "confidence": 0.71,
+        },
+        auxiliary_transcript_hypotheses=[
+            {
+                "source": "classic_asr_fallback_optional",
+                "text": "what is three to the power of seventeen",
+                "confidence": 0.88,
+            }
+        ],
         entities=[{"type": "math_expression", "value": "3^17"}],
         confidence=0.94,
         disagreements=["reflex transcript omitted request prefix"],
@@ -501,14 +515,53 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
     oracle_request = _oracle_request_for_job(updated, updated.request)
 
     assert updated.interpreter_evidence[0]["corrected_transcript"] == "what is three to the power of seventeen"
+    assert updated.interpreter_evidence[0]["audio_segment_ref"] == "artifact://redacted/oracle-002.wav"
+    assert updated.interpreter_evidence[0]["audio_time_range_ms"] == (120, 2120)
+    assert updated.interpreter_evidence[0]["reflex_transcript_hypothesis"] == {
+        "source": "moshi",
+        "text": "three to the power of seventeen",
+        "authority": "hypothesis",
+        "confidence": 0.71,
+    }
+    assert updated.interpreter_evidence[0]["auxiliary_transcript_hypotheses"] == (
+        {
+            "source": "classic_asr_fallback_optional",
+            "text": "what is three to the power of seventeen",
+            "authority": "hypothesis",
+            "confidence": 0.88,
+        },
+    )
     assert updated.interpreter_evidence[0]["late"] is False
+    assert queued_status["audio_segment_ref"] == "artifact://redacted/oracle-002.wav"
+    assert queued_status["audio_time_range_ms"] == (120, 2120)
+    assert queued_status["reflex_transcript_hypothesis"] == "three to the power of seventeen"
+    assert queued_status["reflex_transcript_source"] == "moshi"
+    assert queued_status["auxiliary_transcript_hypotheses_count"] == 1
     assert queued_status["interpreter_evidence_count"] == 1
     assert queued_status["interpreter_evidence_late"] is False
     assert "transcript=what is three to the power of seventeen" in queued_status["latest_interpreter_evidence"]
+    assert "audio=attached" in queued_status["latest_interpreter_evidence"]
+    assert "auxiliary_hypotheses=1" in queued_status["latest_interpreter_evidence"]
     assert attached["payload"]["operation"] == "interpreter_evidence"
     assert attached["payload"]["interpreter_evidence_late"] is False
     assert oracle_request.oracle_text == "what is three to the power of seventeen"
     assert oracle_request.oracle_text_source == "gemma_interpreter"
+    assert oracle_request.audio_segment_ref == "artifact://redacted/oracle-002.wav"
+    assert oracle_request.audio_time_range_ms == (120, 2120)
+    assert oracle_request.auxiliary_transcript_hypotheses == (
+        {
+            "source": "moshi",
+            "text": "three to the power of seventeen",
+            "authority": "hypothesis",
+            "confidence": 0.71,
+        },
+        {
+            "source": "classic_asr_fallback_optional",
+            "text": "what is three to the power of seventeen",
+            "authority": "hypothesis",
+            "confidence": 0.88,
+        },
+    )
     assert oracle_request.transcript == "what is three to the power of seventeen"
     assert oracle_request.transcript_source == "gemma_interpreter"
     assert oracle_request.transcript_confidence == 0.94
@@ -547,6 +600,19 @@ async def test_interpreter_evidence_late_for_running_job_is_status_visible():
         running.job_id,
         corrected_transcript="check the current deployment logs",
         normalized_intent="inspect deployment logs",
+        audio_segment_ref="artifact://redacted/running.wav",
+        audio_time_range_ms=(200, 2400),
+        reflex_transcript_hypothesis={
+            "source": "moshi",
+            "text": "check deployment",
+            "confidence": 0.66,
+        },
+        auxiliary_transcript_hypotheses=[
+            {
+                "source": "classic_asr_fallback_optional",
+                "text": "check the current deployment logs",
+            }
+        ],
         confidence=0.81,
         source="gemma_interpreter",
     )
@@ -561,8 +627,16 @@ async def test_interpreter_evidence_late_for_running_job_is_status_visible():
     oracle_request = _oracle_request_for_job(updated, updated.request)
 
     assert updated.interpreter_evidence[0]["late"] is True
+    assert running_status["audio_segment_ref"] == "artifact://redacted/running.wav"
+    assert running_status["audio_time_range_ms"] == (200, 2400)
+    assert running_status["reflex_transcript_hypothesis"] == "check deployment"
+    assert running_status["reflex_transcript_source"] == "moshi"
+    assert running_status["auxiliary_transcript_hypotheses_count"] == 1
     assert running_status["interpreter_evidence_late"] is True
     assert late["payload"]["interpreter_evidence_late"] is True
+    assert late["payload"]["audio_segment_ref"] == "artifact://redacted/running.wav"
+    assert "audio=attached" in late["payload"]["latest_interpreter_evidence"]
+    assert "reflex_hypothesis=attached" in late["payload"]["latest_interpreter_evidence"]
     assert oracle_request.oracle_text == "running"
     assert oracle_request.intent == "running"
     assert oracle_request.intent_source == "reflex_audio"

@@ -1469,6 +1469,17 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             metadata["latest_interpreter_evidence"] = latest_evidence
             metadata["interpreter_evidence_count"] = status.get("interpreter_evidence_count", 0)
             metadata["interpreter_evidence_late"] = status.get("interpreter_evidence_late", False)
+            for key in (
+                "audio_segment_ref",
+                "audio_time_range_ms",
+                "reflex_transcript_hypothesis",
+                "reflex_transcript_source",
+                "reflex_transcript_confidence",
+                "auxiliary_transcript_hypotheses_count",
+                "auxiliary_transcript_hypotheses",
+            ):
+                if key in status:
+                    metadata[key] = status[key]
         try:
             result = updater(updated_request, update_text, metadata)
             if hasattr(result, "__await__"):
@@ -3520,6 +3531,17 @@ def _oracle_job_update_event_payload(job: OracleJob, *, reason: str) -> dict[str
         delivery_status = str(status.get("interpreter_evidence_delivery_status") or "").strip()
         if delivery_status:
             payload["interpreter_evidence_delivery_status"] = delivery_status
+        for key in (
+            "audio_segment_ref",
+            "audio_time_range_ms",
+            "reflex_transcript_hypothesis",
+            "reflex_transcript_source",
+            "reflex_transcript_confidence",
+            "auxiliary_transcript_hypotheses_count",
+            "auxiliary_transcript_hypotheses",
+        ):
+            if key in status:
+                payload[key] = status[key]
     return payload
 
 
@@ -3644,9 +3666,54 @@ def _oracle_request_with_queued_interpreter_evidence(
     if normalized_intent:
         changes["intent"] = normalized_intent
         changes["intent_source"] = source
+    audio_segment_ref = str(evidence.get("audio_segment_ref") or "").strip()
+    if audio_segment_ref:
+        changes["audio_segment_ref"] = audio_segment_ref
+    audio_time_range_ms = evidence.get("audio_time_range_ms")
+    if isinstance(audio_time_range_ms, tuple):
+        changes["audio_time_range_ms"] = audio_time_range_ms
+    auxiliary = _oracle_request_auxiliary_hypotheses_from_evidence(request, evidence)
+    if auxiliary:
+        changes["auxiliary_transcript_hypotheses"] = auxiliary
     if not changes:
         return request
     return replace(request, **changes)
+
+
+def _oracle_request_auxiliary_hypotheses_from_evidence(
+    request: KameOracleRequest,
+    evidence: Mapping[str, Any],
+) -> tuple[Mapping[str, Any], ...]:
+    values: list[Mapping[str, Any]] = [
+        item for item in request.auxiliary_transcript_hypotheses if isinstance(item, Mapping)
+    ]
+    reflex = evidence.get("reflex_transcript_hypothesis")
+    if isinstance(reflex, Mapping):
+        values.append(reflex)
+    auxiliary = evidence.get("auxiliary_transcript_hypotheses")
+    if isinstance(auxiliary, tuple):
+        values.extend(item for item in auxiliary if isinstance(item, Mapping))
+    compact: list[Mapping[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in values:
+        source = str(item.get("source") or item.get("provider") or "unknown").strip()[:40]
+        text = str(item.get("text") or item.get("transcript") or item.get("hypothesis") or "").strip()[:500]
+        if not text:
+            continue
+        key = (source, text)
+        if key in seen:
+            continue
+        seen.add(key)
+        hypothesis: dict[str, Any] = {
+            "source": source or "unknown",
+            "text": text,
+            "authority": "hypothesis",
+        }
+        confidence = item.get("confidence")
+        if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
+            hypothesis["confidence"] = max(0.0, min(1.0, float(confidence)))
+        compact.append(hypothesis)
+    return tuple(compact)
 
 
 def _latest_queued_interpreter_evidence(job: OracleJob) -> Mapping[str, Any]:
@@ -3689,6 +3756,22 @@ def _payload_has_interpreter_evidence(payload: Mapping[str, Any]) -> bool:
             "interpreter_entities",
             "interpreter_confidence",
             "interpreter_disagreements",
+            "audio_segment_ref",
+            "audio_ref",
+            "clipped_audio_ref",
+            "audio_artifact_ref",
+            "audio_time_range_ms",
+            "reflex_transcript_hypothesis",
+            "reflex_transcript",
+            "reflex_hypothesis",
+            "reflex_transcript_source",
+            "reflex_transcript_confidence",
+            "moshi_transcript_hypothesis",
+            "s2s_transcript_hypothesis",
+            "classic_asr_hypothesis",
+            "asr_transcript_hypothesis",
+            "auxiliary_transcript_hypotheses",
+            "auxiliary_transcripts",
         )
     )
 
@@ -3708,6 +3791,16 @@ def _interpreter_evidence_from_payload(payload: Mapping[str, Any], *, fallback_t
     return {
         "corrected_transcript": corrected_transcript,
         "normalized_intent": normalized_intent,
+        "audio_segment_ref": _first_payload_text(
+            payload,
+            "audio_segment_ref",
+            "audio_ref",
+            "clipped_audio_ref",
+            "audio_artifact_ref",
+        ),
+        "audio_time_range_ms": payload.get("audio_time_range_ms"),
+        "reflex_transcript_hypothesis": _reflex_transcript_hypothesis_from_payload(payload),
+        "auxiliary_transcript_hypotheses": _auxiliary_transcript_hypotheses_from_payload(payload),
         "entities": _interpreter_entities_from_payload(
             payload.get("entities", payload.get("interpreter_entities"))
         ),
@@ -3719,6 +3812,97 @@ def _interpreter_evidence_from_payload(payload: Mapping[str, Any], *, fallback_t
         ),
         "source": str(payload.get("source") or payload.get("provider") or "gemma_interpreter"),
     }
+
+
+def _first_payload_text(payload: Mapping[str, Any], *keys: str) -> str:
+    for key in keys:
+        text = str(payload.get(key) or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _reflex_transcript_hypothesis_from_payload(payload: Mapping[str, Any]) -> Any:
+    explicit = (
+        payload.get("reflex_transcript_hypothesis")
+        or payload.get("reflex_transcript")
+        or payload.get("reflex_hypothesis")
+    )
+    if explicit:
+        return _transcript_hypothesis_from_value(
+            explicit,
+            default_source="reflex_audio",
+            source=payload.get("reflex_transcript_source"),
+            confidence=payload.get("reflex_transcript_confidence"),
+        )
+    moshi = payload.get("moshi_transcript_hypothesis")
+    if moshi:
+        return _transcript_hypothesis_from_value(
+            moshi,
+            default_source="moshi",
+            source=payload.get("moshi_transcript_source"),
+            confidence=payload.get("moshi_transcript_confidence"),
+        )
+    s2s = payload.get("s2s_transcript_hypothesis")
+    if s2s:
+        return _transcript_hypothesis_from_value(
+            s2s,
+            default_source="s2s",
+            source=payload.get("s2s_transcript_source"),
+            confidence=payload.get("s2s_transcript_confidence"),
+        )
+    return None
+
+
+def _transcript_hypothesis_from_value(
+    value: Any,
+    *,
+    default_source: str,
+    source: Any = None,
+    confidence: Any = None,
+) -> Any:
+    if isinstance(value, Mapping):
+        if source or confidence is not None:
+            enriched = dict(value)
+            if source and not enriched.get("source") and not enriched.get("provider"):
+                enriched["source"] = source
+            if confidence is not None and "confidence" not in enriched:
+                enriched["confidence"] = confidence
+            return enriched
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return None
+    hypothesis: dict[str, Any] = {
+        "source": str(source or default_source),
+        "text": text,
+        "authority": "hypothesis",
+    }
+    if confidence is not None:
+        hypothesis["confidence"] = confidence
+    return hypothesis
+
+
+def _auxiliary_transcript_hypotheses_from_payload(payload: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    value = payload.get("auxiliary_transcript_hypotheses", payload.get("auxiliary_transcripts"))
+    hypotheses: list[Mapping[str, Any]] = []
+    if isinstance(value, list):
+        hypotheses.extend(item for item in value if isinstance(item, Mapping))
+    elif isinstance(value, Mapping):
+        hypotheses.append(value)
+    for key, source in (
+        ("classic_asr_hypothesis", "classic_asr_fallback_optional"),
+        ("asr_transcript_hypothesis", "classic_asr_fallback_optional"),
+    ):
+        hypothesis = _transcript_hypothesis_from_value(
+            payload.get(key),
+            default_source=source,
+            source=payload.get(f"{key}_source"),
+            confidence=payload.get(f"{key}_confidence"),
+        )
+        if isinstance(hypothesis, Mapping):
+            hypotheses.append(hypothesis)
+    return hypotheses
 
 
 def _interpreter_entities_from_payload(value: Any) -> list[Mapping[str, Any]]:

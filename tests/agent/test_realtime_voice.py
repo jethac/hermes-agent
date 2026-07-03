@@ -3262,6 +3262,12 @@ def test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job(mo
                     "update_type": "interpreter_evidence",
                     "corrected_transcript": "what is three to the power of seventeen",
                     "normalized_intent": "answer a math question",
+                    "audio_ref": "artifact://redacted/queued.wav",
+                    "audio_time_range_ms": [100, 2100],
+                    "moshi_transcript_hypothesis": "three to the power of seventeen",
+                    "moshi_transcript_confidence": 0.7,
+                    "classic_asr_hypothesis": "what is three to the power of seventeen",
+                    "classic_asr_hypothesis_confidence": 0.89,
                     "entities": [{"type": "math_expression", "value": "3^17"}],
                     "confidence": 0.94,
                     "disagreements": ["reflex transcript omitted request prefix"],
@@ -3302,15 +3308,37 @@ def test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job(mo
         assert evidence.payload["interpreter_evidence_late"] is False
         assert update.payload["job_id"] == "voice-oracle-002"
         assert update.payload["state"] == "queued"
+        assert update.payload["audio_segment_ref"] == "artifact://redacted/queued.wav"
+        assert update.payload["audio_time_range_ms"] == (100, 2100)
+        assert update.payload["reflex_transcript_hypothesis"] == "three to the power of seventeen"
+        assert update.payload["reflex_transcript_source"] == "moshi"
+        assert update.payload["auxiliary_transcript_hypotheses_count"] == 1
         assert update.payload["interpreter_evidence_count"] == 1
         assert update.payload["interpreter_evidence_late"] is False
         assert "transcript=what is three to the power of seventeen" in update.payload[
             "latest_interpreter_evidence"
         ]
+        assert "audio=attached" in update.payload["latest_interpreter_evidence"]
         assert oracle.requests[1].intent == "answer a math question"
         assert oracle.requests[1].intent_source == "gemma_interpreter"
         assert oracle.requests[1].oracle_text == "what is three to the power of seventeen"
         assert oracle.requests[1].oracle_text_source == "gemma_interpreter"
+        assert oracle.requests[1].audio_segment_ref == "artifact://redacted/queued.wav"
+        assert oracle.requests[1].audio_time_range_ms == (100, 2100)
+        assert oracle.requests[1].auxiliary_transcript_hypotheses == (
+            {
+                "source": "moshi",
+                "text": "three to the power of seventeen",
+                "authority": "hypothesis",
+                "confidence": 0.7,
+            },
+            {
+                "source": "classic_asr_fallback_optional",
+                "text": "what is three to the power of seventeen",
+                "authority": "hypothesis",
+                "confidence": 0.89,
+            },
+        )
         assert oracle.requests[1].transcript == "what is three to the power of seventeen"
         assert oracle.requests[1].transcript_source == "gemma_interpreter"
         assert oracle.requests[1].transcript_confidence == 0.94
@@ -3497,6 +3525,19 @@ def test_kame_engine_attaches_interpreter_evidence_to_running_async_oracle_job(m
                     "update_type": "interpreter_evidence",
                     "corrected_transcript": "check the current deployment logs",
                     "normalized_intent": "inspect deployment logs",
+                    "audio_segment_ref": "artifact://redacted/running.wav",
+                    "audio_time_range_ms": [200, 2600],
+                    "reflex_transcript_hypothesis": {
+                        "source": "moshi",
+                        "text": "check deployment",
+                        "confidence": 0.68,
+                    },
+                    "auxiliary_transcript_hypotheses": [
+                        {
+                            "source": "classic_asr_fallback_optional",
+                            "text": "check the current deployment logs",
+                        }
+                    ],
                     "confidence": 0.81,
                     "reason": "attach late interpreter evidence",
                     "source": "gemma_interpreter",
@@ -3521,6 +3562,11 @@ def test_kame_engine_attaches_interpreter_evidence_to_running_async_oracle_job(m
         assert evidence.payload["job_id"] == "voice-oracle-001"
         assert evidence.payload["interpreter_evidence_late"] is True
         assert update.payload["state"] == "running"
+        assert update.payload["audio_segment_ref"] == "artifact://redacted/running.wav"
+        assert update.payload["audio_time_range_ms"] == (200, 2600)
+        assert update.payload["reflex_transcript_hypothesis"] == "check deployment"
+        assert update.payload["reflex_transcript_source"] == "moshi"
+        assert update.payload["auxiliary_transcript_hypotheses_count"] == 1
         assert update.payload["interpreter_evidence_late"] is True
         assert update.payload["interpreter_evidence_delivered_to_oracle"] is True
         assert update.payload["interpreter_evidence_consumed_before_irreversible_action"] is False
@@ -3531,9 +3577,15 @@ def test_kame_engine_attaches_interpreter_evidence_to_running_async_oracle_job(m
         assert updated_request.oracle_text_source == "reflex_audio"
         assert any("intent=inspect deployment logs" in update for update in updated_request.job_updates)
         assert "transcript=check the current deployment logs" in update_text
+        assert "audio=attached" in update_text
         assert metadata["latest_interpreter_evidence"] == update_text
         assert metadata["interpreter_evidence_count"] == 1
         assert metadata["interpreter_evidence_late"] is True
+        assert metadata["audio_segment_ref"] == "artifact://redacted/running.wav"
+        assert metadata["audio_time_range_ms"] == (200, 2600)
+        assert metadata["reflex_transcript_hypothesis"] == "check deployment"
+        assert metadata["reflex_transcript_source"] == "moshi"
+        assert metadata["auxiliary_transcript_hypotheses_count"] == 1
 
     asyncio.run(run())
 

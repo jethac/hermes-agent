@@ -373,6 +373,10 @@ class OracleJobManager:
         *,
         corrected_transcript: str = "",
         normalized_intent: str = "",
+        audio_segment_ref: str = "",
+        audio_time_range_ms: Optional[Sequence[Any]] = None,
+        reflex_transcript_hypothesis: Any = None,
+        auxiliary_transcript_hypotheses: Optional[Sequence[Mapping[str, Any]]] = None,
         entities: Optional[list[Mapping[str, Any]]] = None,
         confidence: Optional[float] = None,
         disagreements: Optional[list[str]] = None,
@@ -388,6 +392,10 @@ class OracleJobManager:
             evidence = _compact_interpreter_evidence(
                 corrected_transcript=corrected_transcript,
                 normalized_intent=normalized_intent,
+                audio_segment_ref=audio_segment_ref,
+                audio_time_range_ms=audio_time_range_ms,
+                reflex_transcript_hypothesis=reflex_transcript_hypothesis,
+                auxiliary_transcript_hypotheses=auxiliary_transcript_hypotheses,
                 entities=entities,
                 confidence=confidence,
                 disagreements=disagreements,
@@ -860,6 +868,10 @@ def _compact_interpreter_evidence(
     *,
     corrected_transcript: object,
     normalized_intent: object,
+    audio_segment_ref: object,
+    audio_time_range_ms: object,
+    reflex_transcript_hypothesis: object,
+    auxiliary_transcript_hypotheses: Optional[Sequence[Mapping[str, Any]]],
     entities: Optional[list[Mapping[str, Any]]],
     confidence: Optional[float],
     disagreements: Optional[list[str]],
@@ -874,6 +886,12 @@ def _compact_interpreter_evidence(
     }
     transcript = _compact_evidence_text(corrected_transcript, limit=500)
     intent = _compact_evidence_text(normalized_intent, limit=300)
+    compact_audio_ref = _compact_evidence_text(audio_segment_ref, limit=240)
+    compact_audio_range = _audio_time_range_ms(audio_time_range_ms)
+    compact_reflex_hypothesis = _compact_reflex_transcript_hypothesis(reflex_transcript_hypothesis)
+    compact_auxiliary_hypotheses = _compact_auxiliary_transcript_hypotheses(
+        auxiliary_transcript_hypotheses or []
+    )
     compact_entities = _compact_interpreter_entities(entities or [])
     compact_disagreements = tuple(
         text
@@ -888,6 +906,14 @@ def _compact_interpreter_evidence(
         evidence["corrected_transcript"] = transcript
     if intent:
         evidence["normalized_intent"] = intent
+    if compact_audio_ref:
+        evidence["audio_segment_ref"] = compact_audio_ref
+    if compact_audio_range:
+        evidence["audio_time_range_ms"] = compact_audio_range
+    if compact_reflex_hypothesis:
+        evidence["reflex_transcript_hypothesis"] = compact_reflex_hypothesis
+    if compact_auxiliary_hypotheses:
+        evidence["auxiliary_transcript_hypotheses"] = compact_auxiliary_hypotheses
     if compact_entities:
         evidence["entities"] = compact_entities
     parsed_confidence = _compact_confidence(confidence)
@@ -901,6 +927,30 @@ def _compact_interpreter_evidence(
         return {}
     evidence["summary"] = summary
     return evidence
+
+
+def _compact_reflex_transcript_hypothesis(value: object) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        text = _compact_evidence_text(
+            value.get("text") or value.get("transcript") or value.get("hypothesis"),
+            limit=500,
+        )
+        source = _compact_evidence_text(value.get("source") or value.get("provider"), limit=40) or "reflex_audio"
+        confidence = _compact_confidence(value.get("confidence"))  # type: ignore[arg-type]
+    else:
+        text = _compact_evidence_text(value, limit=500)
+        source = "reflex_audio"
+        confidence = None
+    if not text:
+        return {}
+    item: dict[str, Any] = {
+        "source": source,
+        "text": text,
+        "authority": "hypothesis",
+    }
+    if confidence is not None:
+        item["confidence"] = confidence
+    return item
 
 
 def _compact_evidence_text(value: object, *, limit: int) -> str:
@@ -984,6 +1034,30 @@ def _compact_interpreter_entities(values: list[Mapping[str, Any]]) -> tuple[dict
 
 
 def _promote_interpreter_evidence(job: OracleJob, evidence: Mapping[str, Any]) -> None:
+    audio_ref = _compact_evidence_text(evidence.get("audio_segment_ref"), limit=240)
+    if audio_ref:
+        job.audio_segment_ref = audio_ref
+    audio_time_range = _audio_time_range_ms(evidence.get("audio_time_range_ms"))
+    if audio_time_range:
+        job.audio_time_range_ms = audio_time_range
+    reflex_hypothesis = evidence.get("reflex_transcript_hypothesis")
+    if isinstance(reflex_hypothesis, Mapping):
+        text = _compact_evidence_text(
+            reflex_hypothesis.get("text") or reflex_hypothesis.get("transcript") or reflex_hypothesis.get("hypothesis"),
+            limit=500,
+        )
+        if text:
+            job.reflex_transcript_hypothesis = text
+            job.reflex_transcript_source = _compact_evidence_text(
+                reflex_hypothesis.get("source") or reflex_hypothesis.get("provider"),
+                limit=40,
+            ) or "reflex_audio"
+            job.reflex_transcript_confidence = _compact_confidence(reflex_hypothesis.get("confidence"))  # type: ignore[arg-type]
+    auxiliary = evidence.get("auxiliary_transcript_hypotheses")
+    if isinstance(auxiliary, tuple):
+        job.auxiliary_transcript_hypotheses = _compact_auxiliary_transcript_hypotheses(
+            [item for item in auxiliary if isinstance(item, Mapping)]
+        )
     transcript = _compact_evidence_text(evidence.get("corrected_transcript"), limit=500)
     if transcript:
         job.interpreter_corrected_transcript = transcript
@@ -1015,6 +1089,13 @@ def _interpreter_evidence_summary(evidence: Mapping[str, Any]) -> str:
         parts.append(f"transcript={transcript}")
     if intent:
         parts.append(f"intent={intent}")
+    if evidence.get("audio_segment_ref"):
+        parts.append("audio=attached")
+    if evidence.get("reflex_transcript_hypothesis"):
+        parts.append("reflex_hypothesis=attached")
+    auxiliary = evidence.get("auxiliary_transcript_hypotheses")
+    if isinstance(auxiliary, tuple) and auxiliary:
+        parts.append(f"auxiliary_hypotheses={len(auxiliary)}")
     entities = evidence.get("entities")
     if isinstance(entities, tuple) and entities:
         rendered_entities = []
