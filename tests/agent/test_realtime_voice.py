@@ -3795,6 +3795,97 @@ def test_kame_engine_merges_sequential_queued_transcript_hypotheses_before_start
     asyncio.run(run())
 
 
+def test_kame_engine_attaches_interpreter_evidence_by_turn_and_audio_ref(monkeypatch):
+    class BlockingOracle:
+        def __init__(self):
+            self.requests = []
+            self.release = asyncio.Event()
+            self.request_count_changed = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.request_count_changed.set()
+            await self.release.wait()
+            yield f"Finished {request.intent}."
+
+        async def wait_for_requests(self, count):
+            while len(self.requests) < count:
+                self.request_count_changed.clear()
+                await asyncio.wait_for(self.request_count_changed.wait(), timeout=1)
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            pass
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = BlockingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+                metadata={"transport": "discord_voice"},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "turn_id": "voice-123:audio-1",
+                    "transcript": "run task one",
+                    "intent": "Run task one",
+                    "intent_source": "reflex_audio",
+                    "route": "defer",
+                    "interface_already_said": "Starting task one.",
+                    "audio_ref": "artifact://redacted/audio-1.wav",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_UPDATE,
+                session_id="voice-123",
+                sequence=2,
+                payload={
+                    "turn_id": "voice-123:audio-1",
+                    "update_type": "interpreter_evidence",
+                    "corrected_transcript": "run task one with corrected wording",
+                    "normalized_intent": "run corrected task one",
+                    "audio_ref": "artifact://redacted/audio-1.wav",
+                    "source": "gemma_interpreter",
+                    "reason": "attach interpreter evidence by bundle key",
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE:
+                break
+
+        oracle.release.set()
+        await oracle.wait_for_requests(1)
+        await engine.close()
+
+        update = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE)
+        evidence = next(
+            event for event in seen if event.type == VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_LATE
+        )
+        assert update.payload["job_id"] == "voice-oracle-001"
+        assert update.payload["audio_segment_ref"] == "artifact://redacted/audio-1.wav"
+        assert evidence.payload["job_id"] == "voice-oracle-001"
+        assert oracle.requests[0].turn_id == "voice-123:audio-1"
+
+    asyncio.run(run())
+
+
 def test_kame_engine_attaches_interpreter_evidence_to_running_async_oracle_job(monkeypatch):
     class RunningEvidenceOracle:
         def __init__(self):
@@ -5904,7 +5995,8 @@ def test_async_oracle_job_enters_waiting_for_approval_on_tool_call(monkeypatch):
         assert "1 waiting for approval" in status_commit.payload["text"]
         assert "1 active out of 1" in status_commit.payload["text"]
         assert "0 running out of 1" not in status_commit.payload["text"]
-        assert "waiting_for_approval: Preparing the spend request." in status_commit.payload["text"]
+        assert "job one waiting_for_approval: Preparing the spend request." in status_commit.payload["text"]
+        assert "approval: Stripe Link spend requires approval" in status_commit.payload["text"]
 
         oracle.release.set()
         async for event in engine.events():

@@ -94,6 +94,8 @@ class OracleJob:
     result_text: str = ""
     error: str = ""
     cancel_reason: str = ""
+    approval_reason: str = ""
+    approval: Mapping[str, Any] = field(default_factory=dict)
     updates: list[dict[str, Any]] = field(default_factory=list)
     interpreter_evidence: list[dict[str, Any]] = field(default_factory=list)
     request: Optional[KameOracleRequest] = field(default=None, repr=False, compare=False)
@@ -115,6 +117,11 @@ class OracleJob:
             status["error"] = self.error
         if self.cancel_reason:
             status["cancel_reason"] = self.cancel_reason
+        if self.state == OracleJobState.WAITING_FOR_APPROVAL:
+            if self.approval_reason:
+                status["approval_reason"] = self.approval_reason
+            if self.approval:
+                status["approval"] = _compact_approval_payload(self.approval)
         if self.interface_tool_call_id:
             status["interface_tool_call_id"] = self.interface_tool_call_id
         if self.audio_segment_ref:
@@ -512,11 +519,10 @@ class OracleJobManager:
             if job.state in TERMINAL_STATES or job.state == OracleJobState.CANCEL_REQUESTED:
                 return job
             job.state = OracleJobState.WAITING_FOR_APPROVAL
+            job.approval_reason = _compact_evidence_text(reason or "waiting for approval", limit=240)
+            job.approval = _compact_approval_payload(approval) if approval else {}
             job.updated_at = self._clock()
             payload = dict(job.to_status())
-            payload["approval_reason"] = str(reason or "waiting for approval")[:240]
-            if approval:
-                payload["approval"] = _compact_approval_payload(approval)
             await self._emit_locked(
                 OracleJobEventType.WAITING_FOR_APPROVAL,
                 job,
@@ -553,6 +559,41 @@ class OracleJobManager:
             if job is None:
                 raise OracleJobNotFoundError(job_id)
             return job
+
+    async def find_by_evidence_key(
+        self,
+        *,
+        turn_id: str = "",
+        audio_segment_ref: str = "",
+    ) -> OracleJob:
+        """Resolve the oracle job for a late interpreter evidence bundle."""
+
+        turn_id = _compact_evidence_text(turn_id, limit=160)
+        audio_segment_ref = _compact_evidence_text(audio_segment_ref, limit=240)
+        if not turn_id and not audio_segment_ref:
+            raise OracleJobNotFoundError("missing evidence key")
+        async with self._lock:
+            matches = []
+            for job in self._jobs.values():
+                if job.state in TERMINAL_STATES:
+                    continue
+                job_turn_id = str(job.request.turn_id if job.request is not None else "").strip()
+                job_audio_ref = str(
+                    job.audio_segment_ref
+                    or (job.request.audio_segment_ref if job.request is not None else "")
+                    or ""
+                ).strip()
+                turn_matches = bool(turn_id and job_turn_id == turn_id)
+                audio_matches = bool(audio_segment_ref and job_audio_ref == audio_segment_ref)
+                if turn_id and audio_segment_ref:
+                    if turn_matches and audio_matches:
+                        matches.append(job)
+                elif turn_matches or audio_matches:
+                    matches.append(job)
+            if len(matches) != 1:
+                key = turn_id or audio_segment_ref or "missing evidence key"
+                raise OracleJobNotFoundError(key)
+            return matches[0]
 
     async def wait_for_idle(self) -> None:
         while True:
@@ -861,6 +902,10 @@ def _reflex_job_status(job: Mapping[str, Any]) -> dict[str, Any]:
         safe_job["priority"] = priority
     if label:
         safe_job["spoken_status"] = label
+    if state == OracleJobState.WAITING_FOR_APPROVAL.value:
+        reason = _compact_evidence_text(job.get("approval_reason"), limit=160)
+        if reason:
+            safe_job["approval_reason"] = reason
     if state == OracleJobState.COMPLETED.value:
         result = _compact_evidence_text(job.get("result_summary"), limit=160)
         if result:

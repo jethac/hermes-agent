@@ -769,6 +769,21 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             )
             return
         has_interpreter_evidence = _payload_has_interpreter_evidence(event.payload)
+        evidence = (
+            _interpreter_evidence_from_payload(event.payload, fallback_text=update_text)
+            if has_interpreter_evidence
+            else {}
+        )
+        if not job_id and has_interpreter_evidence:
+            turn_id = str(event.payload.get("turn_id") or "").strip()
+            try:
+                job = await manager.find_by_evidence_key(
+                    turn_id=turn_id,
+                    audio_segment_ref=str(evidence.get("audio_segment_ref") or ""),
+                )
+                job_id = job.job_id
+            except OracleJobNotFoundError:
+                pass
         if not job_id or (not priority and not update_text and not has_interpreter_evidence):
             await self._emit(
                 VoiceEventType.FRONTEND_STATE,
@@ -786,7 +801,6 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             else:
                 job = await manager.get(job_id)
             if has_interpreter_evidence:
-                evidence = _interpreter_evidence_from_payload(event.payload, fallback_text=update_text)
                 job = await manager.add_interpreter_evidence(job_id, **evidence)
                 summary = str(job.to_status().get("latest_interpreter_evidence") or "").strip()
                 if summary:
@@ -3033,11 +3047,18 @@ def _kame_oracle_job_status_text(status: Mapping[str, Any]) -> str:
     for index, job in enumerate(active_jobs[:5]):
         label = str(job.get("spoken_status") or job.get("intent") or "").strip()
         state = str(job.get("state") or "").strip()
+        label_limit = 90
+        approval_reason = ""
+        if state == "waiting_for_approval":
+            approval_reason = str(job.get("approval_reason") or "").strip()
+            if approval_reason:
+                label = f"{label[:80]} approval: {approval_reason[:80]}" if label else f"approval: {approval_reason[:120]}"
+                label_limit = 170
         ordinal = _ORACLE_JOB_STATUS_ORDINALS[index]
         if label and state:
-            labels.append(f"job {ordinal} {state}: {label[:90]}")
+            labels.append(f"job {ordinal} {state}: {label[:label_limit]}")
         elif label:
-            labels.append(f"job {ordinal}: {label[:90]}")
+            labels.append(f"job {ordinal}: {label[:label_limit]}")
         elif state:
             labels.append(f"job {ordinal} {state}")
     remaining = len(active_jobs) - len(labels)

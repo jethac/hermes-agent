@@ -496,6 +496,37 @@ async def test_add_update_redacts_secret_like_text_from_status_and_events():
 
 
 @pytest.mark.asyncio
+async def test_find_by_evidence_key_resolves_active_job_without_internal_job_id():
+    release = asyncio.Event()
+
+    async def runner(job):
+        await release.wait()
+        return {"result_summary": f"done {job.oracle_text}"}
+
+    manager = OracleJobManager(max_concurrent=1, runner=runner)
+    request = KameOracleRequest(
+        session_id="voice-session-1",
+        turn_id="turn:audio-001",
+        source="discord_voice",
+        user_id="42",
+        intent="answer a math question",
+        route=KameRoute.DEFER,
+        audio_segment_ref="artifact://redacted/audio-001.wav",
+        interface_already_said="I'm checking the math.",
+    )
+    job = await manager.submit(request)
+
+    resolved = await manager.find_by_evidence_key(
+        turn_id="turn:audio-001",
+        audio_segment_ref="artifact://redacted/audio-001.wav",
+    )
+
+    assert resolved.job_id == job.job_id
+    release.set()
+    await manager.wait_for_idle()
+
+
+@pytest.mark.asyncio
 async def test_interpreter_evidence_updates_queued_job_before_execution():
     events = []
     release = asyncio.Event()
@@ -1505,6 +1536,21 @@ async def test_waiting_for_approval_holds_capacity_and_emits_redacted_event():
         "waiting_for_approval": 1,
         "cancel_requested": 0,
     }
+    assert status["jobs"][0]["approval_reason"] == "Stripe Link spend requires approval"
+    assert status["jobs"][0]["approval"] == {
+        "approval_id": "approval-123",
+        "tool_name": "stripe_link_purchase",
+        "latest_interpreter_evidence": (
+            "interpreter evidence: transcript=buy twenty dollars of phone credits; "
+            "intent=prepare Stripe approval"
+        ),
+        "latest_interpreter_evidence_source": "gemma_interpreter",
+        "interpreter_evidence_count": 1,
+        "interpreter_evidence_late": True,
+    }
+    assert status["reflex"]["jobs"][0]["approval_reason"] == "Stripe Link spend requires approval"
+    assert "approval" not in status["reflex"]["jobs"][0]
+    assert "do not expose" not in str(status)
     waiting_event = next(event for event in events if event["type"] == "oracle.job.waiting_for_approval")
     assert waiting_event["state"] == "waiting_for_approval"
     assert waiting_event["payload"]["approval_reason"] == "Stripe Link spend requires approval"
