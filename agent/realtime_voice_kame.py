@@ -432,6 +432,8 @@ class KameOracleRequest:
             authority["raw_audio"] = "primary_audio"
         if self.transcript:
             authority["transcript"] = _kame_source_authority(self.transcript_source, default="reflex_hypothesis")
+            if self.transcript_source == "reflex_audio":
+                authority["reflex_transcript_hypothesis"] = "reflex_hypothesis"
         if self.asr_transcript:
             authority["classic_asr_hypothesis"] = "auxiliary_hypothesis"
         if self.reflex_transcript_hypothesis:

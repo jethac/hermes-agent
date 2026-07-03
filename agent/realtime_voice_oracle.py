@@ -390,6 +390,7 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
     summary = _metadata_text(metadata.get("kame_conversation_summary"))
     job_updates = _metadata_text_sequence(metadata.get("kame_job_updates"))
     oracle_text_source = _metadata_text(metadata.get("kame_oracle_text_source"))
+    evidence_authority = _metadata_evidence_authority(metadata.get("kame_evidence_authority"))
     interface_input_source = _metadata_text(metadata.get("kame_interface_input_source"))
     interface_audio_input_fallback = metadata.get("kame_interface_audio_input_fallback") is True
     response_style = _metadata_response_style(metadata.get("kame_requested_response_style"))
@@ -454,6 +455,14 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
             )
         else:
             parts.append(f"The oracle-facing text source is {oracle_text_source}.")
+    if evidence_authority:
+        labels = "; ".join(
+            f"{key}={value}"
+            for key, value in evidence_authority.items()
+        )
+        parts.append(
+            f"Evidence authority labels: {labels}. Treat primary_audio and interpreter_promoted fields as higher authority than reflex_hypothesis or auxiliary_hypothesis fields."
+        )
     if interface_already_said:
         parts.append(f"The voice reflex already told the user: {interface_already_said}")
     if summary:
@@ -553,6 +562,28 @@ def _metadata_transcript_hypotheses(value: object) -> list[dict[str, object]]:
         if len(hypotheses) >= 5:
             break
     return hypotheses
+
+
+def _metadata_evidence_authority(value: object) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        return {}
+    authority: dict[str, str] = {}
+    allowed = {
+        "primary_audio",
+        "reflex_hypothesis",
+        "auxiliary_hypothesis",
+        "interpreter_promoted",
+        "oracle_promoted",
+        "diagnostic_only",
+    }
+    for key, raw_value in value.items():
+        field = _metadata_text(str(key))
+        label = _metadata_text(raw_value)
+        if field and label in allowed:
+            authority[field] = label
+        if len(authority) >= 12:
+            break
+    return authority
 
 
 def _metadata_positive_int(value: object) -> Optional[int]:

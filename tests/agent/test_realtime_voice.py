@@ -1314,6 +1314,10 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
     assert "tool arguments" in prompt
     assert "oracle-facing text was selected from asr evidence" in prompt
     assert "preserve the reflex intent and route as the control signal" in prompt
+    assert "Evidence authority labels:" in prompt
+    assert "raw_audio=primary_audio" in prompt
+    assert "classic_asr_hypothesis=auxiliary_hypothesis" in prompt
+    assert "reflex_transcript_hypothesis=reflex_hypothesis" in prompt
     assert "The voice reflex already told the user: One moment." in prompt
     assert "User added updates for this oracle job: also check the Stripe receipt before answering" in prompt
     assert "Requested response style: spoken=true; policy=sentence_cap; avoid automatic follow-up offers." in prompt

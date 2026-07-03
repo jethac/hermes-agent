@@ -484,6 +484,31 @@ def _discord_voice_copy_oracle_job_evidence_status(
         raw = source.get(key)
         if isinstance(raw, bool):
             target[key] = raw
+    evidence_authority = _discord_voice_evidence_authority(source.get("evidence_authority"))
+    if evidence_authority:
+        target["evidence_authority"] = evidence_authority
+
+
+def _discord_voice_evidence_authority(value: Any) -> Dict[str, str]:
+    if not isinstance(value, Mapping):
+        return {}
+    allowed = {
+        "primary_audio",
+        "reflex_hypothesis",
+        "auxiliary_hypothesis",
+        "interpreter_promoted",
+        "oracle_promoted",
+        "diagnostic_only",
+    }
+    authority: Dict[str, str] = {}
+    for key, raw_value in value.items():
+        field = str(key or "").strip()
+        label = str(raw_value or "").strip()
+        if field and label in allowed:
+            authority[field[:80]] = label
+        if len(authority) >= 12:
+            break
+    return authority
 
 
 def _discord_voice_oracle_jobs_degraded(existing: Any, reason: str) -> Dict[str, Any]:

@@ -1435,6 +1435,13 @@ def test_discord_realtime_event_tracks_oracle_job_status():
             "interpreter_evidence_delivered_to_oracle": True,
             "interpreter_evidence_consumed_before_irreversible_action": False,
             "interpreter_evidence_delivery_status": "delivered",
+            "evidence_authority": {
+                "raw_audio": "primary_audio",
+                "reflex_transcript_hypothesis": "reflex_hypothesis",
+                "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+                "interpreter_corrected_transcript": "interpreter_promoted",
+                "unsafe_extra": "http://do-not-copy.local",
+            },
             "corrected_transcript": "must not leak",
         },
     )
@@ -1476,6 +1483,12 @@ def test_discord_realtime_event_tracks_oracle_job_status():
             "interpreter_evidence_delivered_to_oracle": True,
             "interpreter_evidence_consumed_before_irreversible_action": False,
             "interpreter_evidence_delivery_status": "delivered",
+            "evidence_authority": {
+                "raw_audio": "primary_audio",
+                "reflex_transcript_hypothesis": "reflex_hypothesis",
+                "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+                "interpreter_corrected_transcript": "interpreter_promoted",
+            },
         },
     ]
     assert "metadata" not in status["oracle_jobs"]["jobs"][0]
