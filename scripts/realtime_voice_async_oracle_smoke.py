@@ -1069,6 +1069,96 @@ async def _run_terminal_result_policy_smoke() -> dict[str, Any]:
     }
 
 
+async def _run_unflagged_high_risk_tool_smoke() -> dict[str, Any]:
+    class ToolOracle:
+        async def stream_answer_for_request(self, _request: Any):
+            yield {
+                "event": "tool_call",
+                "tool_name": "stripe_link_purchase",
+                "tool_call_id": "call-unflagged-high-risk",
+                "arguments": {"amount": 200, "card": APPROVAL_SECRET_CANARY},
+            }
+            yield "This unsafe tool result should not be spoken."
+
+    engine = SmokeEngine(oracle=ToolOracle())
+    recorder = EventRecorder(engine)
+    await engine.start(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-smoke-unflagged-high-risk",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+            metadata={"transport": "smoke"},
+        )
+    )
+    collector = asyncio.create_task(recorder.run())
+    await engine.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.AUDIO_INPUT_CHUNK,
+            session_id="voice-smoke-unflagged-high-risk",
+            sequence=1,
+            payload={
+                "transcript": "buy service credits",
+                "intent": "Buy service credits.",
+                "intent_source": "smoke_reflex",
+                "route": "defer",
+                "interface_already_said": "Preparing the spend request.",
+                "end_of_utterance": True,
+            },
+        )
+    )
+    await recorder.wait_for(
+        lambda events: any(event.type == VoiceEventType.ORACLE_JOB_FAILED for event in events)
+    )
+    await engine.close()
+    collector.cancel()
+    try:
+        await collector
+    except asyncio.CancelledError:
+        pass
+
+    suppressed_events = [
+        event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED
+    ]
+    failed_events = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_FAILED]
+    tool_progress_events = [
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.ORACLE_JOB_PROGRESS and event.payload.get("phase") == "tool"
+    ]
+    serialized_events = str([event.payload for event in recorder.events])
+    spoken = list(engine.spoken)
+    suppression_reason = (
+        str(suppressed_events[-1].payload.get("suppression_reason") or "")
+        if suppressed_events
+        else ""
+    )
+    failure_error = str(failed_events[-1].payload.get("error") or "") if failed_events else ""
+    payload_redacted = APPROVAL_SECRET_CANARY not in serialized_events and "card" not in serialized_events
+    spoken_payload_clean = APPROVAL_SECRET_CANARY not in str(spoken) and not any(
+        "This unsafe tool result should not be spoken." in text for text in spoken
+    )
+    return {
+        "ok": bool(suppressed_events)
+        and bool(failed_events)
+        and suppression_reason == "unapproved_high_risk_tool_event"
+        and "KAME action gate failed" in failure_error
+        and not tool_progress_events
+        and payload_redacted
+        and spoken_payload_clean
+        and any("KAME action gate failed" in text for text in spoken),
+        "unflagged_high_risk_tool_suppressed": bool(suppressed_events),
+        "unflagged_high_risk_tool_failed_closed": bool(failed_events)
+        and "KAME action gate failed" in failure_error,
+        "unflagged_high_risk_tool_suppression_reason": suppression_reason,
+        "unflagged_high_risk_tool_progress_suppressed": not tool_progress_events,
+        "unflagged_high_risk_tool_payload_redacted": payload_redacted,
+        "unflagged_high_risk_tool_spoken_payload_clean": spoken_payload_clean,
+        "unflagged_high_risk_tool_failure_spoken": any("KAME action gate failed" in text for text in spoken),
+        "unflagged_high_risk_tool_secret_canary_checked": True,
+        "unflagged_high_risk_tool_spoken": spoken,
+    }
+
+
 async def _run_sidecar_control_smoke() -> dict[str, Any]:
     oracle = SmokeOracle()
     sidecar = SmokeSidecar()
@@ -2751,6 +2841,7 @@ async def run_smoke() -> dict[str, Any]:
     cancel_drain_capacity_smoke = await _run_cancel_drain_capacity_smoke()
     approval_cancel_capacity_smoke = await _run_approval_cancel_capacity_smoke()
     terminal_result_policy_smoke = await _run_terminal_result_policy_smoke()
+    unflagged_high_risk_tool_smoke = await _run_unflagged_high_risk_tool_smoke()
     sidecar_control_smoke = await _run_sidecar_control_smoke()
     external_frontend_bridge_smoke = await _run_external_frontend_bridge_smoke()
     unpromoted_hypothesis_smoke = await _run_unpromoted_transcript_hypothesis_smoke()
@@ -3169,6 +3260,7 @@ async def run_smoke() -> dict[str, Any]:
             and cancel_drain_capacity_smoke["ok"]
             and approval_cancel_capacity_smoke["ok"]
             and terminal_result_policy_smoke["ok"]
+            and unflagged_high_risk_tool_smoke["ok"]
             and sidecar_control_smoke["ok"]
             and external_frontend_bridge_smoke["ok"]
             and unpromoted_hypothesis_smoke["ok"]
@@ -3294,6 +3386,34 @@ async def run_smoke() -> dict[str, Any]:
         "terminal_result_unsolicited_spoken": terminal_result_policy_smoke["terminal_result_unsolicited_spoken"],
         "terminal_result_status_available": terminal_result_policy_smoke["terminal_result_status_available"],
         "terminal_result_status_text": terminal_result_policy_smoke["terminal_result_status_text"],
+        "unflagged_high_risk_tool_smoke_ok": unflagged_high_risk_tool_smoke["ok"],
+        "unflagged_high_risk_tool_suppressed": unflagged_high_risk_tool_smoke[
+            "unflagged_high_risk_tool_suppressed"
+        ],
+        "unflagged_high_risk_tool_failed_closed": unflagged_high_risk_tool_smoke[
+            "unflagged_high_risk_tool_failed_closed"
+        ],
+        "unflagged_high_risk_tool_suppression_reason": unflagged_high_risk_tool_smoke[
+            "unflagged_high_risk_tool_suppression_reason"
+        ],
+        "unflagged_high_risk_tool_progress_suppressed": unflagged_high_risk_tool_smoke[
+            "unflagged_high_risk_tool_progress_suppressed"
+        ],
+        "unflagged_high_risk_tool_payload_redacted": unflagged_high_risk_tool_smoke[
+            "unflagged_high_risk_tool_payload_redacted"
+        ],
+        "unflagged_high_risk_tool_spoken_payload_clean": unflagged_high_risk_tool_smoke[
+            "unflagged_high_risk_tool_spoken_payload_clean"
+        ],
+        "unflagged_high_risk_tool_failure_spoken": unflagged_high_risk_tool_smoke[
+            "unflagged_high_risk_tool_failure_spoken"
+        ],
+        "unflagged_high_risk_tool_secret_canary_checked": unflagged_high_risk_tool_smoke[
+            "unflagged_high_risk_tool_secret_canary_checked"
+        ],
+        "unflagged_high_risk_tool_spoken": unflagged_high_risk_tool_smoke[
+            "unflagged_high_risk_tool_spoken"
+        ],
         "sidecar_control_smoke_ok": sidecar_control_smoke["ok"],
         "sidecar_control_job_id": sidecar_control_smoke["sidecar_control_job_id"],
         "sidecar_control_update_observed": sidecar_control_smoke["sidecar_control_update_observed"],

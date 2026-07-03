@@ -1984,6 +1984,30 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "terminal_result_unsolicited_spoken": bool(async_smoke.get("terminal_result_unsolicited_spoken")),
             "terminal_result_status_available": bool(async_smoke.get("terminal_result_status_available")),
             "terminal_result_status_text": async_smoke.get("terminal_result_status_text"),
+            "unflagged_high_risk_tool_smoke_ok": bool(async_smoke.get("unflagged_high_risk_tool_smoke_ok")),
+            "unflagged_high_risk_tool_suppressed": bool(async_smoke.get("unflagged_high_risk_tool_suppressed")),
+            "unflagged_high_risk_tool_failed_closed": bool(
+                async_smoke.get("unflagged_high_risk_tool_failed_closed")
+            ),
+            "unflagged_high_risk_tool_suppression_reason": async_smoke.get(
+                "unflagged_high_risk_tool_suppression_reason"
+            ),
+            "unflagged_high_risk_tool_progress_suppressed": bool(
+                async_smoke.get("unflagged_high_risk_tool_progress_suppressed")
+            ),
+            "unflagged_high_risk_tool_payload_redacted": bool(
+                async_smoke.get("unflagged_high_risk_tool_payload_redacted")
+            ),
+            "unflagged_high_risk_tool_spoken_payload_clean": bool(
+                async_smoke.get("unflagged_high_risk_tool_spoken_payload_clean")
+            ),
+            "unflagged_high_risk_tool_failure_spoken": bool(
+                async_smoke.get("unflagged_high_risk_tool_failure_spoken")
+            ),
+            "unflagged_high_risk_tool_secret_canary_checked": bool(
+                async_smoke.get("unflagged_high_risk_tool_secret_canary_checked")
+            ),
+            "unflagged_high_risk_tool_spoken": async_smoke.get("unflagged_high_risk_tool_spoken") or [],
             "external_frontend_bridge_smoke_ok": bool(async_smoke.get("external_frontend_bridge_smoke_ok")),
             "external_frontend_request_accepted": bool(async_smoke.get("external_frontend_request_accepted")),
             "external_frontend_tool_result_observed": bool(

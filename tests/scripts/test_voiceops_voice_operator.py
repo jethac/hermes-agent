@@ -218,6 +218,19 @@ def _async_oracle_smoke_payload() -> dict:
             "No oracle jobs are running or queued right now. Recent: "
             "completed: Finished Suppress terminal result."
         ),
+        "unflagged_high_risk_tool_smoke_ok": True,
+        "unflagged_high_risk_tool_suppressed": True,
+        "unflagged_high_risk_tool_failed_closed": True,
+        "unflagged_high_risk_tool_suppression_reason": "unapproved_high_risk_tool_event",
+        "unflagged_high_risk_tool_progress_suppressed": True,
+        "unflagged_high_risk_tool_payload_redacted": True,
+        "unflagged_high_risk_tool_spoken_payload_clean": True,
+        "unflagged_high_risk_tool_failure_spoken": True,
+        "unflagged_high_risk_tool_secret_canary_checked": True,
+        "unflagged_high_risk_tool_spoken": [
+            "Preparing the spend request.",
+            "I couldn't finish Buy service credits: KAME action gate failed; suppressed unapproved high-risk tool event",
+        ],
         "external_frontend_bridge_smoke_ok": True,
         "external_frontend_request_accepted": True,
         "external_frontend_tool_result_observed": True,
@@ -759,6 +772,21 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert "completed: Finished Suppress terminal result." in report["proofs"]["async_oracle_jobs"][
         "terminal_result_status_text"
     ]
+    assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_smoke_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_suppressed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_failed_closed"] is True
+    assert (
+        report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_suppression_reason"]
+        == "unapproved_high_risk_tool_event"
+    )
+    assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_progress_suppressed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_payload_redacted"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_spoken_payload_clean"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_failure_spoken"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_secret_canary_checked"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_spoken"][0] == (
+        "Preparing the spend request."
+    )
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_bridge_smoke_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_request_accepted"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_tool_result_observed"] is True
@@ -943,6 +971,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert runtime_action_gate["ok"] is True
     assert runtime_action_gate["evidence"] == "async_oracle_smoke_plus_runtime_action_gate_tests"
     assert report["requirements"]["async_oracle_runtime_kame_action_gate"] is True
+    assert report["requirements"]["async_oracle_unflagged_high_risk_tool_fails_closed"] is True
     assert report["proofs"]["async_oracle_jobs"]["audit_scalar_smoke_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["audit_scalar_payload_redacted"] is True
     assert report["proofs"]["async_oracle_jobs"]["audit_scalar_secret_canary_checked"] is True

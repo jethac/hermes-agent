@@ -114,6 +114,20 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["terminal_result_unsolicited_spoken"] is False
     assert report["terminal_result_status_available"] is True
     assert "completed: Finished Suppress terminal result." in report["terminal_result_status_text"]
+    assert report["unflagged_high_risk_tool_smoke_ok"] is True
+    assert report["unflagged_high_risk_tool_suppressed"] is True
+    assert report["unflagged_high_risk_tool_failed_closed"] is True
+    assert report["unflagged_high_risk_tool_suppression_reason"] == "unapproved_high_risk_tool_event"
+    assert report["unflagged_high_risk_tool_progress_suppressed"] is True
+    assert report["unflagged_high_risk_tool_payload_redacted"] is True
+    assert report["unflagged_high_risk_tool_spoken_payload_clean"] is True
+    assert report["unflagged_high_risk_tool_failure_spoken"] is True
+    assert report["unflagged_high_risk_tool_secret_canary_checked"] is True
+    assert report["unflagged_high_risk_tool_spoken"][0] == "Preparing the spend request."
+    assert not any(
+        "This unsafe tool result should not be spoken." in text
+        for text in report["unflagged_high_risk_tool_spoken"]
+    )
     assert report["sidecar_control_smoke_ok"] is True
     assert report["sidecar_control_update_observed"] is True
     assert report["sidecar_control_update_reached_oracle"] is True

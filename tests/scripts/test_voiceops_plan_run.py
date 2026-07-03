@@ -1255,6 +1255,24 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "completed: Finished Suppress terminal result." in voice_result["details"]["async_oracle_smoke"][
         "terminal_result_status_text"
     ]
+    assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_smoke_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_suppressed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_failed_closed"] is True
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_suppression_reason"]
+        == "unapproved_high_risk_tool_event"
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_progress_suppressed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_payload_redacted"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_spoken_payload_clean"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_failure_spoken"] is True
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_secret_canary_checked"]
+        is True
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_spoken"][0] == (
+        "Preparing the spend request."
+    )
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_bridge_smoke_ok"] is True
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_tool_call_id"] == "voiceclaw-call-1"
     assert (

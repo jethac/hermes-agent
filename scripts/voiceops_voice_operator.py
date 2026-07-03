@@ -1701,6 +1701,17 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         )
         == ["interpreter_promoted"]
         and smoke.get("runtime_kame_action_gate_tool_disclosure_ref_observed") is True,
+        "unflagged_high_risk_tool_event_fails_closed": smoke.get("unflagged_high_risk_tool_smoke_ok")
+        is True
+        and smoke.get("unflagged_high_risk_tool_suppressed") is True
+        and smoke.get("unflagged_high_risk_tool_failed_closed") is True
+        and smoke.get("unflagged_high_risk_tool_suppression_reason")
+        == "unapproved_high_risk_tool_event"
+        and smoke.get("unflagged_high_risk_tool_progress_suppressed") is True
+        and smoke.get("unflagged_high_risk_tool_payload_redacted") is True
+        and smoke.get("unflagged_high_risk_tool_spoken_payload_clean") is True
+        and smoke.get("unflagged_high_risk_tool_failure_spoken") is True
+        and smoke.get("unflagged_high_risk_tool_secret_canary_checked") is True,
         "approval_wait_holds_capacity": smoke.get("approval_capacity_smoke_ok") is True
         and smoke.get("approval_capacity_waiting_observed") is True
         and smoke.get("approval_capacity_followup_queued") is True
@@ -2070,7 +2081,9 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             runtime_verified_by_this_report=True,
         ),
         "runtime_kame_action_gate_enforces_promoted_evidence": _async_oracle_acceptance_row(
-            ok=smoke_ok and bool(async_oracle_coverage.get("runtime_kame_action_gate_enforced")),
+            ok=smoke_ok
+            and bool(async_oracle_coverage.get("runtime_kame_action_gate_enforced"))
+            and bool(async_oracle_coverage.get("unflagged_high_risk_tool_event_fails_closed")),
             evidence="async_oracle_smoke_plus_runtime_action_gate_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["runtime_action_gate"],
             verification_mode="loopback_smoke_plus_focused_tests",
@@ -2472,6 +2485,36 @@ def build_voice_operator_report(
             ),
             "terminal_result_status_available": bool(async_oracle_smoke.get("terminal_result_status_available")),
             "terminal_result_status_text": async_oracle_smoke.get("terminal_result_status_text"),
+            "unflagged_high_risk_tool_smoke_ok": bool(
+                async_oracle_smoke.get("unflagged_high_risk_tool_smoke_ok")
+            ),
+            "unflagged_high_risk_tool_suppressed": bool(
+                async_oracle_smoke.get("unflagged_high_risk_tool_suppressed")
+            ),
+            "unflagged_high_risk_tool_failed_closed": bool(
+                async_oracle_smoke.get("unflagged_high_risk_tool_failed_closed")
+            ),
+            "unflagged_high_risk_tool_suppression_reason": async_oracle_smoke.get(
+                "unflagged_high_risk_tool_suppression_reason"
+            ),
+            "unflagged_high_risk_tool_progress_suppressed": bool(
+                async_oracle_smoke.get("unflagged_high_risk_tool_progress_suppressed")
+            ),
+            "unflagged_high_risk_tool_payload_redacted": bool(
+                async_oracle_smoke.get("unflagged_high_risk_tool_payload_redacted")
+            ),
+            "unflagged_high_risk_tool_spoken_payload_clean": bool(
+                async_oracle_smoke.get("unflagged_high_risk_tool_spoken_payload_clean")
+            ),
+            "unflagged_high_risk_tool_failure_spoken": bool(
+                async_oracle_smoke.get("unflagged_high_risk_tool_failure_spoken")
+            ),
+            "unflagged_high_risk_tool_secret_canary_checked": bool(
+                async_oracle_smoke.get("unflagged_high_risk_tool_secret_canary_checked")
+            ),
+            "unflagged_high_risk_tool_spoken": list(
+                async_oracle_smoke.get("unflagged_high_risk_tool_spoken") or []
+            ),
             "external_frontend_bridge_smoke_ok": bool(
                 async_oracle_smoke.get("external_frontend_bridge_smoke_ok")
             ),
@@ -2898,6 +2941,9 @@ def build_voice_operator_report(
             "async_oracle_runtime_kame_action_gate": async_oracle_coverage[
                 "runtime_kame_action_gate_enforced"
             ],
+            "async_oracle_unflagged_high_risk_tool_fails_closed": async_oracle_coverage[
+                "unflagged_high_risk_tool_event_fails_closed"
+            ],
             "async_oracle_late_cancelled_output_dropped": async_oracle_coverage["late_cancelled_output_not_spoken"],
             "async_oracle_late_cancelled_output_not_durable": async_oracle_coverage[
                 "late_cancelled_output_not_durable"
@@ -3029,6 +3075,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "witness_fusion_timing_preserves_single_bundle",
         "witness_fusion_adjudicates_frontend_text",
         "runtime_kame_action_gate_enforced",
+        "unflagged_high_risk_tool_event_fails_closed",
         "result_handling_bounded_and_durable",
         "discord_session_cleanup_preserves_oracle_state",
         "sidecar_fail_closed_send_failure_cancels_active_job",

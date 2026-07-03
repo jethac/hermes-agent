@@ -1719,6 +1719,36 @@ async def build_plan_run_async(
                     "terminal_result_status_text": voice_operator["proofs"]["async_oracle_jobs"][
                         "terminal_result_status_text"
                     ],
+                    "unflagged_high_risk_tool_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
+                        "unflagged_high_risk_tool_smoke_ok"
+                    ],
+                    "unflagged_high_risk_tool_suppressed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "unflagged_high_risk_tool_suppressed"
+                    ],
+                    "unflagged_high_risk_tool_failed_closed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "unflagged_high_risk_tool_failed_closed"
+                    ],
+                    "unflagged_high_risk_tool_suppression_reason": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unflagged_high_risk_tool_suppression_reason"],
+                    "unflagged_high_risk_tool_progress_suppressed": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unflagged_high_risk_tool_progress_suppressed"],
+                    "unflagged_high_risk_tool_payload_redacted": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unflagged_high_risk_tool_payload_redacted"],
+                    "unflagged_high_risk_tool_spoken_payload_clean": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unflagged_high_risk_tool_spoken_payload_clean"],
+                    "unflagged_high_risk_tool_failure_spoken": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unflagged_high_risk_tool_failure_spoken"],
+                    "unflagged_high_risk_tool_secret_canary_checked": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unflagged_high_risk_tool_secret_canary_checked"],
+                    "unflagged_high_risk_tool_spoken": list(
+                        voice_operator["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_spoken"]
+                    ),
                     "external_frontend_bridge_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
                         "external_frontend_bridge_smoke_ok"
                     ],
