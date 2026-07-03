@@ -126,6 +126,14 @@ with source, timing, confidence when available, partial/final state, and
 hypothesis that disagrees with the waveform, speaker identity, energy gate, or
 later context.
 
+The canonical wire target is the interpreter evidence bundle documented in
+`docs/design/full-kame-style-realtime-voice.md`. For this goal, the scheduler
+should treat `turn_id` plus `audio_segment_ref` as the merge key. Reflex
+transcripts, Moshi/open-S2S transcript text, VoiceClaw/OpenClaw text, and
+classic ASR text are all entries in `transcript_hypotheses[]` with explicit
+authority labels. Vendor names such as "Moshi STT" belong in `source`, not in
+the authority model.
+
 For this goal, transcript evidence is a side-channel sensor, not a scheduler.
 It can arrive before, with, or after the interpreter result. The scheduler
 should preserve it with provenance, but should not wait for it when the reflex
@@ -318,6 +326,13 @@ Those fields should arrive as one evidence bundle for the speech cut, not as
 independent prompts racing each other. The interpreter can perform the durable
 multilingual transcript adjudication from this bundle, but it is not the
 streaming endpointer and does not need tool schemas or broad Hermes state.
+
+The compact interpreter view should keep raw audio first, live interface context
+second, and hypotheses third. That ordering matters: it tells Gemma that Moshi,
+VoiceClaw/OpenClaw, reflex, and ASR text are clues to compare against the
+waveform, not replacement user messages. The job manager can use the promoted
+interpreter output to patch a queued oracle job, but raw hypothesis text must
+remain audit evidence unless interpreter or oracle judgment promotes it.
 
 ## Routing Behavior
 

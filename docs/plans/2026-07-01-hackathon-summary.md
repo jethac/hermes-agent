@@ -89,6 +89,13 @@ route, the acknowledgement already spoken, and any Moshi/open-S2S or classic ASR
 hypotheses. It promotes only the evidence that is safe to hand to Hermes'
 active `/model`.
 
+The concrete implementation packet is one evidence bundle per speech cut. Raw
+audio and timing are primary. The reflex route, the acknowledgement already
+spoken, and transcript-like text from Moshi, VoiceClaw/OpenClaw, or classic ASR
+attach to that bundle with source and authority labels. A field called "Moshi
+STT" is still stored as a hypothesis: useful context for Gemma, not the user
+message of record.
+
 For the demo narrative, this is an advantage rather than a complication: Hermes
 can acknowledge quickly from the reflex, then show the judges a safer evidence
 trail before spending money or placing a call. If a transcript side channel

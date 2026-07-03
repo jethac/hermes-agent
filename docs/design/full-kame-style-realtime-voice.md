@@ -133,6 +133,103 @@ debugging missed prefixes, code-switching, and hallucinated commands. It is
 still only a hypothesis. The correct packet shape is raw audio plus
 provenance-labeled hypotheses, not "pick whichever transcript arrived first."
 
+## Interpreter Evidence Bundle Contract
+
+Each speech cut creates one interpreter evidence bundle. This is the contract
+between Discord, VoiceClaw/OpenClaw-style frontends, Moshi/open-S2S frontends,
+classic ASR fallbacks, the Gemma interpreter, and the Hermes oracle job manager.
+The bundle is keyed by `turn_id` and the raw-audio reference; every transcript
+string is attached to that same bundle instead of becoming its own conversation.
+
+Canonical shape:
+
+```json
+{
+  "turn_id": "voice-turn-id",
+  "session_id": "voice-session-id",
+  "audio_segment_ref": "artifact-or-buffer-ref",
+  "audio": {
+    "codec": "pcm_s16le",
+    "sample_rate_hz": 16000,
+    "channels": 1,
+    "time_range_ms": [12840, 15320],
+    "vad": {"speech_start_ms": 12840, "speech_end_ms": 15320},
+    "authority": "primary_audio"
+  },
+  "speaker": {"platform": "discord", "channel_user_id": "discord-user-id"},
+  "reflex": {
+    "route": "defer",
+    "intent": "calculate a power",
+    "interface_already_said": "I'm checking that.",
+    "ack_event_id": "voice-ack-001",
+    "authority": "reflex_hypothesis"
+  },
+  "transcript_hypotheses": [
+    {
+      "kind": "reflex_transcript_hypothesis",
+      "source": "moshi-reflex",
+      "text": "three to the power of seventeen",
+      "partial": false,
+      "time_range_ms": [12920, 15300],
+      "latency_ms": 110,
+      "confidence": 0.68,
+      "authority": "reflex_hypothesis"
+    },
+    {
+      "kind": "s2s_transcript_hypothesis",
+      "source": "moshi",
+      "text": "what is three to the power of seventeen",
+      "partial": false,
+      "time_range_ms": [12840, 15320],
+      "latency_ms": 145,
+      "confidence": 0.78,
+      "authority": "auxiliary_hypothesis"
+    }
+  ],
+  "interpreter": {
+    "model": "gemma-4-audio",
+    "status": "pending"
+  },
+  "oracle_job_id": "voice-oracle-001"
+}
+```
+
+If an operator calls the Moshi side channel "Moshi STT", the runtime should
+still store it as `s2s_transcript_hypothesis` or
+`reflex_transcript_hypothesis`, depending on whether it came from the live
+reflex itself or a distinct transcript output. The name can appear in `source`;
+the authority stays `reflex_hypothesis` or `auxiliary_hypothesis`.
+
+The interpreter prompt should receive the bundle in three sections:
+
+1. Primary audio: `audio_segment_ref`, timing, VAD/energy metadata, speaker, and
+   channel context.
+2. Live interface context: reflex route, provisional intent, acknowledgement
+   already spoken, and interruption/playback state.
+3. Hypotheses: Moshi/open-S2S, reflex, VoiceClaw/OpenClaw, and classic ASR text
+   with source, timing, partial/final state, confidence when available, and
+   explicit authority labels.
+
+The prompt must tell the interpreter that hypotheses may be clipped, stale,
+hallucinated, or from the wrong speaker. Gemma may use them to recover names,
+numbers, prefixes, and code-switched phrases, but it must prefer the raw audio
+when the signals disagree and must report material disagreements.
+
+Lifecycle rules:
+
+- partial transcript hypotheses attach to the pending bundle with
+  `partial = true`; a final hypothesis from the same source supersedes the
+  partial for interpreter context while preserving audit timing
+- acknowledgement and oracle-job creation do not wait for Moshi/open-S2S or
+  classic ASR hypotheses when raw audio plus reflex routing is enough
+- late transcript hypotheses attach to the same bundle and can update a queued
+  oracle job only through interpreter evidence
+- no hypothesis text may become durable user text, `oracle_text`, a tool
+  argument, a spend reason, a call/message payload, or a memory write without
+  `interpreter_promoted` or later `oracle_promoted` authority
+- text-only external `ask_brain` calls remain compatibility inputs; they are
+  useful, but they do not satisfy the full raw-audio KAME interpreter path
+
 ## Model Assumptions To Validate
 
 This design relies on the following external model and serving assumptions:

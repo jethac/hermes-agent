@@ -105,6 +105,14 @@ Target KAME layout:
   labeled hypotheses field with source, timing/confidence when available,
   partial/final state, and `authority = "hypothesis"` so Gemma can accept,
   correct, or reject it instead of silently treating it as the user message.
+- Bundle schema rule: every speech cut creates one interpreter evidence bundle
+  keyed by `turn_id` and `audio_segment_ref`. The bundle carries primary audio,
+  VAD/energy timing, speaker/channel metadata, reflex route and acknowledgement,
+  and a `transcript_hypotheses[]` list for Moshi/open-S2S, VoiceClaw/OpenClaw,
+  reflex, and classic ASR text. The implementation target is the canonical
+  contract in `docs/design/full-kame-style-realtime-voice.md`; duplicated text
+  from any transcript side channel must attach to that bundle, not spawn a new
+  Hermes turn.
 - Fallbacks: hosted `/model` providers, Kimi, Cartesia, or other cloud providers are acceptable during bring-up and demos when they are labeled clearly.
 
 The public demo should prefer Nemotron 3 Super on Spark for sponsor fit while allowing a clearly labeled hosted fallback only if needed. The private appliance roadmap benchmarks Super and other Spark-friendly models for the local brain.
@@ -265,6 +273,14 @@ audio, the reflex route, the acknowledgement already spoken, and the Moshi
 transcript hypothesis together. Gemma may use the transcript to recover words
 the reflex clipped, but it must also be able to reject transcript text that does
 not match the waveform or speaker context.
+
+When the frontend exposes a transcript-looking field under a vendor name such
+as "Moshi STT", Hermes should not special-case it as authoritative STT. Store
+the source name for diagnostics, but classify the field by authority:
+`reflex_transcript_hypothesis` if it came from the live reflex model's own
+hearing, or `s2s_transcript_hypothesis` if it came from a distinct S2S/caption
+side channel. Both sit beside the same raw audio in the interpreter evidence
+bundle.
 
 The interpreter may attach evidence to an oracle job before it starts, or submit
 a patch/update if the oracle job is already running. It must not stall the
