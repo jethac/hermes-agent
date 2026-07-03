@@ -1198,6 +1198,157 @@ async def _run_sidecar_control_smoke() -> dict[str, Any]:
     }
 
 
+async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
+    oracle = SmokeOracle()
+    engine = SmokeEngine(oracle=oracle)
+    recorder = EventRecorder(engine)
+    await engine.start(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-smoke-external-frontend",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            oracle_jobs={
+                "enabled": True,
+                "max_concurrent": 1,
+                "queue_limit": 4,
+                "speak_terminal_results": True,
+                "shutdown_timeout_seconds": 0.01,
+            },
+            metadata={"transport": "voiceclaw"},
+        )
+    )
+    collector = asyncio.create_task(recorder.run())
+
+    await engine.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+            session_id="voice-smoke-external-frontend",
+            sequence=1,
+            payload={
+                "tool": "ask_brain",
+                "tool_call_id": "voiceclaw-call-1",
+                "provider": "voiceclaw",
+                "turn_id": "voice-smoke-external-frontend:voiceclaw:1",
+                "user_id": "jetha",
+                "text": "prepare an external KAME handoff",
+                "intent": "Prepare external KAME handoff",
+                "transcript": "prepare an external kame handoff",
+                "interface_already_said": "I'm preparing the handoff.",
+                "conversation_summary": "The user is testing an external voice frontend.",
+                "requested_response_style": {"spoken": True, "max_sentences": 1},
+            },
+        )
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.TOOL_RESULT
+            and event.payload.get("accepted") is True
+            and event.payload.get("tool") == "ask_brain"
+            for event in events
+        )
+    )
+    tool_result = next(
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.TOOL_RESULT
+        and event.payload.get("accepted") is True
+        and event.payload.get("tool") == "ask_brain"
+    )
+    job_id = str(tool_result.payload.get("job_id") or "")
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_STARTED
+            and event.payload.get("job_id") == job_id
+            for event in events
+        )
+    )
+    oracle.release("Prepare external KAME handoff")
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_COMPLETED
+            and event.payload.get("job_id") == job_id
+            for event in events
+        )
+    )
+    status = await engine.get_oracle_job_status()
+    await engine.close()
+    collector.cancel()
+    try:
+        await collector
+    except asyncio.CancelledError:
+        pass
+
+    request = oracle.requests[0] if oracle.requests else None
+    metadata = request.to_metadata() if request is not None else {}
+    metadata_text = json.dumps(metadata, sort_keys=True)
+    status_jobs = status.get("jobs") if isinstance(status.get("jobs"), list) else []
+    status_job = next((job for job in status_jobs if job.get("job_id") == job_id), {})
+    accepted_observed = any(
+        event.type == VoiceEventType.ORACLE_JOB_ACCEPTED
+        and event.payload.get("job_id") == job_id
+        for event in recorder.events
+    )
+    started_observed = any(
+        event.type == VoiceEventType.ORACLE_JOB_STARTED
+        and event.payload.get("job_id") == job_id
+        for event in recorder.events
+    )
+    completed_observed = any(
+        event.type == VoiceEventType.ORACLE_JOB_COMPLETED
+        and event.payload.get("job_id") == job_id
+        for event in recorder.events
+    )
+    direct_tool_authority_exposed = any(
+        forbidden in metadata_text
+        for forbidden in (
+            '"tool_name"',
+            '"arguments"',
+            "stripe_link_purchase",
+            "read_file",
+        )
+    )
+    return {
+        "ok": bool(job_id)
+        and tool_result.payload.get("accepted") is True
+        and accepted_observed
+        and started_observed
+        and completed_observed
+        and request is not None
+        and getattr(request, "source", "") == "voiceclaw"
+        and getattr(request, "interface_input_source", "") == "ask_brain"
+        and getattr(request, "oracle_text", "") == "prepare an external kame handoff"
+        and not direct_tool_authority_exposed
+        and status_job.get("state") == "completed",
+        "external_frontend_request_accepted": tool_result.payload.get("accepted") is True,
+        "external_frontend_tool_result_observed": True,
+        "external_frontend_job_id": job_id,
+        "external_frontend_provider": str(tool_result.payload.get("provider") or ""),
+        "external_frontend_tool": str(tool_result.payload.get("tool") or ""),
+        "external_frontend_tool_call_id": str(tool_result.payload.get("tool_call_id") or ""),
+        "external_frontend_accepted_observed": accepted_observed,
+        "external_frontend_started_observed": started_observed,
+        "external_frontend_completion_observed": completed_observed,
+        "external_frontend_status_state": str(status_job.get("state") or ""),
+        "external_frontend_source_reached_oracle": getattr(request, "source", "") == "voiceclaw"
+        if request is not None
+        else False,
+        "external_frontend_input_source": getattr(request, "interface_input_source", "")
+        if request is not None
+        else "",
+        "external_frontend_oracle_text": getattr(request, "oracle_text", "") if request is not None else "",
+        "external_frontend_direct_tool_authority_exposed": direct_tool_authority_exposed,
+        "external_frontend_metadata_keys": sorted(str(key) for key in metadata),
+        "external_frontend_event_counts": {
+            event_type.value: sum(event.type == event_type for event in recorder.events)
+            for event_type in {
+                VoiceEventType.TOOL_RESULT,
+                VoiceEventType.ORACLE_JOB_ACCEPTED,
+                VoiceEventType.ORACLE_JOB_STARTED,
+                VoiceEventType.ORACLE_JOB_COMPLETED,
+            }
+        },
+    }
+
+
 async def _run_audit_scalar_redaction_smoke() -> dict[str, Any]:
     """Prove oracle job JSONL audit rows redact scalar payload fields."""
     release = asyncio.Event()
@@ -1648,6 +1799,7 @@ async def run_smoke() -> dict[str, Any]:
     approval_cancel_capacity_smoke = await _run_approval_cancel_capacity_smoke()
     terminal_result_policy_smoke = await _run_terminal_result_policy_smoke()
     sidecar_control_smoke = await _run_sidecar_control_smoke()
+    external_frontend_bridge_smoke = await _run_external_frontend_bridge_smoke()
     audit_scalar_smoke = await _run_audit_scalar_redaction_smoke()
 
     started = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_STARTED]
@@ -2044,6 +2196,7 @@ async def run_smoke() -> dict[str, Any]:
             and approval_cancel_capacity_smoke["ok"]
             and terminal_result_policy_smoke["ok"]
             and sidecar_control_smoke["ok"]
+            and external_frontend_bridge_smoke["ok"]
             and audit_scalar_smoke["ok"]
         ),
         "scenario": "async_kame_oracle_jobs_fake",
@@ -2177,6 +2330,46 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "sidecar_control_feedback_cancel_sent": sidecar_control_smoke[
             "sidecar_control_feedback_cancel_sent"
+        ],
+        "external_frontend_bridge_smoke_ok": external_frontend_bridge_smoke["ok"],
+        "external_frontend_request_accepted": external_frontend_bridge_smoke[
+            "external_frontend_request_accepted"
+        ],
+        "external_frontend_tool_result_observed": external_frontend_bridge_smoke[
+            "external_frontend_tool_result_observed"
+        ],
+        "external_frontend_job_id": external_frontend_bridge_smoke["external_frontend_job_id"],
+        "external_frontend_provider": external_frontend_bridge_smoke["external_frontend_provider"],
+        "external_frontend_tool": external_frontend_bridge_smoke["external_frontend_tool"],
+        "external_frontend_tool_call_id": external_frontend_bridge_smoke[
+            "external_frontend_tool_call_id"
+        ],
+        "external_frontend_accepted_observed": external_frontend_bridge_smoke[
+            "external_frontend_accepted_observed"
+        ],
+        "external_frontend_started_observed": external_frontend_bridge_smoke[
+            "external_frontend_started_observed"
+        ],
+        "external_frontend_completion_observed": external_frontend_bridge_smoke[
+            "external_frontend_completion_observed"
+        ],
+        "external_frontend_status_state": external_frontend_bridge_smoke[
+            "external_frontend_status_state"
+        ],
+        "external_frontend_source_reached_oracle": external_frontend_bridge_smoke[
+            "external_frontend_source_reached_oracle"
+        ],
+        "external_frontend_input_source": external_frontend_bridge_smoke[
+            "external_frontend_input_source"
+        ],
+        "external_frontend_oracle_text": external_frontend_bridge_smoke[
+            "external_frontend_oracle_text"
+        ],
+        "external_frontend_direct_tool_authority_exposed": external_frontend_bridge_smoke[
+            "external_frontend_direct_tool_authority_exposed"
+        ],
+        "external_frontend_event_counts": external_frontend_bridge_smoke[
+            "external_frontend_event_counts"
         ],
         "audit_scalar_smoke_ok": audit_scalar_smoke["ok"],
         "audit_scalar_payload_redacted": audit_scalar_smoke["audit_scalar_payload_redacted"],

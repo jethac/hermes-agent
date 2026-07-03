@@ -136,6 +136,14 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_kame_engine_spoken_update_attaches_to_latest_async_oracle_job",
         "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_event_tracks_oracle_job_status",
     ],
+    "external_frontend_bridge": [
+        "tests/agent/test_realtime_voice.py::test_external_kame_ask_brain_bridge_becomes_oracle_request",
+        "tests/agent/test_realtime_voice.py::test_external_kame_ask_brain_bridge_strips_nested_tool_authority",
+        "tests/agent/test_realtime_voice.py::test_external_kame_brain_request_submits_oracle_job_without_waiting",
+        "tests/agent/test_realtime_voice.py::test_sidecar_oracle_hint_bridge_submits_external_kame_job",
+        "tests/agent/test_realtime_voice.py::test_session_client_interface_oracle_request_submits_external_kame_job",
+        "tests/agent/test_realtime_voice_async_oracle_smoke.py::test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation",
+    ],
     "result_handling": [
         "tests/agent/test_realtime_voice.py::test_completed_async_oracle_job_after_intervening_local_turn_is_lifecycle_only",
         "tests/agent/test_realtime_voice.py::test_kame_engine_status_recalls_recent_completed_async_oracle_job",
@@ -1499,6 +1507,16 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("running_update_latest_update_visible") is True
         and smoke.get("running_update_reached_oracle") is True
         and smoke.get("running_update_delivery_metadata_ok") is True,
+        "external_frontend_bridge_submits_oracle_job": smoke.get("external_frontend_bridge_smoke_ok") is True
+        and smoke.get("external_frontend_request_accepted") is True
+        and smoke.get("external_frontend_tool_result_observed") is True
+        and smoke.get("external_frontend_accepted_observed") is True
+        and smoke.get("external_frontend_started_observed") is True
+        and smoke.get("external_frontend_completion_observed") is True
+        and smoke.get("external_frontend_status_state") == "completed"
+        and smoke.get("external_frontend_source_reached_oracle") is True
+        and smoke.get("external_frontend_input_source") == "ask_brain"
+        and smoke.get("external_frontend_direct_tool_authority_exposed") is False,
         "result_handling_bounded_and_durable": smoke.get("verbose_result_spoken_bounded") is True
         and smoke.get("verbose_result_committed_bounded") is True
         and smoke.get("verbose_result_commit_marked_truncated") is True
@@ -1678,6 +1696,13 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             ok=smoke_ok and bool(async_oracle_coverage.get("job_control_updates_reach_oracle")),
             evidence="async_oracle_smoke_plus_control_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["control_updates"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "external_frontend_bridge_submits_oracle_job": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("external_frontend_bridge_submits_oracle_job")),
+            evidence="async_oracle_smoke_plus_external_frontend_tests",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["external_frontend_bridge"],
             verification_mode="loopback_smoke_plus_focused_tests",
             runtime_verified_by_this_report=True,
         ),
@@ -2059,6 +2084,46 @@ def build_voice_operator_report(
             ),
             "terminal_result_status_available": bool(async_oracle_smoke.get("terminal_result_status_available")),
             "terminal_result_status_text": async_oracle_smoke.get("terminal_result_status_text"),
+            "external_frontend_bridge_smoke_ok": bool(
+                async_oracle_smoke.get("external_frontend_bridge_smoke_ok")
+            ),
+            "external_frontend_request_accepted": bool(
+                async_oracle_smoke.get("external_frontend_request_accepted")
+            ),
+            "external_frontend_tool_result_observed": bool(
+                async_oracle_smoke.get("external_frontend_tool_result_observed")
+            ),
+            "external_frontend_job_id": async_oracle_smoke.get("external_frontend_job_id"),
+            "external_frontend_provider": async_oracle_smoke.get("external_frontend_provider"),
+            "external_frontend_tool": async_oracle_smoke.get("external_frontend_tool"),
+            "external_frontend_tool_call_id": async_oracle_smoke.get(
+                "external_frontend_tool_call_id"
+            ),
+            "external_frontend_accepted_observed": bool(
+                async_oracle_smoke.get("external_frontend_accepted_observed")
+            ),
+            "external_frontend_started_observed": bool(
+                async_oracle_smoke.get("external_frontend_started_observed")
+            ),
+            "external_frontend_completion_observed": bool(
+                async_oracle_smoke.get("external_frontend_completion_observed")
+            ),
+            "external_frontend_status_state": async_oracle_smoke.get(
+                "external_frontend_status_state"
+            ),
+            "external_frontend_source_reached_oracle": bool(
+                async_oracle_smoke.get("external_frontend_source_reached_oracle")
+            ),
+            "external_frontend_input_source": async_oracle_smoke.get(
+                "external_frontend_input_source"
+            ),
+            "external_frontend_oracle_text": async_oracle_smoke.get("external_frontend_oracle_text"),
+            "external_frontend_direct_tool_authority_exposed": bool(
+                async_oracle_smoke.get("external_frontend_direct_tool_authority_exposed")
+            ),
+            "external_frontend_event_counts": dict(
+                async_oracle_smoke.get("external_frontend_event_counts") or {}
+            ),
             "audit_scalar_smoke_ok": bool(async_oracle_smoke.get("audit_scalar_smoke_ok")),
             "audit_scalar_payload_redacted": bool(async_oracle_smoke.get("audit_scalar_payload_redacted")),
             "audit_scalar_secret_canary_checked": bool(
@@ -2165,6 +2230,9 @@ def build_voice_operator_report(
             ],
             "async_oracle_cancel_drain_holds_capacity": async_oracle_coverage[
                 "cancel_drain_holds_capacity"
+            ],
+            "async_oracle_external_frontend_bridge": async_oracle_coverage[
+                "external_frontend_bridge_submits_oracle_job"
             ],
             "async_oracle_late_cancelled_output_dropped": async_oracle_coverage["late_cancelled_output_not_spoken"],
             "async_oracle_late_cancelled_output_not_durable": async_oracle_coverage[
@@ -2286,6 +2354,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "cancel_drain_holds_capacity",
         "failed_job_reported_without_crash",
         "job_control_updates_reach_oracle",
+        "external_frontend_bridge_submits_oracle_job",
         "result_handling_bounded_and_durable",
         "discord_session_cleanup_preserves_oracle_state",
         "shutdown_timeout_bounded",

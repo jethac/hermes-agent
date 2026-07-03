@@ -121,6 +121,25 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["sidecar_control_completed_after_cancel"] is False
     assert report["sidecar_control_feedback_update_sent"] is True
     assert report["sidecar_control_feedback_cancel_sent"] is True
+    assert report["external_frontend_bridge_smoke_ok"] is True
+    assert report["external_frontend_request_accepted"] is True
+    assert report["external_frontend_tool_result_observed"] is True
+    assert report["external_frontend_job_id"] == "voice-oracle-001"
+    assert report["external_frontend_provider"] == "voiceclaw"
+    assert report["external_frontend_tool"] == "ask_brain"
+    assert report["external_frontend_tool_call_id"] == "voiceclaw-call-1"
+    assert report["external_frontend_accepted_observed"] is True
+    assert report["external_frontend_started_observed"] is True
+    assert report["external_frontend_completion_observed"] is True
+    assert report["external_frontend_status_state"] == "completed"
+    assert report["external_frontend_source_reached_oracle"] is True
+    assert report["external_frontend_input_source"] == "ask_brain"
+    assert report["external_frontend_oracle_text"] == "prepare an external kame handoff"
+    assert report["external_frontend_direct_tool_authority_exposed"] is False
+    assert report["external_frontend_event_counts"]["tool.result"] == 1
+    assert report["external_frontend_event_counts"]["oracle.job.accepted"] == 1
+    assert report["external_frontend_event_counts"]["oracle.job.started"] == 1
+    assert report["external_frontend_event_counts"]["oracle.job.completed"] == 1
     assert report["event_counts"]["interface.oracle.update"] >= 2
     assert report["event_counts"]["oracle.job.progress"] >= 1
     assert report["event_counts"]["oracle.job.result_suppressed"] >= 1

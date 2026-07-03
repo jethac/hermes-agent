@@ -204,6 +204,27 @@ def _async_oracle_smoke_payload() -> dict:
             "No oracle jobs are running or queued right now. Recent: "
             "completed: Finished Suppress terminal result."
         ),
+        "external_frontend_bridge_smoke_ok": True,
+        "external_frontend_request_accepted": True,
+        "external_frontend_tool_result_observed": True,
+        "external_frontend_job_id": "voice-oracle-001",
+        "external_frontend_provider": "voiceclaw",
+        "external_frontend_tool": "ask_brain",
+        "external_frontend_tool_call_id": "voiceclaw-call-1",
+        "external_frontend_accepted_observed": True,
+        "external_frontend_started_observed": True,
+        "external_frontend_completion_observed": True,
+        "external_frontend_status_state": "completed",
+        "external_frontend_source_reached_oracle": True,
+        "external_frontend_input_source": "ask_brain",
+        "external_frontend_oracle_text": "prepare an external kame handoff",
+        "external_frontend_direct_tool_authority_exposed": False,
+        "external_frontend_event_counts": {
+            "tool.result": 1,
+            "oracle.job.accepted": 1,
+            "oracle.job.started": 1,
+            "oracle.job.completed": 1,
+        },
         "audit_scalar_smoke_ok": True,
         "audit_scalar_payload_redacted": True,
         "audit_scalar_secret_canary_checked": True,
@@ -559,6 +580,16 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert "completed: Finished Suppress terminal result." in report["proofs"]["async_oracle_jobs"][
         "terminal_result_status_text"
     ]
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_bridge_smoke_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_request_accepted"] is True
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_tool_result_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_provider"] == "voiceclaw"
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_tool"] == "ask_brain"
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_status_state"] == "completed"
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_source_reached_oracle"] is True
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_input_source"] == "ask_brain"
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_direct_tool_authority_exposed"] is False
+    assert report["requirements"]["async_oracle_external_frontend_bridge"] is True
     assert report["proofs"]["async_oracle_jobs"]["audit_scalar_smoke_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["audit_scalar_payload_redacted"] is True
     assert report["proofs"]["async_oracle_jobs"]["audit_scalar_secret_canary_checked"] is True
@@ -665,6 +696,19 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert (
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_add_update_redacts_secret_like_text_from_status_and_events"
         in report["async_oracle_acceptance"]["job_control_updates_reach_oracle"]["test_refs"]
+    )
+    external_frontend = report["async_oracle_acceptance"]["external_frontend_bridge_submits_oracle_job"]
+    assert external_frontend["ok"] is True
+    assert external_frontend["evidence"] == "async_oracle_smoke_plus_external_frontend_tests"
+    assert external_frontend["verification_mode"] == "loopback_smoke_plus_focused_tests"
+    assert external_frontend["runtime_verified_by_this_report"] is True
+    assert (
+        "tests/agent/test_realtime_voice.py::test_session_client_interface_oracle_request_submits_external_kame_job"
+        in external_frontend["test_refs"]
+    )
+    assert (
+        "tests/agent/test_realtime_voice.py::test_external_kame_ask_brain_bridge_strips_nested_tool_authority"
+        in external_frontend["test_refs"]
     )
     result_handling = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]
     assert result_handling["ok"] is True
@@ -932,6 +976,18 @@ def test_voice_operator_validation_rejects_missing_terminal_result_suppression_p
     assert "missing_async_oracle_acceptance:result_handling_is_bounded_and_durable" in issues
 
 
+def test_voice_operator_validation_rejects_missing_external_frontend_bridge_proof():
+    report = _voice_operator_report()
+    report["async_oracle_smoke"]["external_frontend_request_accepted"] = False
+    report["async_oracle_smoke"]["external_frontend_direct_tool_authority_exposed"] = True
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_coverage:external_frontend_bridge_submits_oracle_job" in issues
+    assert "stale_async_oracle_coverage:external_frontend_bridge_submits_oracle_job" in issues
+    assert "missing_async_oracle_acceptance:external_frontend_bridge_submits_oracle_job" in issues
+
+
 def test_voice_operator_validation_rejects_missing_shutdown_timeout_coverage():
     report = _voice_operator_report()
     report["async_oracle_smoke"]["shutdown_bounded_close_observed"] = False
@@ -1006,6 +1062,20 @@ def test_voice_operator_validation_accepts_current_async_acceptance_test_refs():
     assert (
         "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job"
         in report["async_oracle_acceptance"]["job_control_updates_reach_oracle"]["test_refs"]
+    )
+    assert (
+        "tests/agent/test_realtime_voice.py::test_session_client_interface_oracle_request_submits_external_kame_job"
+        in report["async_oracle_acceptance"]["external_frontend_bridge_submits_oracle_job"]["test_refs"]
+    )
+    assert (
+        report["async_oracle_acceptance"]["external_frontend_bridge_submits_oracle_job"][
+            "test_ref_count"
+        ]
+        == len(
+            report["async_oracle_acceptance"]["external_frontend_bridge_submits_oracle_job"][
+                "test_refs"
+            ]
+        )
     )
     assert (
         "tests/gateway/test_voice_command.py::TestDiscordVoiceChannelMethods::test_leave_voice_channel_cleans_up"
