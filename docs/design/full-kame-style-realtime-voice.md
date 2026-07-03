@@ -951,6 +951,14 @@ before dispatch. Late evidence for a running job should be delivered as a
 bounded update and audited before irreversible tool, spend, provisioning, or
 call actions rely on the earlier request.
 
+The scheduler must distinguish promoted interpreter output from auxiliary
+hypotheses inside the same update envelope. A Moshi/OpenClaw/VoiceClaw/classic
+ASR source may attach transcript text, confidence, timing, and disagreements to
+the queued job, but that text remains `authority = "hypothesis"` and must not
+rewrite `oracle_text`, durable transcript, normalized intent, spend reason, or
+call/message payload. Only the trusted interpreter promotion source, or a later
+oracle judgment, can make the wording action-authoritative.
+
 ## Barge-In
 
 Barge-in should be triggered by actual user speech, not by the first decoded packet in a new audio buffer.

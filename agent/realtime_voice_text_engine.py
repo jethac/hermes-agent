@@ -3812,8 +3812,6 @@ def _oracle_request_with_queued_interpreter_evidence(
 
     corrected_transcript = str(evidence.get("corrected_transcript") or "").strip()
     normalized_intent = str(evidence.get("normalized_intent") or "").strip()
-    if not corrected_transcript and not normalized_intent:
-        return request
 
     source = str(evidence.get("source") or "").strip() or "interpreter"
     confidence = evidence.get("confidence")
@@ -3988,17 +3986,34 @@ def _payload_has_interpreter_evidence(payload: Mapping[str, Any]) -> bool:
 
 
 def _interpreter_evidence_from_payload(payload: Mapping[str, Any], *, fallback_text: str) -> dict[str, Any]:
-    corrected_transcript = (
-        str(payload.get("corrected_transcript") or "").strip()
-        or str(payload.get("interpreter_corrected_transcript") or "").strip()
-        or str(payload.get("transcript") or "").strip()
-        or str(fallback_text or "").strip()
+    source = (
+        str(payload.get("source") or payload.get("provider") or "gemma_interpreter").strip()
+        or "gemma_interpreter"
     )
-    normalized_intent = (
-        str(payload.get("normalized_intent") or "").strip()
-        or str(payload.get("interpreter_normalized_intent") or "").strip()
-        or str(payload.get("intent") or "").strip()
-    )
+    promoted_source = _interpreter_evidence_source_can_promote(source)
+    corrected_transcript = ""
+    normalized_intent = ""
+    if promoted_source:
+        corrected_transcript = (
+            str(payload.get("corrected_transcript") or "").strip()
+            or str(payload.get("interpreter_corrected_transcript") or "").strip()
+            or str(payload.get("transcript") or "").strip()
+            or str(fallback_text or "").strip()
+        )
+        normalized_intent = (
+            str(payload.get("normalized_intent") or "").strip()
+            or str(payload.get("interpreter_normalized_intent") or "").strip()
+            or str(payload.get("intent") or "").strip()
+        )
+    auxiliary_hypotheses = _auxiliary_transcript_hypotheses_from_payload(payload)
+    if not promoted_source:
+        auxiliary_hypotheses.extend(
+            _unpromoted_interpreter_text_hypotheses(
+                payload,
+                fallback_text=fallback_text,
+                source=source,
+            )
+        )
     return {
         "corrected_transcript": corrected_transcript,
         "normalized_intent": normalized_intent,
@@ -4011,7 +4026,7 @@ def _interpreter_evidence_from_payload(payload: Mapping[str, Any], *, fallback_t
         ),
         "audio_time_range_ms": payload.get("audio_time_range_ms"),
         "reflex_transcript_hypothesis": _reflex_transcript_hypothesis_from_payload(payload),
-        "auxiliary_transcript_hypotheses": _auxiliary_transcript_hypotheses_from_payload(payload),
+        "auxiliary_transcript_hypotheses": auxiliary_hypotheses,
         "speaker_metadata": payload.get("speaker") if isinstance(payload.get("speaker"), Mapping) else {},
         "channel_metadata": payload.get("channel") if isinstance(payload.get("channel"), Mapping) else {},
         "entities": _interpreter_entities_from_payload(
@@ -4023,8 +4038,43 @@ def _interpreter_evidence_from_payload(payload: Mapping[str, Any], *, fallback_t
         "disagreements": _interpreter_disagreements_from_payload(
             payload.get("disagreements", payload.get("interpreter_disagreements"))
         ),
-        "source": str(payload.get("source") or payload.get("provider") or "gemma_interpreter"),
+        "source": source,
     }
+
+
+def _interpreter_evidence_source_can_promote(source: str) -> bool:
+    normalized = str(source or "").strip().lower()
+    return normalized in {"gemma_interpreter", "interpreter", "interpreter_audio"}
+
+
+def _unpromoted_interpreter_text_hypotheses(
+    payload: Mapping[str, Any],
+    *,
+    fallback_text: str,
+    source: str,
+) -> list[Mapping[str, Any]]:
+    text = (
+        str(payload.get("transcript") or "").strip()
+        or str(payload.get("corrected_transcript") or "").strip()
+        or str(payload.get("interpreter_corrected_transcript") or "").strip()
+        or str(fallback_text or "").strip()
+    )
+    if not text:
+        return []
+    hypothesis: dict[str, Any] = {
+        "source": source or "unknown",
+        "text": text,
+        "authority": "hypothesis",
+    }
+    confidence = _interpreter_confidence_from_payload(
+        payload.get(
+            "transcript_confidence",
+            payload.get("confidence", payload.get("interpreter_confidence")),
+        )
+    )
+    if confidence is not None:
+        hypothesis["confidence"] = confidence
+    return [hypothesis]
 
 
 def _first_payload_text(payload: Mapping[str, Any], *keys: str) -> str:

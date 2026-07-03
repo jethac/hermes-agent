@@ -395,6 +395,11 @@ VoiceClaw/OpenClaw, reflex, and ASR text are clues to compare against the
 waveform, not replacement user messages. The job manager can use the promoted
 interpreter output to patch a queued oracle job, but raw hypothesis text must
 remain audit evidence unless interpreter or oracle judgment promotes it.
+That promotion rule applies even when a transcript-looking field is delivered
+inside an `interpreter_evidence` update: sources such as Moshi, VoiceClaw,
+OpenClaw, and classic ASR can enrich the evidence bundle, but they cannot patch
+`oracle_text`, durable transcript, normalized intent, or tool-critical arguments
+unless a trusted interpreter source explicitly promotes the wording.
 
 ## Routing Behavior
 

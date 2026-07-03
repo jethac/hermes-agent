@@ -347,6 +347,12 @@ execution; if it arrives late, it should be audited as a bounded update before
 any irreversible spend, provisioning, call, or credential action relies on
 earlier text.
 
+The fold-in rule is source-sensitive. A trusted interpreter promotion can patch
+queued `oracle_text`, transcript, intent, and tool-critical fields. Moshi,
+VoiceClaw/OpenClaw, classic ASR, and other transcript-side-channel sources can
+only add labeled hypotheses to the same evidence bundle unless the interpreter
+or oracle later promotes them.
+
 The scheduler must also guard persistence. A provisional `oracle_text` derived
 from reflex or transcript hypotheses is allowed for queuing and narration, but
 the persisted Hermes user message should be the promoted interpreter/oracle
