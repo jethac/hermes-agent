@@ -12809,6 +12809,12 @@ def test_external_kame_ask_brain_bridge_becomes_oracle_request():
     assert metadata["kame_interface_tool_call_id"] == "call-voiceclaw-1"
     assert metadata["kame_reflex_transcript_hypothesis"] == "use my Stripe budget to prepare a VoIP provisioning plan"
     assert metadata["kame_reflex_transcript_source"] == "reflex_audio"
+    assert metadata["kame_evidence_authority"] == {
+        "intent": "reflex_hypothesis",
+        "oracle_text": "reflex_hypothesis",
+        "reflex_transcript_hypothesis": "reflex_hypothesis",
+        "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+    }
     assert "tool_name" not in metadata
     assert "arguments" not in metadata
 

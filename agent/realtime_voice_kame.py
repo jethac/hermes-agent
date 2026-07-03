@@ -420,6 +420,26 @@ class KameOracleRequest:
             return self.transcript_source or "reflex_audio"
         return self.intent_source or "reflex_audio"
 
+    @property
+    def evidence_authority(self) -> Mapping[str, str]:
+        """Return explicit authority labels for evidence fields in this request."""
+
+        authority: dict[str, str] = {
+            "intent": _kame_source_authority(self.intent_source, default="reflex_hypothesis"),
+            "oracle_text": _kame_source_authority(self.oracle_text_source, default="reflex_hypothesis"),
+        }
+        if self.audio_segment_ref:
+            authority["raw_audio"] = "primary_audio"
+        if self.transcript:
+            authority["transcript"] = _kame_source_authority(self.transcript_source, default="reflex_hypothesis")
+        if self.asr_transcript:
+            authority["classic_asr_hypothesis"] = "auxiliary_hypothesis"
+        if self.reflex_transcript_hypothesis:
+            authority["reflex_transcript_hypothesis"] = "reflex_hypothesis"
+        if self.auxiliary_transcript_hypotheses:
+            authority["auxiliary_transcript_hypotheses"] = "auxiliary_hypothesis"
+        return authority
+
     def to_metadata(self) -> dict[str, Any]:
         response_style = _response_style(
             self.requested_response_style,
@@ -442,6 +462,7 @@ class KameOracleRequest:
             "kame_mode": self.mode,
             "kame_urgency": self.urgency,
             "kame_oracle_text_source": self.oracle_text_source,
+            "kame_evidence_authority": dict(self.evidence_authority),
             "max_spoken_sentences": self.max_spoken_sentences,
             "voice_response_policy": response_style.get("policy") or "sentence_cap",
             "kame_requested_response_style": response_style,
@@ -722,6 +743,23 @@ def _transcript_source_is_promoted(source: str) -> bool:
     if not text:
         return False
     return text in KAME_PROMOTED_TRANSCRIPT_SOURCES
+
+
+def _kame_source_authority(source: str, *, default: str) -> str:
+    text = _optional_text(source).lower()
+    if not text:
+        return default
+    if text in {"gemma_interpreter", "interpreter", "interpreter_audio"}:
+        return "interpreter_promoted"
+    if text in {"oracle", "oracle_verified"}:
+        return "oracle_promoted"
+    if text in {"human_verified", "user_verified", "verified"}:
+        return "oracle_promoted"
+    if text in {"asr", "asr_fallback", "classic_asr", "stt"} or text.startswith("asr"):
+        return "auxiliary_hypothesis"
+    if "reflex" in text or "s2s" in text or "moshi" in text or "voiceclaw" in text or "openclaw" in text:
+        return "reflex_hypothesis" if "reflex" in text else "auxiliary_hypothesis"
+    return default
 
 
 def _append_auxiliary_transcript_hypothesis(payload: dict[str, Any], hypothesis: Mapping[str, Any]) -> None:

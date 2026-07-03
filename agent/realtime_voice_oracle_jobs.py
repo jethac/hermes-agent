@@ -119,6 +119,9 @@ class OracleJob:
             status["audio_segment_ref"] = self.audio_segment_ref
         if self.audio_time_range_ms:
             status["audio_time_range_ms"] = tuple(self.audio_time_range_ms)
+        evidence_authority = _job_evidence_authority(self)
+        if evidence_authority:
+            status["evidence_authority"] = evidence_authority
         if self.reflex_transcript_hypothesis:
             status["reflex_transcript_hypothesis"] = self.reflex_transcript_hypothesis
             status["reflex_transcript_source"] = self.reflex_transcript_source or "reflex_audio"
@@ -784,6 +787,33 @@ def _spoken_status(job: OracleJob) -> str:
         return job.interface_already_said
     text = " ".join((job.reflex_intent or job.oracle_text or "").split())
     return text[:160]
+
+
+def _job_evidence_authority(job: OracleJob) -> dict[str, str]:
+    authority: dict[str, str] = {}
+    metadata_authority = {}
+    if isinstance(job.metadata, Mapping):
+        raw = job.metadata.get("kame_evidence_authority")
+        if isinstance(raw, Mapping):
+            metadata_authority = {
+                str(key): str(value)
+                for key, value in raw.items()
+                if str(key).strip() and str(value).strip()
+            }
+    authority.update(metadata_authority)
+    if job.audio_segment_ref:
+        authority["raw_audio"] = "primary_audio"
+    if job.reflex_transcript_hypothesis:
+        authority["reflex_transcript_hypothesis"] = "reflex_hypothesis"
+    if job.auxiliary_transcript_hypotheses:
+        authority["auxiliary_transcript_hypotheses"] = "auxiliary_hypothesis"
+    if job.interpreter_corrected_transcript:
+        authority["interpreter_corrected_transcript"] = "interpreter_promoted"
+    if job.interpreter_normalized_intent:
+        authority["interpreter_normalized_intent"] = "interpreter_promoted"
+    if job.result_summary or job.result_text:
+        authority["oracle_result"] = "oracle_promoted"
+    return authority
 
 
 def _result_summary(result: Any) -> str:

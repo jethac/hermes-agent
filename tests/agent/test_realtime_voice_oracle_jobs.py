@@ -152,6 +152,15 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
     assert job.interpreter_disagreements == ("reflex transcript omitted request prefix",)
     assert job_status["audio_segment_ref"] == "segments/turn-voice-1.wav"
     assert job_status["audio_time_range_ms"] == (120, 2480)
+    assert job_status["evidence_authority"] == {
+        "intent": "reflex_hypothesis",
+        "oracle_text": "reflex_hypothesis",
+        "raw_audio": "primary_audio",
+        "reflex_transcript_hypothesis": "reflex_hypothesis",
+        "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+        "interpreter_corrected_transcript": "interpreter_promoted",
+        "interpreter_normalized_intent": "interpreter_promoted",
+    }
     assert "Bearer" not in combined
     assert "sk_test" not in combined
     assert job_status["reflex_transcript_source"] == "reflex_audio"
