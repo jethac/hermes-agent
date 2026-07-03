@@ -3386,6 +3386,18 @@ def test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job(mo
                     "normalized_intent": "answer a math question",
                     "audio_ref": "artifact://redacted/queued.wav",
                     "audio_time_range_ms": [100, 2100],
+                    "speaker": {
+                        "platform": "discord",
+                        "channel_user_id": "42",
+                        "display_name": "jetha",
+                        "profile": {"token": "must-not-copy"},
+                    },
+                    "channel": {
+                        "transport": "discord_voice",
+                        "guild_id": "guild-1",
+                        "channel_id": "general",
+                        "webhook": {"token": "must-not-copy"},
+                    },
                     "moshi_transcript_hypothesis": "three to the power of seventeen",
                     "moshi_transcript_confidence": 0.7,
                     "classic_asr_hypothesis": "what is three to the power of seventeen",
@@ -3452,6 +3464,16 @@ def test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job(mo
         assert update.payload["state"] == "queued"
         assert update.payload["audio_segment_ref"] == "artifact://redacted/queued.wav"
         assert update.payload["audio_time_range_ms"] == (100, 2100)
+        assert update.payload["speaker"] == {
+            "platform": "discord",
+            "channel_user_id": "42",
+            "display_name": "jetha",
+        }
+        assert update.payload["channel"] == {
+            "transport": "discord_voice",
+            "guild_id": "guild-1",
+            "channel_id": "general",
+        }
         assert update.payload["reflex_transcript_hypothesis"] == "three to the power of seventeen"
         assert update.payload["reflex_transcript_source"] == "moshi"
         assert update.payload["auxiliary_transcript_hypotheses_count"] == 1
@@ -3461,6 +3483,8 @@ def test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job(mo
             "latest_interpreter_evidence"
         ]
         assert "audio=attached" in update.payload["latest_interpreter_evidence"]
+        assert "speaker=attached" in update.payload["latest_interpreter_evidence"]
+        assert "channel=attached" in update.payload["latest_interpreter_evidence"]
         assert delivery.payload["interpreter_evidence_delivered_to_oracle"] is True
         assert delivery.payload["interpreter_evidence_consumed_before_irreversible_action"] is True
         assert delivery.payload["interpreter_evidence_delivery_status"] == "included_in_initial_oracle_request"
@@ -3473,6 +3497,8 @@ def test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job(mo
         assert oracle.requests[1].oracle_text_source == "gemma_interpreter"
         assert oracle.requests[1].audio_segment_ref == "artifact://redacted/queued.wav"
         assert oracle.requests[1].audio_time_range_ms == (100, 2100)
+        assert oracle.requests[1].speaker_metadata == update.payload["speaker"]
+        assert oracle.requests[1].channel_metadata == update.payload["channel"]
         assert oracle.requests[1].auxiliary_transcript_hypotheses == (
             {
                 "source": "moshi",
@@ -3491,6 +3517,13 @@ def test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job(mo
         assert oracle.requests[1].transcript_source == "gemma_interpreter"
         assert oracle.requests[1].transcript_confidence == 0.94
         assert any("entities=math_expression=3^17" in update for update in oracle.requests[1].job_updates)
+        assert "must-not-copy" not in json.dumps(
+            {
+                "update": update.payload,
+                "request": oracle.requests[1].to_metadata(),
+            },
+            sort_keys=True,
+        )
 
     asyncio.run(run())
 
@@ -3833,6 +3866,18 @@ def test_kame_engine_attaches_interpreter_evidence_to_running_async_oracle_job(m
                     "normalized_intent": "inspect deployment logs",
                     "audio_segment_ref": "artifact://redacted/running.wav",
                     "audio_time_range_ms": [200, 2600],
+                    "speaker": {
+                        "platform": "discord",
+                        "channel_user_id": "42",
+                        "display_name": "jetha",
+                        "profile": {"token": "must-not-copy"},
+                    },
+                    "channel": {
+                        "transport": "discord_voice",
+                        "guild_id": "guild-1",
+                        "channel_id": "general",
+                        "webhook": {"token": "must-not-copy"},
+                    },
                     "reflex_transcript_hypothesis": {
                         "source": "moshi",
                         "text": "check deployment",
@@ -3870,6 +3915,16 @@ def test_kame_engine_attaches_interpreter_evidence_to_running_async_oracle_job(m
         assert update.payload["state"] == "running"
         assert update.payload["audio_segment_ref"] == "artifact://redacted/running.wav"
         assert update.payload["audio_time_range_ms"] == (200, 2600)
+        assert update.payload["speaker"] == {
+            "platform": "discord",
+            "channel_user_id": "42",
+            "display_name": "jetha",
+        }
+        assert update.payload["channel"] == {
+            "transport": "discord_voice",
+            "guild_id": "guild-1",
+            "channel_id": "general",
+        }
         assert update.payload["reflex_transcript_hypothesis"] == "check deployment"
         assert update.payload["reflex_transcript_source"] == "moshi"
         assert update.payload["auxiliary_transcript_hypotheses_count"] == 1
@@ -3881,17 +3936,31 @@ def test_kame_engine_attaches_interpreter_evidence_to_running_async_oracle_job(m
         assert updated_request.intent == "Run task one"
         assert updated_request.oracle_text == "Run task one"
         assert updated_request.oracle_text_source == "reflex_audio"
+        assert updated_request.speaker_metadata == update.payload["speaker"]
+        assert updated_request.channel_metadata == update.payload["channel"]
         assert any("intent=inspect deployment logs" in update for update in updated_request.job_updates)
         assert "transcript=check the current deployment logs" in update_text
         assert "audio=attached" in update_text
+        assert "speaker=attached" in update_text
+        assert "channel=attached" in update_text
         assert metadata["latest_interpreter_evidence"] == update_text
         assert metadata["interpreter_evidence_count"] == 1
         assert metadata["interpreter_evidence_late"] is True
         assert metadata["audio_segment_ref"] == "artifact://redacted/running.wav"
         assert metadata["audio_time_range_ms"] == (200, 2600)
+        assert metadata["speaker"] == update.payload["speaker"]
+        assert metadata["channel"] == update.payload["channel"]
         assert metadata["reflex_transcript_hypothesis"] == "check deployment"
         assert metadata["reflex_transcript_source"] == "moshi"
         assert metadata["auxiliary_transcript_hypotheses_count"] == 1
+        assert "must-not-copy" not in json.dumps(
+            {
+                "update": update.payload,
+                "request": updated_request.to_metadata(),
+                "metadata": metadata,
+            },
+            sort_keys=True,
+        )
 
     asyncio.run(run())
 

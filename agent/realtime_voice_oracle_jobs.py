@@ -74,6 +74,8 @@ class OracleJob:
     reflex_intent: str
     audio_segment_ref: str = ""
     audio_time_range_ms: tuple[int, int] | tuple[()] = field(default_factory=tuple)
+    speaker_metadata: Mapping[str, Any] = field(default_factory=dict)
+    channel_metadata: Mapping[str, Any] = field(default_factory=dict)
     reflex_transcript_hypothesis: str = ""
     reflex_transcript_source: str = ""
     reflex_transcript_confidence: Optional[float] = None
@@ -119,6 +121,10 @@ class OracleJob:
             status["audio_segment_ref"] = self.audio_segment_ref
         if self.audio_time_range_ms:
             status["audio_time_range_ms"] = tuple(self.audio_time_range_ms)
+        if self.speaker_metadata:
+            status["speaker"] = dict(self.speaker_metadata)
+        if self.channel_metadata:
+            status["channel"] = dict(self.channel_metadata)
         evidence_authority = _job_evidence_authority(self)
         if evidence_authority:
             status["evidence_authority"] = evidence_authority
@@ -401,6 +407,8 @@ class OracleJobManager:
         audio_time_range_ms: Optional[Sequence[Any]] = None,
         reflex_transcript_hypothesis: Any = None,
         auxiliary_transcript_hypotheses: Optional[Sequence[Mapping[str, Any]]] = None,
+        speaker_metadata: Optional[Mapping[str, Any]] = None,
+        channel_metadata: Optional[Mapping[str, Any]] = None,
         entities: Optional[list[Mapping[str, Any]]] = None,
         confidence: Optional[float] = None,
         disagreements: Optional[list[str]] = None,
@@ -420,6 +428,8 @@ class OracleJobManager:
                 audio_time_range_ms=audio_time_range_ms,
                 reflex_transcript_hypothesis=reflex_transcript_hypothesis,
                 auxiliary_transcript_hypotheses=auxiliary_transcript_hypotheses,
+                speaker_metadata=speaker_metadata,
+                channel_metadata=channel_metadata,
                 entities=entities,
                 confidence=confidence,
                 disagreements=disagreements,
@@ -604,6 +614,8 @@ class OracleJobManager:
             auxiliary_transcript_hypotheses=_compact_auxiliary_transcript_hypotheses(
                 request.auxiliary_transcript_hypotheses
             ),
+            speaker_metadata=_compact_speaker_metadata(request.speaker_metadata),
+            channel_metadata=_compact_channel_metadata(request.channel_metadata),
             requested_response_style=dict(request.requested_response_style or {}),
             metadata=request.to_metadata(),
             request=request,
@@ -1011,6 +1023,8 @@ def _compact_interpreter_evidence(
     audio_time_range_ms: object,
     reflex_transcript_hypothesis: object,
     auxiliary_transcript_hypotheses: Optional[Sequence[Mapping[str, Any]]],
+    speaker_metadata: Optional[Mapping[str, Any]],
+    channel_metadata: Optional[Mapping[str, Any]],
     entities: Optional[list[Mapping[str, Any]]],
     confidence: Optional[float],
     disagreements: Optional[list[str]],
@@ -1031,6 +1045,8 @@ def _compact_interpreter_evidence(
     compact_auxiliary_hypotheses = _compact_auxiliary_transcript_hypotheses(
         auxiliary_transcript_hypotheses or []
     )
+    compact_speaker = _compact_speaker_metadata(speaker_metadata or {})
+    compact_channel = _compact_channel_metadata(channel_metadata or {})
     compact_entities = _compact_interpreter_entities(entities or [])
     compact_disagreements = tuple(
         text
@@ -1053,6 +1069,10 @@ def _compact_interpreter_evidence(
         evidence["reflex_transcript_hypothesis"] = compact_reflex_hypothesis
     if compact_auxiliary_hypotheses:
         evidence["auxiliary_transcript_hypotheses"] = compact_auxiliary_hypotheses
+    if compact_speaker:
+        evidence["speaker"] = compact_speaker
+    if compact_channel:
+        evidence["channel"] = compact_channel
     if compact_entities:
         evidence["entities"] = compact_entities
     parsed_confidence = _compact_confidence(confidence)
@@ -1081,6 +1101,10 @@ def _interpreter_evidence_authority(evidence: Mapping[str, Any]) -> dict[str, st
     auxiliary = evidence.get("auxiliary_transcript_hypotheses")
     if isinstance(auxiliary, tuple) and auxiliary:
         authority["auxiliary_transcript_hypotheses"] = "auxiliary_hypothesis"
+    if evidence.get("speaker"):
+        authority["speaker_metadata"] = "diagnostic_only"
+    if evidence.get("channel"):
+        authority["channel_metadata"] = "diagnostic_only"
     if evidence.get("corrected_transcript"):
         authority["interpreter_corrected_transcript"] = "interpreter_promoted"
     if evidence.get("normalized_intent"):
@@ -1185,6 +1209,39 @@ def _compact_auxiliary_transcript_hypotheses(
     return tuple(compact)
 
 
+def _compact_speaker_metadata(value: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    metadata: dict[str, Any] = {}
+    for key in (
+        "platform",
+        "channel_user_id",
+        "platform_user_id",
+        "user_id",
+        "speaker_id",
+        "display_name",
+        "channel_id",
+        "guild_id",
+    ):
+        text = _compact_evidence_text(value.get(key), limit=160)
+        if text:
+            metadata[key] = text
+    if isinstance(value.get("is_bot"), bool):
+        metadata["is_bot"] = value["is_bot"]
+    return metadata
+
+
+def _compact_channel_metadata(value: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    metadata: dict[str, Any] = {}
+    for key in ("transport", "guild_id", "channel_id", "surface", "name"):
+        text = _compact_evidence_text(value.get(key), limit=160)
+        if text:
+            metadata[key] = text
+    return metadata
+
+
 def _compact_interpreter_entities(values: list[Mapping[str, Any]]) -> tuple[dict[str, str], ...]:
     allowed = ("type", "value", "name", "role", "source")
     compact: list[dict[str, str]] = []
@@ -1226,6 +1283,16 @@ def _promote_interpreter_evidence(job: OracleJob, evidence: Mapping[str, Any]) -
         job.auxiliary_transcript_hypotheses = _compact_auxiliary_transcript_hypotheses(
             [item for item in auxiliary if isinstance(item, Mapping)]
         )
+    speaker = evidence.get("speaker")
+    if isinstance(speaker, Mapping):
+        compact_speaker = _compact_speaker_metadata(speaker)
+        if compact_speaker:
+            job.speaker_metadata = compact_speaker
+    channel = evidence.get("channel")
+    if isinstance(channel, Mapping):
+        compact_channel = _compact_channel_metadata(channel)
+        if compact_channel:
+            job.channel_metadata = compact_channel
     transcript = _compact_evidence_text(evidence.get("corrected_transcript"), limit=500)
     if transcript:
         job.interpreter_corrected_transcript = transcript
@@ -1268,6 +1335,10 @@ def _interpreter_evidence_summary(evidence: Mapping[str, Any]) -> str:
     auxiliary = evidence.get("auxiliary_transcript_hypotheses")
     if isinstance(auxiliary, tuple) and auxiliary:
         parts.append(f"auxiliary_hypotheses={len(auxiliary)}")
+    if evidence.get("speaker"):
+        parts.append("speaker=attached")
+    if evidence.get("channel"):
+        parts.append("channel=attached")
     entities = evidence.get("entities")
     if isinstance(entities, tuple) and entities:
         rendered_entities = []

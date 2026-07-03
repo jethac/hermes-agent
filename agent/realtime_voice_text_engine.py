@@ -1445,6 +1445,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             for key in (
                 "audio_segment_ref",
                 "audio_time_range_ms",
+                "speaker",
+                "channel",
                 "reflex_transcript_hypothesis",
                 "reflex_transcript_source",
                 "reflex_transcript_confidence",
@@ -3528,6 +3530,8 @@ def _oracle_job_update_event_payload(job: OracleJob, *, reason: str) -> dict[str
         for key in (
             "audio_segment_ref",
             "audio_time_range_ms",
+            "speaker",
+            "channel",
             "reflex_transcript_hypothesis",
             "reflex_transcript_source",
             "reflex_transcript_confidence",
@@ -3695,6 +3699,13 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
 
 def _oracle_request_for_job(job: OracleJob, request: KameOracleRequest) -> KameOracleRequest:
     folded_request = _oracle_request_with_queued_interpreter_evidence(job, request)
+    context_changes: dict[str, Any] = {}
+    if job.speaker_metadata and dict(folded_request.speaker_metadata or {}) != dict(job.speaker_metadata):
+        context_changes["speaker_metadata"] = dict(job.speaker_metadata)
+    if job.channel_metadata and dict(folded_request.channel_metadata or {}) != dict(job.channel_metadata):
+        context_changes["channel_metadata"] = dict(job.channel_metadata)
+    if context_changes:
+        folded_request = replace(folded_request, **context_changes)
     updates = tuple(
         dict.fromkeys(
             (
@@ -3764,6 +3775,12 @@ def _oracle_request_with_queued_interpreter_evidence(
     audio_time_range_ms = evidence.get("audio_time_range_ms")
     if isinstance(audio_time_range_ms, tuple):
         changes["audio_time_range_ms"] = audio_time_range_ms
+    speaker = evidence.get("speaker")
+    if isinstance(speaker, Mapping):
+        changes["speaker_metadata"] = dict(speaker)
+    channel = evidence.get("channel")
+    if isinstance(channel, Mapping):
+        changes["channel_metadata"] = dict(channel)
     auxiliary = _oracle_request_auxiliary_hypotheses_from_evidence(request, evidence)
     if auxiliary:
         changes["auxiliary_transcript_hypotheses"] = auxiliary
@@ -3838,6 +3855,12 @@ def _queued_interpreter_evidence_bundle(job: OracleJob) -> Mapping[str, Any]:
         audio_time_range_ms = evidence.get("audio_time_range_ms")
         if isinstance(audio_time_range_ms, tuple):
             bundle["audio_time_range_ms"] = audio_time_range_ms
+        speaker = evidence.get("speaker")
+        if isinstance(speaker, Mapping):
+            bundle["speaker"] = dict(speaker)
+        channel = evidence.get("channel")
+        if isinstance(channel, Mapping):
+            bundle["channel"] = dict(channel)
         reflex = evidence.get("reflex_transcript_hypothesis")
         if isinstance(reflex, Mapping):
             auxiliary.append(reflex)
@@ -3895,6 +3918,8 @@ def _payload_has_interpreter_evidence(payload: Mapping[str, Any]) -> bool:
             "asr_transcript_hypothesis",
             "auxiliary_transcript_hypotheses",
             "auxiliary_transcripts",
+            "speaker",
+            "channel",
         )
     )
 
@@ -3924,6 +3949,8 @@ def _interpreter_evidence_from_payload(payload: Mapping[str, Any], *, fallback_t
         "audio_time_range_ms": payload.get("audio_time_range_ms"),
         "reflex_transcript_hypothesis": _reflex_transcript_hypothesis_from_payload(payload),
         "auxiliary_transcript_hypotheses": _auxiliary_transcript_hypotheses_from_payload(payload),
+        "speaker_metadata": payload.get("speaker") if isinstance(payload.get("speaker"), Mapping) else {},
+        "channel_metadata": payload.get("channel") if isinstance(payload.get("channel"), Mapping) else {},
         "entities": _interpreter_entities_from_payload(
             payload.get("entities", payload.get("interpreter_entities"))
         ),
@@ -4647,6 +4674,10 @@ def _with_oracle_job_interpreter_evidence(payload: Mapping[str, Any], job: Oracl
     delivery_status = str(status.get("interpreter_evidence_delivery_status") or "").strip()
     if delivery_status:
         enriched["interpreter_evidence_delivery_status"] = delivery_status
+    if isinstance(status.get("speaker"), Mapping):
+        enriched["speaker"] = dict(status.get("speaker") or {})
+    if isinstance(status.get("channel"), Mapping):
+        enriched["channel"] = dict(status.get("channel") or {})
     return enriched
 
 

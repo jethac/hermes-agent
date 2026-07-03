@@ -532,6 +532,18 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
                 "confidence": 0.88,
             }
         ],
+        speaker_metadata={
+            "platform": "discord",
+            "channel_user_id": "42",
+            "display_name": "jetha",
+            "profile": {"token": "must-not-copy"},
+        },
+        channel_metadata={
+            "transport": "discord_voice",
+            "guild_id": "guild-1",
+            "channel_id": "general",
+            "webhook": {"token": "must-not-copy"},
+        },
         entities=[{"type": "math_expression", "value": "3^17"}],
         confidence=0.94,
         disagreements=["reflex transcript omitted request prefix"],
@@ -568,6 +580,8 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
         "raw_audio": "primary_audio",
         "reflex_transcript_hypothesis": "reflex_hypothesis",
         "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+        "speaker_metadata": "diagnostic_only",
+        "channel_metadata": "diagnostic_only",
         "interpreter_corrected_transcript": "interpreter_promoted",
         "interpreter_normalized_intent": "interpreter_promoted",
         "interpreter_entities": "interpreter_promoted",
@@ -579,6 +593,16 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
     assert queued_status["interpreter_intent_source"] == "gemma_interpreter"
     assert queued_status["audio_segment_ref"] == "artifact://redacted/oracle-002.wav"
     assert queued_status["audio_time_range_ms"] == (120, 2120)
+    assert queued_status["speaker"] == {
+        "platform": "discord",
+        "channel_user_id": "42",
+        "display_name": "jetha",
+    }
+    assert queued_status["channel"] == {
+        "transport": "discord_voice",
+        "guild_id": "guild-1",
+        "channel_id": "general",
+    }
     assert queued_status["reflex_transcript_hypothesis"] == "three to the power of seventeen"
     assert queued_status["reflex_transcript_source"] == "moshi"
     assert queued_status["auxiliary_transcript_hypotheses_count"] == 1
@@ -589,14 +613,20 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
     assert queued_status["evidence_authority"]["interpreter_normalized_intent"] == "interpreter_promoted"
     assert "transcript=what is three to the power of seventeen" in queued_status["latest_interpreter_evidence"]
     assert "audio=attached" in queued_status["latest_interpreter_evidence"]
+    assert "speaker=attached" in queued_status["latest_interpreter_evidence"]
+    assert "channel=attached" in queued_status["latest_interpreter_evidence"]
     assert "auxiliary_hypotheses=1" in queued_status["latest_interpreter_evidence"]
     assert attached["payload"]["operation"] == "interpreter_evidence"
     assert attached["payload"]["interpreter_evidence_late"] is False
+    assert attached["payload"]["speaker"] == queued_status["speaker"]
+    assert attached["payload"]["channel"] == queued_status["channel"]
     assert attached["payload"]["latest_interpreter_evidence_authority"] == updated.interpreter_evidence[0]["evidence_authority"]
     assert oracle_request.oracle_text == "what is three to the power of seventeen"
     assert oracle_request.oracle_text_source == "gemma_interpreter"
     assert oracle_request.audio_segment_ref == "artifact://redacted/oracle-002.wav"
     assert oracle_request.audio_time_range_ms == (120, 2120)
+    assert oracle_request.speaker_metadata == queued_status["speaker"]
+    assert oracle_request.channel_metadata == queued_status["channel"]
     assert oracle_request.auxiliary_transcript_hypotheses == (
         {
             "source": "moshi",
@@ -620,6 +650,15 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
     assert any(
         "entities=math_expression=3^17" in update
         for update in oracle_request.job_updates
+    )
+    assert "must-not-copy" not in json.dumps(
+        {
+            "stored": updated.interpreter_evidence,
+            "status": queued_status,
+            "event": attached,
+            "request_metadata": oracle_request.to_metadata(),
+        },
+        sort_keys=True,
     )
 
     await manager.cancel(running.job_id)
@@ -713,6 +752,18 @@ async def test_interpreter_evidence_late_for_running_job_is_status_visible():
                 "text": "check the current deployment logs",
             }
         ],
+        speaker_metadata={
+            "platform": "discord",
+            "channel_user_id": "42",
+            "display_name": "jetha",
+            "profile": {"token": "must-not-copy"},
+        },
+        channel_metadata={
+            "transport": "discord_voice",
+            "guild_id": "guild-1",
+            "channel_id": "general",
+            "webhook": {"token": "must-not-copy"},
+        },
         confidence=0.81,
         source="gemma_interpreter",
     )
@@ -731,11 +782,23 @@ async def test_interpreter_evidence_late_for_running_job_is_status_visible():
         "raw_audio": "primary_audio",
         "reflex_transcript_hypothesis": "reflex_hypothesis",
         "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+        "speaker_metadata": "diagnostic_only",
+        "channel_metadata": "diagnostic_only",
         "interpreter_corrected_transcript": "interpreter_promoted",
         "interpreter_normalized_intent": "interpreter_promoted",
     }
     assert running_status["audio_segment_ref"] == "artifact://redacted/running.wav"
     assert running_status["audio_time_range_ms"] == (200, 2400)
+    assert running_status["speaker"] == {
+        "platform": "discord",
+        "channel_user_id": "42",
+        "display_name": "jetha",
+    }
+    assert running_status["channel"] == {
+        "transport": "discord_voice",
+        "guild_id": "guild-1",
+        "channel_id": "general",
+    }
     assert running_status["reflex_transcript_hypothesis"] == "check deployment"
     assert running_status["reflex_transcript_source"] == "moshi"
     assert running_status["auxiliary_transcript_hypotheses_count"] == 1
@@ -744,12 +807,27 @@ async def test_interpreter_evidence_late_for_running_job_is_status_visible():
     assert late["payload"]["interpreter_evidence_late"] is True
     assert late["payload"]["latest_interpreter_evidence_authority"] == updated.interpreter_evidence[0]["evidence_authority"]
     assert late["payload"]["audio_segment_ref"] == "artifact://redacted/running.wav"
+    assert late["payload"]["speaker"] == running_status["speaker"]
+    assert late["payload"]["channel"] == running_status["channel"]
     assert "audio=attached" in late["payload"]["latest_interpreter_evidence"]
+    assert "speaker=attached" in late["payload"]["latest_interpreter_evidence"]
+    assert "channel=attached" in late["payload"]["latest_interpreter_evidence"]
     assert "reflex_hypothesis=attached" in late["payload"]["latest_interpreter_evidence"]
     assert oracle_request.oracle_text == "running"
     assert oracle_request.intent == "running"
     assert oracle_request.intent_source == "reflex_audio"
+    assert oracle_request.speaker_metadata == running_status["speaker"]
+    assert oracle_request.channel_metadata == running_status["channel"]
     assert any("intent=inspect deployment logs" in update for update in oracle_request.job_updates)
+    assert "must-not-copy" not in json.dumps(
+        {
+            "stored": updated.interpreter_evidence,
+            "status": running_status,
+            "event": late,
+            "request_metadata": oracle_request.to_metadata(),
+        },
+        sort_keys=True,
+    )
 
     release.set()
     await manager.wait_for_idle()
