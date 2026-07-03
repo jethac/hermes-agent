@@ -14120,6 +14120,7 @@ def test_external_kame_brain_request_submits_oracle_job_without_waiting(monkeypa
         started = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_STARTED)
         assert started.payload["raw_audio_available"] is False
         assert started.payload["evidence_bundle_status"] == "degraded_text_only"
+        assert started.payload["degraded_reason"] == "degraded_text_only"
         assert not any(event.type == VoiceEventType.ORACLE_JOB_COMPLETED for event in seen)
         assert oracle.requests[0].source == "voiceclaw"
         assert oracle.requests[0].interface_input_source == "ask_brain"

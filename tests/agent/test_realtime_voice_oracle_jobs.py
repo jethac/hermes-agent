@@ -152,6 +152,9 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
     assert job.interpreter_disagreements == ("reflex transcript omitted request prefix",)
     assert job_status["audio_segment_ref"] == "segments/turn-voice-1.wav"
     assert job_status["audio_time_range_ms"] == (120, 2480)
+    assert job_status["raw_audio_available"] is True
+    assert job_status["evidence_bundle_status"] == "primary_audio"
+    assert "degraded_reason" not in job_status
     assert job_status["evidence_authority"] == {
         "intent": "reflex_hypothesis",
         "oracle_text": "reflex_hypothesis",
@@ -1515,6 +1518,8 @@ async def test_status_view_reports_capacity_and_redacts_raw_metadata():
         "ordinal_label": "job one",
         "priority": "normal",
         "spoken_status": "I'm handling inspect deployment.",
+        "evidence_bundle_status": "degraded_no_raw_audio",
+        "degraded_reason": "degraded_no_raw_audio",
     }
     assert status["reflex"]["jobs"][1] == {
         "job_id": "voice-oracle-002",
@@ -1523,6 +1528,8 @@ async def test_status_view_reports_capacity_and_redacts_raw_metadata():
         "ordinal_label": "job two",
         "priority": "normal",
         "spoken_status": "I'm handling check stripe.",
+        "evidence_bundle_status": "degraded_no_raw_audio",
+        "degraded_reason": "degraded_no_raw_audio",
     }
     reflex_blob = json.dumps(status["reflex"], sort_keys=True)
     assert "metadata" not in reflex_blob
@@ -2053,3 +2060,38 @@ async def test_audit_ledger_force_redacts_scalar_payload_fields(tmp_path):
     assert approval_secret not in combined
     assert approval_summary_secret not in combined
     assert live_secret not in combined
+
+
+@pytest.mark.asyncio
+async def test_job_status_exposes_degraded_reason_for_text_only_external_frontend_request():
+    async def runner(job):
+        return {"result_summary": f"done {job.oracle_text}"}
+
+    manager = OracleJobManager(max_concurrent=1, runner=runner)
+    request = KameOracleRequest(
+        session_id="voice-session-1",
+        turn_id="voice-session-1:external:1",
+        source="voiceclaw",
+        user_id="42",
+        intent="Prepare the phone handoff.",
+        route=KameRoute.ORACLE_DIRECT,
+        interface_input_source="ask_brain",
+        auxiliary_transcript_hypotheses=(
+            {
+                "source": "moshi",
+                "text": "prepare phone handoff",
+                "authority": "hypothesis",
+            },
+        ),
+    )
+
+    job = await manager.submit(request)
+    await manager.wait_for_idle()
+    status = await manager.status_view()
+    job_status = next(item for item in status["jobs"] if item["job_id"] == job.job_id)
+
+    assert job_status["raw_audio_available"] is False
+    assert job_status["evidence_bundle_status"] == "degraded_text_only"
+    assert job_status["degraded_reason"] == "degraded_text_only"
+    assert job_status["auxiliary_transcript_hypotheses"][0]["authority"] == "hypothesis"
+    assert status["reflex"]["jobs"][0]["degraded_reason"] == "degraded_text_only"

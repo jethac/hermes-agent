@@ -154,6 +154,8 @@ class OracleJob:
         if self.request is not None:
             status["raw_audio_available"] = self.request.raw_audio_available
             status["evidence_bundle_status"] = self.request.evidence_bundle_status
+            if self.request.degraded_reason:
+                status["degraded_reason"] = self.request.degraded_reason
         if self.audio_segment_ref:
             status["audio_segment_ref"] = self.audio_segment_ref
         if self.audio_time_range_ms:
@@ -957,6 +959,12 @@ def _reflex_job_status(job: Mapping[str, Any], *, ordinal_index: int) -> dict[st
         safe_job["priority"] = priority
     if label:
         safe_job["spoken_status"] = label
+    evidence_status = _compact_evidence_text(job.get("evidence_bundle_status"), limit=80)
+    if evidence_status:
+        safe_job["evidence_bundle_status"] = evidence_status
+    degraded_reason = _compact_evidence_text(job.get("degraded_reason"), limit=120)
+    if degraded_reason:
+        safe_job["degraded_reason"] = degraded_reason
     if state == OracleJobState.WAITING_FOR_APPROVAL.value:
         reason = _compact_evidence_text(job.get("approval_reason"), limit=160)
         if reason:
