@@ -22,6 +22,18 @@ from agent.think_scrubber import StreamingThinkScrubber, strip_leading_reasoning
 logger = logging.getLogger(__name__)
 
 
+REFLEX_STATUS_ORDINAL_LABELS = (
+    "job one",
+    "job two",
+    "job three",
+    "job four",
+    "job five",
+    "job six",
+    "job seven",
+    "job eight",
+)
+
+
 class OracleJobState(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
@@ -874,17 +886,17 @@ def _reflex_status_view(
         )
     }
     safe_jobs = []
-    for job in jobs:
-        safe_job = _reflex_job_status(job)
+    for index, job in enumerate(jobs[: len(REFLEX_STATUS_ORDINAL_LABELS)]):
+        safe_job = _reflex_job_status(job, ordinal_index=index)
         if safe_job:
             safe_jobs.append(safe_job)
     return {
         "capacity": safe_capacity,
-        "jobs": safe_jobs[:8],
+        "jobs": safe_jobs,
     }
 
 
-def _reflex_job_status(job: Mapping[str, Any]) -> dict[str, Any]:
+def _reflex_job_status(job: Mapping[str, Any], *, ordinal_index: int) -> dict[str, Any]:
     job_id = _compact_evidence_text(job.get("job_id"), limit=80)
     state = _compact_evidence_text(job.get("state"), limit=40)
     if not job_id or not state:
@@ -897,6 +909,9 @@ def _reflex_job_status(job: Mapping[str, Any]) -> dict[str, Any]:
         "job_id": job_id,
         "state": state,
     }
+    if 0 <= ordinal_index < len(REFLEX_STATUS_ORDINAL_LABELS):
+        safe_job["ordinal"] = ordinal_index + 1
+        safe_job["ordinal_label"] = REFLEX_STATUS_ORDINAL_LABELS[ordinal_index]
     priority = _compact_evidence_text(job.get("priority"), limit=40)
     if priority:
         safe_job["priority"] = priority

@@ -937,6 +937,7 @@ async def test_max_concurrent_four_starts_four_and_queues_fifth():
     await asyncio.sleep(0)
 
     states = [(await manager.get(job.job_id)).state for job in jobs]
+    status = await manager.status_view()
     assert states == [
         OracleJobState.RUNNING,
         OracleJobState.RUNNING,
@@ -949,6 +950,16 @@ async def test_max_concurrent_four_starts_four_and_queues_fifth():
         "voice-oracle-002",
         "voice-oracle-003",
         "voice-oracle-004",
+    ]
+    assert [
+        (job["job_id"], job["state"], job["ordinal"], job["ordinal_label"])
+        for job in status["reflex"]["jobs"][:5]
+    ] == [
+        ("voice-oracle-001", "running", 1, "job one"),
+        ("voice-oracle-002", "running", 2, "job two"),
+        ("voice-oracle-003", "running", 3, "job three"),
+        ("voice-oracle-004", "running", 4, "job four"),
+        ("voice-oracle-005", "queued", 5, "job five"),
     ]
 
     release.set()
@@ -1321,12 +1332,16 @@ async def test_status_view_reports_capacity_and_redacts_raw_metadata():
     assert status["reflex"]["jobs"][0] == {
         "job_id": "voice-oracle-001",
         "state": "running",
+        "ordinal": 1,
+        "ordinal_label": "job one",
         "priority": "normal",
         "spoken_status": "I'm handling inspect deployment.",
     }
     assert status["reflex"]["jobs"][1] == {
         "job_id": "voice-oracle-002",
         "state": "queued",
+        "ordinal": 2,
+        "ordinal_label": "job two",
         "priority": "normal",
         "spoken_status": "I'm handling check stripe.",
     }
