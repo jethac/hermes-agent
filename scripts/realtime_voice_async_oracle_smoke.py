@@ -1308,6 +1308,27 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and event.payload.get("job_id") == job_id
         for event in recorder.events
     )
+    completed_event = next(
+        (
+            event
+            for event in recorder.events
+            if event.type == VoiceEventType.ORACLE_JOB_COMPLETED
+            and event.payload.get("job_id") == job_id
+        ),
+        None,
+    )
+    external_tool_call_id = str(tool_result.payload.get("tool_call_id") or "")
+    completion_tool_call_id = (
+        str(completed_event.payload.get("interface_tool_call_id") or "")
+        if completed_event is not None
+        else ""
+    )
+    status_tool_call_id = str(status_job.get("interface_tool_call_id") or "")
+    terminal_correlation_observed = (
+        bool(external_tool_call_id)
+        and completion_tool_call_id == external_tool_call_id
+        and status_tool_call_id == external_tool_call_id
+    )
     direct_tool_authority_exposed = any(
         forbidden in metadata_text
         for forbidden in (
@@ -1334,8 +1355,9 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and request is not None
         and getattr(request, "source", "") == "voiceclaw"
         and getattr(request, "interface_input_source", "") == "ask_brain"
-        and getattr(request, "oracle_text", "") == "prepare an external kame handoff"
+        and getattr(request, "oracle_text", "") == "Prepare external KAME handoff"
         and evidence_bundle_propagated
+        and terminal_correlation_observed
         and not direct_tool_authority_exposed
         and status_job.get("state") == "completed",
         "external_frontend_request_accepted": tool_result.payload.get("accepted") is True,
@@ -1343,7 +1365,10 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         "external_frontend_job_id": job_id,
         "external_frontend_provider": str(tool_result.payload.get("provider") or ""),
         "external_frontend_tool": str(tool_result.payload.get("tool") or ""),
-        "external_frontend_tool_call_id": str(tool_result.payload.get("tool_call_id") or ""),
+        "external_frontend_tool_call_id": external_tool_call_id,
+        "external_frontend_completion_tool_call_id": completion_tool_call_id,
+        "external_frontend_status_tool_call_id": status_tool_call_id,
+        "external_frontend_terminal_correlation_observed": terminal_correlation_observed,
         "external_frontend_accepted_observed": accepted_observed,
         "external_frontend_started_observed": started_observed,
         "external_frontend_completion_observed": completed_observed,
@@ -2373,6 +2398,15 @@ async def run_smoke() -> dict[str, Any]:
         "external_frontend_tool": external_frontend_bridge_smoke["external_frontend_tool"],
         "external_frontend_tool_call_id": external_frontend_bridge_smoke[
             "external_frontend_tool_call_id"
+        ],
+        "external_frontend_completion_tool_call_id": external_frontend_bridge_smoke[
+            "external_frontend_completion_tool_call_id"
+        ],
+        "external_frontend_status_tool_call_id": external_frontend_bridge_smoke[
+            "external_frontend_status_tool_call_id"
+        ],
+        "external_frontend_terminal_correlation_observed": external_frontend_bridge_smoke[
+            "external_frontend_terminal_correlation_observed"
         ],
         "external_frontend_accepted_observed": external_frontend_bridge_smoke[
             "external_frontend_accepted_observed"

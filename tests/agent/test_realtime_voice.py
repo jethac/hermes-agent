@@ -12660,6 +12660,38 @@ def test_external_kame_s2s_hypothesis_does_not_overwrite_oracle_text():
     )
 
 
+def test_external_kame_plain_transcript_is_auxiliary_until_promoted():
+    request = kame_external_brain_request_to_oracle_request(
+        {
+            "tool_name": "ask_brain",
+            "arguments": {
+                "query": "prepare the handoff",
+                "transcript": "misheard spend request",
+                "transcript_source": "voiceclaw",
+                "transcript_confidence": 0.58,
+                "interface_already_said": "I'm preparing the handoff.",
+            },
+        },
+        session_id="external-kame-transcript",
+        turn_id="external-kame-transcript:1",
+        source="voiceclaw",
+        user_id="jetha",
+    )
+
+    assert request.oracle_text == "prepare the handoff"
+    assert request.oracle_text_source == "reflex_audio"
+    assert request.transcript == ""
+    assert request.transcript_source == "none"
+    assert request.auxiliary_transcript_hypotheses == (
+        {
+            "source": "voiceclaw",
+            "text": "misheard spend request",
+            "authority": "hypothesis",
+            "confidence": 0.58,
+        },
+    )
+
+
 def test_external_kame_ask_brain_bridge_strips_nested_tool_authority():
     request = kame_external_brain_request_to_oracle_request(
         {
@@ -12750,7 +12782,10 @@ def test_external_kame_brain_request_submits_oracle_job_without_waiting(monkeypa
         assert not any(event.type == VoiceEventType.ORACLE_JOB_COMPLETED for event in seen)
         assert oracle.requests[0].source == "voiceclaw"
         assert oracle.requests[0].interface_input_source == "ask_brain"
-        assert oracle.requests[0].oracle_text == "prepare a voip provisioning plan"
+        assert oracle.requests[0].oracle_text == "prepare a VoIP provisioning plan"
+        assert oracle.requests[0].transcript == ""
+        assert oracle.requests[0].auxiliary_transcript_hypotheses[0]["text"] == "prepare a voip provisioning plan"
+        assert oracle.requests[0].auxiliary_transcript_hypotheses[0]["authority"] == "hypothesis"
 
         oracle.release.set()
         async for event in engine.events():

@@ -94,6 +94,18 @@ KAME_GREETING_OR_HEAR_ME_TERMS = frozenset(
         "voice",
     }
 )
+KAME_PROMOTED_TRANSCRIPT_SOURCES = frozenset(
+    {
+        "gemma_interpreter",
+        "human_verified",
+        "interpreter",
+        "interpreter_audio",
+        "oracle",
+        "oracle_verified",
+        "user_verified",
+        "verified",
+    }
+)
 
 KAME_REFLEX_DECISION_JSON_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -660,8 +672,25 @@ def kame_external_brain_request_to_oracle_request(
     intent = _optional_text(normalized.get("intent")) or text
     transcript = _optional_text(normalized.get("transcript"))
     if transcript:
-        normalized["transcript"] = transcript
-        normalized.setdefault("transcript_source", _optional_text(normalized.get("transcript_source")) or "external_frontend")
+        transcript_source = _optional_text(normalized.get("transcript_source"))
+        if _external_transcript_source_is_promoted(transcript_source):
+            normalized["transcript"] = transcript
+            normalized["transcript_source"] = transcript_source
+        else:
+            normalized.pop("transcript", None)
+            normalized.pop("transcript_source", None)
+            _append_auxiliary_transcript_hypothesis(
+                normalized,
+                {
+                    "source": transcript_source
+                    or _optional_text(normalized.get("provider"))
+                    or source
+                    or "external_frontend",
+                    "text": transcript,
+                    "confidence": normalized.get("transcript_confidence"),
+                    "authority": "hypothesis",
+                },
+            )
     if text:
         normalized["text"] = text
     if intent:
@@ -682,6 +711,29 @@ def kame_external_brain_request_to_oracle_request(
         fallback_text=text or intent,
         default_max_spoken_sentences=default_max_spoken_sentences,
     )
+
+
+def _external_transcript_source_is_promoted(source: str) -> bool:
+    text = _optional_text(source).lower()
+    if not text:
+        return False
+    return text in KAME_PROMOTED_TRANSCRIPT_SOURCES
+
+
+def _append_auxiliary_transcript_hypothesis(payload: dict[str, Any], hypothesis: Mapping[str, Any]) -> None:
+    raw = payload.get("auxiliary_transcript_hypotheses")
+    if isinstance(raw, list):
+        items = list(raw)
+    elif isinstance(raw, tuple):
+        items = list(raw)
+    elif isinstance(raw, Mapping):
+        items = [dict(raw)]
+    elif raw:
+        items = [raw]
+    else:
+        items = []
+    items.append(dict(hypothesis))
+    payload["auxiliary_transcript_hypotheses"] = items
 
 
 def _job_updates_from_payload(value: object) -> tuple[str, ...]:

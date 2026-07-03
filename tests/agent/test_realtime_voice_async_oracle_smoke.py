@@ -128,13 +128,16 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_provider"] == "voiceclaw"
     assert report["external_frontend_tool"] == "ask_brain"
     assert report["external_frontend_tool_call_id"] == "voiceclaw-call-1"
+    assert report["external_frontend_completion_tool_call_id"] == "voiceclaw-call-1"
+    assert report["external_frontend_status_tool_call_id"] == "voiceclaw-call-1"
+    assert report["external_frontend_terminal_correlation_observed"] is True
     assert report["external_frontend_accepted_observed"] is True
     assert report["external_frontend_started_observed"] is True
     assert report["external_frontend_completion_observed"] is True
     assert report["external_frontend_status_state"] == "completed"
     assert report["external_frontend_source_reached_oracle"] is True
     assert report["external_frontend_input_source"] == "ask_brain"
-    assert report["external_frontend_oracle_text"] == "prepare an external kame handoff"
+    assert report["external_frontend_oracle_text"] == "Prepare external KAME handoff"
     assert report["external_frontend_evidence_bundle_propagated"] is True
     assert report["external_frontend_audio_segment_ref"] == "artifact://voiceclaw/turn-1.wav"
     assert report["external_frontend_audio_time_range_ms"] == [100, 2100]
