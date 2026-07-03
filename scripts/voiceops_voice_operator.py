@@ -1768,6 +1768,15 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("unpromoted_hypothesis_intent_preserved") is True
         and smoke.get("unpromoted_hypothesis_attached") is True
         and smoke.get("unpromoted_hypothesis_promoted") is False
+        and smoke.get("unpromoted_hypothesis_action_sinks_clean") is True
+        and smoke.get("unpromoted_hypothesis_not_spend_reason") is True
+        and smoke.get("unpromoted_hypothesis_not_spend_payload") is True
+        and smoke.get("unpromoted_hypothesis_not_phone_call_payload") is True
+        and smoke.get("unpromoted_hypothesis_not_call_payload") is True
+        and smoke.get("unpromoted_hypothesis_not_tool_arguments") is True
+        and smoke.get("unpromoted_hypothesis_not_memory_write") is True
+        and smoke.get("unpromoted_hypothesis_not_file_write") is True
+        and smoke.get("unpromoted_hypothesis_not_message_payload") is True
         and smoke.get("unpromoted_hypothesis_update_observed") is True,
         "external_frontend_bridge_submits_oracle_job": smoke.get("external_frontend_bridge_smoke_ok") is True
         and smoke.get("external_frontend_request_accepted") is True
@@ -2684,6 +2693,39 @@ def build_voice_operator_report(
             ),
             "unpromoted_hypothesis_promoted": bool(
                 async_oracle_smoke.get("unpromoted_hypothesis_promoted")
+            ),
+            "unpromoted_hypothesis_action_sink_keys_checked": tuple(
+                async_oracle_smoke.get("unpromoted_hypothesis_action_sink_keys_checked") or ()
+            ),
+            "unpromoted_hypothesis_action_sinks_clean": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_action_sinks_clean")
+            ),
+            "unpromoted_hypothesis_action_sink_values": dict(
+                async_oracle_smoke.get("unpromoted_hypothesis_action_sink_values") or {}
+            ),
+            "unpromoted_hypothesis_not_spend_reason": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_not_spend_reason")
+            ),
+            "unpromoted_hypothesis_not_spend_payload": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_not_spend_payload")
+            ),
+            "unpromoted_hypothesis_not_phone_call_payload": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_not_phone_call_payload")
+            ),
+            "unpromoted_hypothesis_not_call_payload": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_not_call_payload")
+            ),
+            "unpromoted_hypothesis_not_tool_arguments": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_not_tool_arguments")
+            ),
+            "unpromoted_hypothesis_not_memory_write": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_not_memory_write")
+            ),
+            "unpromoted_hypothesis_not_file_write": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_not_file_write")
+            ),
+            "unpromoted_hypothesis_not_message_payload": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_not_message_payload")
             ),
             "unpromoted_hypothesis_update_observed": bool(
                 async_oracle_smoke.get("unpromoted_hypothesis_update_observed")

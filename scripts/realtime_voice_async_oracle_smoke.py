@@ -1772,6 +1772,49 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
         if request is not None
         else False
     )
+    action_sink_keys = (
+        "spend_reason",
+        "spend_payload",
+        "phone_call_payload",
+        "call_payload",
+        "tool_arguments",
+        "arguments",
+        "memory_write",
+        "file_write",
+        "message_payload",
+        "external_message",
+    )
+    metadata = request.to_metadata() if request is not None else {}
+    sink_values: dict[str, Any] = {}
+
+    def collect_sink_values(value: Any, *, path: str = "") -> None:
+        if isinstance(value, Mapping):
+            for key, child in value.items():
+                key_text = str(key)
+                child_path = f"{path}.{key_text}" if path else key_text
+                if key_text in action_sink_keys:
+                    sink_values[child_path] = child
+                collect_sink_values(child, path=child_path)
+            return
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            for index, child in enumerate(value):
+                collect_sink_values(child, path=f"{path}[{index}]")
+
+    if request is not None:
+        for key in action_sink_keys:
+            if hasattr(request, key):
+                sink_values[key] = getattr(request, key)
+    collect_sink_values(metadata)
+    sink_text = json.dumps(sink_values, sort_keys=True, default=str)
+    action_sink_results = {
+        key: untrusted_text not in json.dumps(
+            {path: value for path, value in sink_values.items() if path.split(".")[-1] == key},
+            sort_keys=True,
+            default=str,
+        )
+        for key in action_sink_keys
+    }
+    action_sinks_clean = untrusted_text not in sink_text
     return {
         "ok": request is not None
         and update_event is not None
@@ -1780,6 +1823,7 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
         and intent_preserved
         and hypothesis_attached
         and single_bundle_observed
+        and action_sinks_clean
         and not promoted,
         "unpromoted_hypothesis_smoke_ok": request is not None
         and update_event is not None
@@ -1788,6 +1832,7 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
         and intent_preserved
         and hypothesis_attached
         and single_bundle_observed
+        and action_sinks_clean
         and not promoted,
         "unpromoted_hypothesis_job_id": queued_job_id,
         "unpromoted_hypothesis_evidence_bundle_id": request_bundle_id,
@@ -1805,6 +1850,19 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
         "unpromoted_hypothesis_intent_preserved": intent_preserved,
         "unpromoted_hypothesis_attached": hypothesis_attached,
         "unpromoted_hypothesis_promoted": promoted,
+        "unpromoted_hypothesis_action_sink_keys_checked": action_sink_keys,
+        "unpromoted_hypothesis_action_sinks_clean": action_sinks_clean,
+        "unpromoted_hypothesis_action_sink_values": sink_values,
+        "unpromoted_hypothesis_not_spend_reason": action_sink_results["spend_reason"],
+        "unpromoted_hypothesis_not_spend_payload": action_sink_results["spend_payload"],
+        "unpromoted_hypothesis_not_phone_call_payload": action_sink_results["phone_call_payload"],
+        "unpromoted_hypothesis_not_call_payload": action_sink_results["call_payload"],
+        "unpromoted_hypothesis_not_tool_arguments": action_sink_results["tool_arguments"]
+        and action_sink_results["arguments"],
+        "unpromoted_hypothesis_not_memory_write": action_sink_results["memory_write"],
+        "unpromoted_hypothesis_not_file_write": action_sink_results["file_write"],
+        "unpromoted_hypothesis_not_message_payload": action_sink_results["message_payload"]
+        and action_sink_results["external_message"],
         "unpromoted_hypothesis_update_observed": update_event is not None,
         "unpromoted_hypothesis_update_summary": str(
             (update_event.payload if update_event is not None else {}).get("latest_interpreter_evidence") or ""
@@ -3735,6 +3793,39 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "unpromoted_hypothesis_promoted": unpromoted_hypothesis_smoke[
             "unpromoted_hypothesis_promoted"
+        ],
+        "unpromoted_hypothesis_action_sink_keys_checked": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_action_sink_keys_checked"
+        ],
+        "unpromoted_hypothesis_action_sinks_clean": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_action_sinks_clean"
+        ],
+        "unpromoted_hypothesis_action_sink_values": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_action_sink_values"
+        ],
+        "unpromoted_hypothesis_not_spend_reason": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_not_spend_reason"
+        ],
+        "unpromoted_hypothesis_not_spend_payload": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_not_spend_payload"
+        ],
+        "unpromoted_hypothesis_not_phone_call_payload": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_not_phone_call_payload"
+        ],
+        "unpromoted_hypothesis_not_call_payload": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_not_call_payload"
+        ],
+        "unpromoted_hypothesis_not_tool_arguments": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_not_tool_arguments"
+        ],
+        "unpromoted_hypothesis_not_memory_write": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_not_memory_write"
+        ],
+        "unpromoted_hypothesis_not_file_write": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_not_file_write"
+        ],
+        "unpromoted_hypothesis_not_message_payload": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_not_message_payload"
         ],
         "unpromoted_hypothesis_update_observed": unpromoted_hypothesis_smoke[
             "unpromoted_hypothesis_update_observed"

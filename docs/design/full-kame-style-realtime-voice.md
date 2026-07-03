@@ -1116,6 +1116,8 @@ Acceptance gates:
   `auxiliary_transcript_hypotheses`, and `interpreter_corrected_transcript`
 - durable transcript writes and tool-critical arguments must use interpreter or
   oracle judgment, not raw Moshi/ASR text alone
+- readiness artifacts must prove unpromoted witness text is absent from spend,
+  call/phone, tool-argument, memory/file, and external-message action sinks
 
 ## Session Contract
 

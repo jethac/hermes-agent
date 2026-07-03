@@ -112,7 +112,9 @@ Target KAME layout:
   can become durable user text, `oracle_text`, a tool argument, a spend reason,
   or a call/message payload without interpreter or oracle judgment. The
   transcript that arrives first is never automatically the transcript of
-  record.
+  record. Headless VoiceOps artifacts must expose sink-specific checks showing
+  unpromoted witness text is absent from spend, call, tool, memory, file, and
+  external-message action payloads.
 - Persistence rule: this promotion rule applies to both visible chat history and
   internal oracle recovery records. Hypothesis strings may live in the
   voice-session audit ledger with provenance, but they must not be replayed as

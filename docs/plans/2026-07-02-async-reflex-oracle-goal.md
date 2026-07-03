@@ -973,6 +973,9 @@ Add a local smoke report mode that proves:
   raw voice, but tests must prove it is not promoted to `oracle_text`, durable
   transcript, spend reason, call payload, or tool argument without interpreter or
   oracle judgment
+- the unpromoted witness smoke exposes sink-specific booleans proving the same
+  dangerous witness phrase is absent from spend reason/payload, phone/call
+  payload, tool arguments, memory/file writes, and external message payloads
 - three-tier sensor fan-in preserves exactly one evidence bundle per speech cut:
   reflex route, raw audio, Moshi/open-S2S witness text, optional ASR fallback
   text, interpreter promotion, and oracle action are distinct fields with

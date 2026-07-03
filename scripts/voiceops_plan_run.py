@@ -1819,6 +1819,43 @@ async def build_plan_run_async(
                     "external_frontend_direct_tool_authority_exposed": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_direct_tool_authority_exposed"],
+                    "unpromoted_hypothesis_action_sinks_clean": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unpromoted_hypothesis_action_sinks_clean"],
+                    "unpromoted_hypothesis_action_sink_keys_checked": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "unpromoted_hypothesis_action_sink_keys_checked"
+                        ]
+                    ),
+                    "unpromoted_hypothesis_action_sink_values": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "unpromoted_hypothesis_action_sink_values"
+                        ]
+                    ),
+                    "unpromoted_hypothesis_not_spend_reason": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unpromoted_hypothesis_not_spend_reason"],
+                    "unpromoted_hypothesis_not_spend_payload": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unpromoted_hypothesis_not_spend_payload"],
+                    "unpromoted_hypothesis_not_phone_call_payload": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unpromoted_hypothesis_not_phone_call_payload"],
+                    "unpromoted_hypothesis_not_call_payload": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unpromoted_hypothesis_not_call_payload"],
+                    "unpromoted_hypothesis_not_tool_arguments": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unpromoted_hypothesis_not_tool_arguments"],
+                    "unpromoted_hypothesis_not_memory_write": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unpromoted_hypothesis_not_memory_write"],
+                    "unpromoted_hypothesis_not_file_write": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unpromoted_hypothesis_not_file_write"],
+                    "unpromoted_hypothesis_not_message_payload": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unpromoted_hypothesis_not_message_payload"],
                     "witness_fusion_timing_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_timing_smoke_ok"
                     ],

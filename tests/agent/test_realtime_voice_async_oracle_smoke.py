@@ -189,6 +189,28 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["unpromoted_hypothesis_intent_preserved"] is True
     assert report["unpromoted_hypothesis_attached"] is True
     assert report["unpromoted_hypothesis_promoted"] is False
+    assert set(report["unpromoted_hypothesis_action_sink_keys_checked"]) >= {
+        "spend_reason",
+        "spend_payload",
+        "phone_call_payload",
+        "call_payload",
+        "tool_arguments",
+        "arguments",
+        "memory_write",
+        "file_write",
+        "message_payload",
+        "external_message",
+    }
+    assert report["unpromoted_hypothesis_action_sinks_clean"] is True
+    assert report["unpromoted_hypothesis_action_sink_values"] == {}
+    assert report["unpromoted_hypothesis_not_spend_reason"] is True
+    assert report["unpromoted_hypothesis_not_spend_payload"] is True
+    assert report["unpromoted_hypothesis_not_phone_call_payload"] is True
+    assert report["unpromoted_hypothesis_not_call_payload"] is True
+    assert report["unpromoted_hypothesis_not_tool_arguments"] is True
+    assert report["unpromoted_hypothesis_not_memory_write"] is True
+    assert report["unpromoted_hypothesis_not_file_write"] is True
+    assert report["unpromoted_hypothesis_not_message_payload"] is True
     assert report["unpromoted_hypothesis_update_observed"] is True
     assert report["unpromoted_hypothesis_update_summary"] == "interpreter evidence: auxiliary_hypotheses=1"
     assert report["witness_fusion_timing_smoke_ok"] is True

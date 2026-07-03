@@ -1299,6 +1299,30 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "kame-merge-"
     )
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_evidence_merge_key_propagated"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_action_sinks_clean"] is True
+    assert set(
+        voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_action_sink_keys_checked"]
+    ) >= {
+        "spend_reason",
+        "spend_payload",
+        "phone_call_payload",
+        "call_payload",
+        "tool_arguments",
+        "arguments",
+        "memory_write",
+        "file_write",
+        "message_payload",
+        "external_message",
+    }
+    assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_action_sink_values"] == {}
+    assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_spend_reason"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_spend_payload"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_phone_call_payload"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_call_payload"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_tool_arguments"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_memory_write"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_file_write"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_message_payload"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_timing_smoke_ok"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_arrival_phases"] == [
         "before_raw_audio",
