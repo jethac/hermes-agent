@@ -307,7 +307,7 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
     assert realtime["interface_max_output_tokens"] == 160
     assert realtime["interface_timeout_seconds"] == 0.8
     assert realtime["interface_max_audio_seconds"] == 30.0
-    assert realtime["asr_mode"] == "on_escalation"
+    assert realtime["asr_mode"] == "from_reflex"
     assert realtime["asr_provider"] == "streaming_stt"
     assert realtime["asr_model"] == "portable-streaming-asr"
     assert realtime["asr_base_url"] == ""
@@ -364,7 +364,7 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
         "timeout_ms": 800,
         "max_audio_seconds": 30.0,
         "audio_input": "auto",
-        "asr_mode": "on_escalation",
+        "asr_mode": "from_reflex",
     }
     assert realtime["oracle"] == {
         "mode": "hermes_active_oracle",

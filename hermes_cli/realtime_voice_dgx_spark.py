@@ -167,7 +167,7 @@ def add_dgx_spark_arguments(parser: argparse.ArgumentParser) -> argparse.Argumen
     parser.add_argument("--tts-adapter", default=DEFAULT_TTS_ADAPTER)
     parser.add_argument(
         "--asr-mode",
-        default="on_escalation",
+        default="from_reflex",
         choices=("disabled", "from_reflex", "on_escalation", "speculative", "debug", "fallback"),
     )
     parser.add_argument("--vllm-image", default=DEFAULT_VLLM_IMAGE)
@@ -314,7 +314,7 @@ def build_dgx_spark_stack_manifest(
     tts_model: str = DEFAULT_TTS_MODEL,
     asr_adapter: str = DEFAULT_ASR_ADAPTER,
     tts_adapter: str = DEFAULT_TTS_ADAPTER,
-    asr_mode: str = "on_escalation",
+    asr_mode: str = "from_reflex",
     vllm_image: str = DEFAULT_VLLM_IMAGE,
     hermes_image: str = DEFAULT_HERMES_IMAGE,
     model_cache_dir: str = "${HOME}/.cache/huggingface",

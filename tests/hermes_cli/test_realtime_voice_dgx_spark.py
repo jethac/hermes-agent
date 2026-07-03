@@ -71,7 +71,7 @@ def _manifest(tmp_path: Path, *, production_speech: bool = False) -> dict:
         sidecar_base_url="http://spark.local:8765",
         asr_base_url="http://spark.local:8767",
         tts_base_url="http://spark.local:8768",
-        asr_mode="on_escalation",
+        asr_mode="from_reflex",
         vllm_image="vllm/vllm-openai:gemma4-cu130",
         hermes_image="ghcr.io/astral-sh/uv:python3.12-bookworm-slim",
         model_cache_dir="/models",
@@ -430,7 +430,7 @@ def test_manifest_describes_full_kame_dgx_spark_stack(tmp_path):
     assert manifest["target"]["hardware"] == "1x DGX Spark"
     assert manifest["engine"]["name"] == "kame_interface_oracle"
     assert manifest["engine"]["interface_audio_input"] == "native_audio"
-    assert manifest["engine"]["asr_mode"] == "on_escalation"
+    assert manifest["engine"]["asr_mode"] == "from_reflex"
     assert manifest["engine"]["max_spoken_sentences"] == 2
     assert manifest["model_assumptions"]["interface_audio_input_supported"] == {
         "model": "gemma-4-E2B-it",
@@ -747,7 +747,7 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "--voice-response-policy \"$HERMES_KAME_VOICE_RESPONSE_POLICY\"" in preflight
     assert "--barge-in-min-rms \"$HERMES_KAME_BARGE_IN_MIN_RMS\"" in preflight
     assert "--metrics-enabled \"$HERMES_KAME_METRICS_ENABLED\"" in preflight
-    assert ': "${HERMES_KAME_ASR_MODE:=on_escalation}"' in preflight
+    assert ': "${HERMES_KAME_ASR_MODE:=from_reflex}"' in preflight
     assert "--asr-mode \"$HERMES_KAME_ASR_MODE\"" in preflight
     assert "--asr-provider \"$HERMES_DGX_SPARK_ASR_PROVIDER\"" in preflight
     assert "--asr-module \"$HERMES_DGX_SPARK_ASR_MODULE\"" in preflight
@@ -770,7 +770,7 @@ def test_writer_emits_headless_artifact_pack(tmp_path):
     assert "--voice-response-policy \"$HERMES_KAME_VOICE_RESPONSE_POLICY\"" in validate_benchmark
     assert "--barge-in-min-rms \"$HERMES_KAME_BARGE_IN_MIN_RMS\"" in validate_benchmark
     assert "--metrics-enabled \"$HERMES_KAME_METRICS_ENABLED\"" in validate_benchmark
-    assert ': "${HERMES_KAME_ASR_MODE:=on_escalation}"' in validate_benchmark
+    assert ': "${HERMES_KAME_ASR_MODE:=from_reflex}"' in validate_benchmark
     assert "--asr-mode \"$HERMES_KAME_ASR_MODE\"" in validate_benchmark
     assert "--asr-provider \"$HERMES_DGX_SPARK_ASR_PROVIDER\"" in validate_benchmark
     assert "--asr-model \"$HERMES_VOICE_STREAMING_STT_MODEL\"" in validate_benchmark

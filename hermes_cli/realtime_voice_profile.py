@@ -233,7 +233,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--kame-asr-mode",
-        default="on_escalation",
+        default="from_reflex",
         choices=("disabled", "from_reflex", "on_escalation", "speculative", "debug", "fallback"),
         help="ASR role for --preset kame",
     )
@@ -453,7 +453,7 @@ def main(argv: list[str] | None = None) -> int:
                 interface_temperature=float(args.kame_interface_temperature or 0.2),
                 interface_max_output_tokens=int(args.kame_interface_max_output_tokens or 160),
                 interface_timeout_seconds=float(args.kame_interface_timeout_seconds or 0.8),
-                asr_mode=str(args.kame_asr_mode or "on_escalation"),
+                asr_mode=str(args.kame_asr_mode or "from_reflex"),
                 asr_provider=str(args.kame_asr_provider or "streaming_stt"),
                 preferred_local_oracle_model=str(
                     args.kame_preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL
@@ -1060,7 +1060,7 @@ def build_kame_realtime_voice_profile(
     interface_timeout_seconds: float = 0.8,
     interface_audio_input: str = "auto",
     interface_max_audio_seconds: float = 30.0,
-    asr_mode: str = "on_escalation",
+    asr_mode: str = "from_reflex",
     asr_provider: str = "streaming_stt",
     preferred_local_oracle_model: str = DEFAULT_KAME_ORACLE_MODEL,
     oracle_provider: str = "",
@@ -1103,7 +1103,7 @@ def build_kame_realtime_voice_profile(
     audio_mode = str(interface_audio_input or "auto").strip() or "auto"
     if audio_mode not in {"auto", "native_audio", "text_fallback"}:
         raise ValueError("--kame-interface-audio-input must be auto, native_audio, or text_fallback")
-    asr = str(asr_mode or "on_escalation").strip() or "on_escalation"
+    asr = str(asr_mode or "from_reflex").strip() or "from_reflex"
     if asr not in {"disabled", "from_reflex", "on_escalation", "speculative", "debug", "fallback"}:
         raise ValueError("--kame-asr-mode must be disabled, from_reflex, on_escalation, speculative, debug, or fallback")
     response_policy = str(voice_response_policy or "sentence_cap").strip().lower().replace("-", "_")
@@ -1428,7 +1428,7 @@ def _kame_nested_config(profile: Mapping[str, Any]) -> dict[str, Any]:
             "timeout_ms": int(round(timeout_seconds * 1000)),
             "max_audio_seconds": profile.get("interface_max_audio_seconds", 30.0),
             "audio_input": profile.get("interface_audio_input") or "auto",
-            "asr_mode": profile.get("asr_mode") or "on_escalation",
+            "asr_mode": profile.get("asr_mode") or "from_reflex",
         },
         "oracle": {
             "mode": "local_openai_compatible" if oracle_base_url else "hermes_active_oracle",

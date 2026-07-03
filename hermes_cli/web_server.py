@@ -1861,7 +1861,7 @@ class RealtimeVoiceProfileApply(BaseModel):
     interface_timeout_seconds: float = 0.8
     interface_audio_input: str = "auto"
     interface_max_audio_seconds: float = 30.0
-    asr_mode: str = "on_escalation"
+    asr_mode: str = "from_reflex"
     asr_provider: str = "streaming_stt"
     oracle_provider: str = ""
     preferred_local_oracle_model: str = ""
@@ -16109,7 +16109,7 @@ def _realtime_voice_profile_for_request(body: RealtimeVoiceProfileApply) -> Dict
             interface_timeout_seconds=body.interface_timeout_seconds,
             interface_audio_input=body.interface_audio_input or "auto",
             interface_max_audio_seconds=body.interface_max_audio_seconds,
-            asr_mode=body.asr_mode or "on_escalation",
+            asr_mode=body.asr_mode or "from_reflex",
             asr_provider=body.asr_provider or "streaming_stt",
             preferred_local_oracle_model=body.preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL,
             oracle_provider=body.oracle_provider,
@@ -16221,7 +16221,7 @@ def _apply_realtime_voice_profile_body(body: RealtimeVoiceProfileApply, profile:
                 "frontend_model": realtime.get("frontend_model") or "",
                 "interface_api_key_env": realtime.get("interface_api_key_env") or "HERMES_KAME_INTERFACE_API_KEY",
                 "interface_audio_input": realtime.get("interface_audio_input") or "",
-                "asr_mode": realtime.get("asr_mode") or "on_escalation",
+                "asr_mode": realtime.get("asr_mode") or "from_reflex",
                 "asr_provider": realtime.get("asr_provider") or "",
                 "asr_model": realtime.get("asr_model") or "",
                 "oracle_provider": realtime.get("oracle_provider") or "",
