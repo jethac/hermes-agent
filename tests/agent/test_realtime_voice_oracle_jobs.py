@@ -541,6 +541,15 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
             "confidence": 0.88,
         },
     )
+    assert updated.interpreter_evidence[0]["evidence_authority"] == {
+        "raw_audio": "primary_audio",
+        "reflex_transcript_hypothesis": "reflex_hypothesis",
+        "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+        "interpreter_corrected_transcript": "interpreter_promoted",
+        "interpreter_normalized_intent": "interpreter_promoted",
+        "interpreter_entities": "interpreter_promoted",
+        "interpreter_disagreements": "diagnostic_only",
+    }
     assert updated.interpreter_evidence[0]["late"] is False
     assert queued_status["intent"] == "power question"
     assert queued_status["interpreter_normalized_intent"] == "answer a math question"
@@ -552,11 +561,15 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
     assert queued_status["auxiliary_transcript_hypotheses_count"] == 1
     assert queued_status["interpreter_evidence_count"] == 1
     assert queued_status["interpreter_evidence_late"] is False
+    assert queued_status["latest_interpreter_evidence_authority"] == updated.interpreter_evidence[0]["evidence_authority"]
+    assert queued_status["evidence_authority"]["interpreter_corrected_transcript"] == "interpreter_promoted"
+    assert queued_status["evidence_authority"]["interpreter_normalized_intent"] == "interpreter_promoted"
     assert "transcript=what is three to the power of seventeen" in queued_status["latest_interpreter_evidence"]
     assert "audio=attached" in queued_status["latest_interpreter_evidence"]
     assert "auxiliary_hypotheses=1" in queued_status["latest_interpreter_evidence"]
     assert attached["payload"]["operation"] == "interpreter_evidence"
     assert attached["payload"]["interpreter_evidence_late"] is False
+    assert attached["payload"]["latest_interpreter_evidence_authority"] == updated.interpreter_evidence[0]["evidence_authority"]
     assert oracle_request.oracle_text == "what is three to the power of seventeen"
     assert oracle_request.oracle_text_source == "gemma_interpreter"
     assert oracle_request.audio_segment_ref == "artifact://redacted/oracle-002.wav"
@@ -691,13 +704,22 @@ async def test_interpreter_evidence_late_for_running_job_is_status_visible():
     oracle_request = _oracle_request_for_job(updated, updated.request)
 
     assert updated.interpreter_evidence[0]["late"] is True
+    assert updated.interpreter_evidence[0]["evidence_authority"] == {
+        "raw_audio": "primary_audio",
+        "reflex_transcript_hypothesis": "reflex_hypothesis",
+        "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+        "interpreter_corrected_transcript": "interpreter_promoted",
+        "interpreter_normalized_intent": "interpreter_promoted",
+    }
     assert running_status["audio_segment_ref"] == "artifact://redacted/running.wav"
     assert running_status["audio_time_range_ms"] == (200, 2400)
     assert running_status["reflex_transcript_hypothesis"] == "check deployment"
     assert running_status["reflex_transcript_source"] == "moshi"
     assert running_status["auxiliary_transcript_hypotheses_count"] == 1
     assert running_status["interpreter_evidence_late"] is True
+    assert running_status["latest_interpreter_evidence_authority"] == updated.interpreter_evidence[0]["evidence_authority"]
     assert late["payload"]["interpreter_evidence_late"] is True
+    assert late["payload"]["latest_interpreter_evidence_authority"] == updated.interpreter_evidence[0]["evidence_authority"]
     assert late["payload"]["audio_segment_ref"] == "artifact://redacted/running.wav"
     assert "audio=attached" in late["payload"]["latest_interpreter_evidence"]
     assert "reflex_hypothesis=attached" in late["payload"]["latest_interpreter_evidence"]

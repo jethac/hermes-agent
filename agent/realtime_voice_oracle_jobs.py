@@ -149,6 +149,13 @@ class OracleJob:
             status["interpreter_evidence_count"] = len(self.interpreter_evidence)
             status["latest_interpreter_evidence"] = str(latest_evidence.get("summary") or "")[:240]
             status["latest_interpreter_evidence_source"] = str(latest_evidence.get("source") or "")[:40]
+            latest_authority = latest_evidence.get("evidence_authority")
+            if isinstance(latest_authority, Mapping):
+                status["latest_interpreter_evidence_authority"] = {
+                    str(key): str(value)
+                    for key, value in latest_authority.items()
+                    if str(key).strip() and str(value).strip()
+                }
             status["interpreter_evidence_late"] = bool(latest_evidence.get("late"))
             if "delivered_to_oracle" in latest_evidence:
                 status["interpreter_evidence_delivered_to_oracle"] = bool(latest_evidence.get("delivered_to_oracle"))
@@ -989,11 +996,37 @@ def _compact_interpreter_evidence(
     if compact_disagreements:
         evidence["disagreements"] = compact_disagreements
 
+    evidence_authority = _interpreter_evidence_authority(evidence)
+    if evidence_authority:
+        evidence["evidence_authority"] = evidence_authority
+
     summary = _interpreter_evidence_summary(evidence)
     if not summary:
         return {}
     evidence["summary"] = summary
     return evidence
+
+
+def _interpreter_evidence_authority(evidence: Mapping[str, Any]) -> dict[str, str]:
+    authority: dict[str, str] = {}
+    if evidence.get("audio_segment_ref"):
+        authority["raw_audio"] = "primary_audio"
+    if evidence.get("reflex_transcript_hypothesis"):
+        authority["reflex_transcript_hypothesis"] = "reflex_hypothesis"
+    auxiliary = evidence.get("auxiliary_transcript_hypotheses")
+    if isinstance(auxiliary, tuple) and auxiliary:
+        authority["auxiliary_transcript_hypotheses"] = "auxiliary_hypothesis"
+    if evidence.get("corrected_transcript"):
+        authority["interpreter_corrected_transcript"] = "interpreter_promoted"
+    if evidence.get("normalized_intent"):
+        authority["interpreter_normalized_intent"] = "interpreter_promoted"
+    entities = evidence.get("entities")
+    if isinstance(entities, tuple) and entities:
+        authority["interpreter_entities"] = "interpreter_promoted"
+    disagreements = evidence.get("disagreements")
+    if isinstance(disagreements, tuple) and disagreements:
+        authority["interpreter_disagreements"] = "diagnostic_only"
+    return authority
 
 
 def _compact_reflex_transcript_hypothesis(value: object) -> dict[str, Any]:
