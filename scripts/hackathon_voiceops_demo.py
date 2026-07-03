@@ -1166,6 +1166,161 @@ def _spark_stack(active_model: str, reflex_model: str, interpreter_model: str) -
     }
 
 
+def _provider_role_matrix(active_model: str, reflex_model: str, interpreter_model: str) -> list[dict[str, Any]]:
+    """Describe provider candidates by KAME role and authority boundary."""
+
+    return [
+        {
+            "role": "reflex",
+            "selected_label": reflex_model,
+            "candidate_class": "Moshi/PersonaPlex-class S2S or smaller local timing/noise-gated model",
+            "authority": "reflex_hypothesis",
+            "primary_signal": "live audio, VAD/energy timing, barge-in/playback state",
+            "allowed_outputs": [
+                "immediate acknowledgement",
+                "floor-control route",
+                "rough transcript or frontend witness hypothesis",
+                "concise narration of the oracle request",
+            ],
+            "must_not": [
+                "execute tools",
+                "create durable transcript truth",
+                "authorize spend, provisioning, phone calls, files, or memory writes",
+                "wait for full ASR before acknowledging when raw audio is available",
+            ],
+            "evidence_required": [
+                "speech_end_to_ack_ms",
+                "barge_in_stop_ms",
+                "noise_gate_false_trigger_rate",
+                "duplicate_or_hallucinated_command_rate",
+            ],
+            "status": "target_selected_needs_live_evidence",
+        },
+        {
+            "role": "interpreter",
+            "selected_label": interpreter_model,
+            "candidate_class": "Gemma 4 E2B/E4B/12B audio-multimodal",
+            "authority": "interpreter_promoted",
+            "primary_signal": "clipped raw audio plus speaker/channel/timing metadata",
+            "allowed_outputs": [
+                "corrected transcript candidate",
+                "language and entity notes",
+                "disagreement flags",
+                "bounded oracle request patch",
+            ],
+            "must_not": [
+                "block the reflex acknowledgement",
+                "receive broad Hermes tools",
+                "treat Moshi/S2S/ASR text as verified without checking raw audio",
+            ],
+            "evidence_required": [
+                "raw_audio_interpreter_result",
+                "transcript_hypothesis_disagreement_report",
+                "promoted_fields_for_tool_critical_text",
+            ],
+            "status": "target_selected_needs_raw_audio_evidence",
+        },
+        {
+            "role": "oracle",
+            "selected_label": active_model,
+            "candidate_class": "Hermes active /model provider; preferred Spark-local target is Nemotron 3 Super",
+            "authority": "oracle_promoted",
+            "primary_signal": "promoted interpreter evidence, spend policy, tool disclosure, and compact job context",
+            "allowed_outputs": [
+                "tool plan",
+                "NemoClaw action packet",
+                "approval request",
+                "durable user-visible outcome",
+            ],
+            "must_not": [
+                "be configured through a VoiceOps-specific oracle_model setting",
+                "act on hypothesis-only transcript text for high-risk actions",
+                "count hosted fallback as one-Spark readiness proof",
+            ],
+            "evidence_required": [
+                "Hermes /model selection",
+                "oracle_job_acceptance",
+                "tool_disclosure_ref",
+                "NemoClaw approval gate for high-risk actions",
+            ],
+            "status": _active_model_path(active_model)["evidence_status"],
+        },
+        {
+            "role": "auxiliary_transcript_evidence",
+            "selected_label": "Moshi/open-S2S witness text, Nemotron/Riva ASR, or classic ASR when enabled",
+            "candidate_class": "optional transcript hypothesis source",
+            "authority": "auxiliary_hypothesis",
+            "primary_signal": "provider text with source, timing, confidence, partial/final state, and speaker/channel context",
+            "allowed_outputs": [
+                "caption",
+                "diagnostic clue",
+                "literal wording comparison",
+                "late evidence attached to the same turn_id/audio_segment_ref",
+            ],
+            "must_not": [
+                "schedule a second Hermes turn",
+                "overwrite oracle_text",
+                "block acknowledgement",
+                "become spend reason, phone payload, memory, file, or tool argument without promotion",
+            ],
+            "evidence_required": [
+                "source and timing metadata",
+                "authority=hypothesis",
+                "same turn_id and audio_segment_ref as raw audio",
+            ],
+            "status": "optional_context_not_required_for_full_kame_when_raw_audio_exists",
+        },
+        {
+            "role": "outbound_tts",
+            "selected_label": "Magpie/Riva-style local TTS target, Piper-class local TTS candidate, Cartesia fallback",
+            "candidate_class": "speech output provider",
+            "authority": "playback_only",
+            "primary_signal": "assistant/reflex text already selected for speech",
+            "allowed_outputs": [
+                "short reflex acknowledgement audio",
+                "sentence-fragmented oracle response audio",
+                "playback lifecycle and interruption metrics",
+            ],
+            "must_not": [
+                "change transcript authority",
+                "hide barge-in cancellation",
+                "be counted as local-only proof when hosted",
+            ],
+            "evidence_required": [
+                "first_audio_ms",
+                "underrun_count",
+                "barge_in_stop_ms",
+                "provider locality label",
+            ],
+            "status": "provider_choice_pending_latency_and_quality_evidence",
+        },
+        {
+            "role": "degraded_fallback",
+            "selected_label": "Cartesia bridge or text-only VoiceClaw/OpenClaw/Moshi ask_brain compatibility path",
+            "candidate_class": "bring-up or compatibility fallback",
+            "authority": "fallback_text_or_diagnostic_only",
+            "primary_signal": "text-only or cloud-transcribed input when raw audio is unavailable",
+            "allowed_outputs": [
+                "draft",
+                "clarification",
+                "low-risk compatibility request",
+                "labeled fallback status",
+            ],
+            "must_not": [
+                "claim full KAME readiness",
+                "satisfy Stripe/NemoClaw/phone action gates alone",
+                "hide that raw audio was unavailable",
+            ],
+            "evidence_required": [
+                "degraded_reason",
+                "fallback_reason_visible",
+                "high_risk_actions_blocked_without_promoted_evidence",
+            ],
+            "status": "allowed_but_not_full_kame",
+        },
+    ]
+
+
 def _kame_reflex_ack_trace() -> dict[str, Any]:
     return {
         "trace_id": "kame-reflex-ack-001",
@@ -2049,6 +2204,7 @@ def build_demo(args: argparse.Namespace) -> dict[str, Any]:
     ready_total = sum(action.estimated_cents for action in actions if action.status in {"queued", "ready"})
     sponsor_stack = _sponsor_stack(args.active_model)
     spark_stack = _spark_stack(args.active_model, args.reflex_model, args.interpreter_model)
+    provider_role_matrix = _provider_role_matrix(args.active_model, args.reflex_model, args.interpreter_model)
     spark_boundary = _spark_evidence_boundary_from_path(sponsor_stack["hermes_active_model"])
     policy = SpendPolicy(
         name="household-business-daily-ops",
@@ -2071,6 +2227,7 @@ def build_demo(args: argparse.Namespace) -> dict[str, Any]:
         },
         "sponsor_stack": sponsor_stack,
         "spark_stack": spark_stack,
+        "provider_role_matrix": provider_role_matrix,
         "kame_reflex_ack": _kame_reflex_ack_trace(),
         "voice_surfaces": [asdict(surface) for surface in _surface_matrix()],
         "spend_policy": asdict(policy),
@@ -2223,6 +2380,17 @@ def _markdown(demo: dict[str, Any]) -> str:
         f"- Oracle: {demo['spark_stack']['oracle']['model']} selected through Hermes' normal active model flow",
         f"- Speech: {demo['spark_stack']['speech']['asr']}; {demo['spark_stack']['speech']['tts']}",
         "",
+        "## Provider role matrix",
+        "",
+        "| Role | Selected provider/candidate | Authority | Status |",
+        "| --- | --- | --- | --- |",
+        *[
+            f"| {item['role']} | {item['selected_label']} | {item['authority']} | {item['status']} |"
+            for item in demo["provider_role_matrix"]
+        ],
+        "",
+        "Transcript-like output from Moshi/open-S2S, VoiceClaw/OpenClaw, or classic ASR is witness context only. It cannot become the spend reason, phone payload, tool argument, memory, file, or durable user text without interpreter or oracle promotion.",
+        "",
         "## Voice surfaces",
         "",
     ]
@@ -2309,6 +2477,7 @@ def _submission_writeup(demo: dict[str, Any]) -> str:
         f"- Interpreter/evidence: {demo['spark_stack']['interpreter']['model']}",
         f"- Oracle/brain: {demo['spark_stack']['oracle']['model']}",
         f"- Speech path: {demo['spark_stack']['speech']['asr']}; {demo['spark_stack']['speech']['tts']}",
+        "- Provider roles: reflex, interpreter, oracle, auxiliary transcript evidence, outbound TTS, and degraded fallback are explicitly separated in `voiceops-demo.json`.",
         "",
         "## Safety Story",
         "",
@@ -2630,6 +2799,15 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         "</li>"
         for surface in demo["voice_surfaces"]
     )
+    provider_role_items = "".join(
+        "<li>"
+        f"<span>{_h(item['role'])}</span>"
+        f"<strong>{_h(item['selected_label'])}</strong>"
+        f"<small>Authority: {_h(item['authority'])}; status: {_h(item['status'])}</small>"
+        f"<small>Must not: {_h('; '.join(item['must_not'][:2]))}</small>"
+        "</li>"
+        for item in demo["provider_role_matrix"]
+    )
     held_action_text = ", ".join(action["action_id"] for action in held_actions) if held_actions else "none"
     return f"""<!doctype html>
 <html lang="en">
@@ -2903,6 +3081,10 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
             <li><span>Preferred local</span><strong>Nemotron 3 Super on DGX Spark</strong><small>Spark-local readiness requires measured local evidence.</small></li>
             <li><span>Hosted fallback</span><strong>Clearly labeled /model fallback</strong><small>Hosted fallback does not count as Spark-local readiness proof.</small></li>
           </ul>
+        </div>
+        <div class="panel">
+          <h2>Provider Roles</h2>
+          <ul>{provider_role_items}</ul>
         </div>
         <div class="panel">
           <h2>NemoClaw Blocks</h2>

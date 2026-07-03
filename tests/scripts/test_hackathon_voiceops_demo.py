@@ -395,6 +395,27 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert payload["spark_stack"]["interpreter"]["authority"].endswith("no direct tool or spend authority")
     assert "optional auxiliary transcript-hypothesis evidence" in payload["spark_stack"]["speech"]["asr"]
     assert "durable transcript evidence" not in payload["spark_stack"]["speech"]["asr"]
+    provider_roles = {item["role"]: item for item in payload["provider_role_matrix"]}
+    assert set(provider_roles) == {
+        "reflex",
+        "interpreter",
+        "oracle",
+        "auxiliary_transcript_evidence",
+        "outbound_tts",
+        "degraded_fallback",
+    }
+    assert provider_roles["reflex"]["authority"] == "reflex_hypothesis"
+    assert provider_roles["reflex"]["selected_label"] == payload["spark_stack"]["reflex"]["model"]
+    assert "wait for full ASR before acknowledging when raw audio is available" in provider_roles["reflex"]["must_not"]
+    assert provider_roles["interpreter"]["authority"] == "interpreter_promoted"
+    assert provider_roles["interpreter"]["selected_label"] == payload["spark_stack"]["interpreter"]["model"]
+    assert "treat Moshi/S2S/ASR text as verified without checking raw audio" in provider_roles["interpreter"]["must_not"]
+    assert provider_roles["oracle"]["authority"] == "oracle_promoted"
+    assert provider_roles["oracle"]["selected_label"] == payload["spark_stack"]["oracle"]["model"]
+    assert "VoiceOps-specific oracle_model setting" in json.dumps(provider_roles["oracle"]["must_not"])
+    assert provider_roles["auxiliary_transcript_evidence"]["authority"] == "auxiliary_hypothesis"
+    assert provider_roles["outbound_tts"]["authority"] == "playback_only"
+    assert provider_roles["degraded_fallback"]["authority"] == "fallback_text_or_diagnostic_only"
     assert payload["sponsor_stack"]["stripe_skills"]["skills"] == ["stripe-projects", "stripe-link-cli", "mpp-agent"]
     assert payload["voice_surfaces"][0]["channel"] == "discord"
     assert payload["voice_surfaces"][0]["status"] == "intended-live-front-door-needs-evidence"
@@ -612,6 +633,9 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "operator-handoff-preview.json" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "recording-runbook.md" in Path(paths["markdown"]).read_text(encoding="utf-8")
     assert "submission-writeup.md" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "## Provider role matrix" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "auxiliary_transcript_evidence" in Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "witness context only" in Path(paths["markdown"]).read_text(encoding="utf-8")
     demo_script = Path(paths["demo_script"]).read_text(encoding="utf-8")
     assert "spoken in Discord" in demo_script
     assert "outbound phone call" in demo_script
@@ -700,6 +724,9 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "evt-006" in dashboard
     assert "Planned Services" in dashboard
     assert "Provisioned Services" in dashboard
+    assert "Provider Roles" in dashboard
+    assert "auxiliary_transcript_evidence" in dashboard
+    assert "fallback_text_or_diagnostic_only" in dashboard
     assert "repo_local_demo_artifacts" in dashboard
     assert "stripe-projects" in dashboard
     assert "Upcoming Tasks" in dashboard
