@@ -86,6 +86,10 @@ Target KAME layout:
   or a call/message payload without interpreter or oracle judgment. The
   transcript that arrives first is never automatically the transcript of
   record.
+- Persistence rule: this promotion rule applies to both visible chat history and
+  internal oracle recovery records. Hypothesis strings may live in the
+  voice-session audit ledger with provenance, but they must not be replayed as
+  verified user messages or durable Hermes conversation turns.
 - Three-tier rule: the long-term shape is reflex, interpreter, oracle. A
   two-tier reflex/oracle bridge is acceptable as a bring-up step, but it must not
   pretend that a Moshi/open-S2S transcript is equivalent to Gemma raw-audio
@@ -253,6 +257,12 @@ transcript, intent, entities, and confidence into the oracle request before
 execution; if it arrives late, it should be audited as a bounded update before
 any irreversible spend, provisioning, call, or credential action relies on
 earlier text.
+
+The scheduler must also guard persistence. A provisional `oracle_text` derived
+from reflex or transcript hypotheses is allowed for queuing and narration, but
+the persisted Hermes user message should be the promoted interpreter/oracle
+wording. Durable oracle records should preserve raw hypothesis fields only in the
+voice-session audit trail, not as replayable verified user turns.
 
 ### Oracle
 

@@ -164,6 +164,7 @@ driver.
 
 - The oracle uses the model Hermes is configured to use. Voice configuration must not add a separate `oracle_model`; model selection stays in the normal Hermes `/model` and provider configuration path.
 - The oracle can see corrected transcript, reflex transcript hypothesis, Moshi/S2S transcript hypothesis, optional ASR hypothesis, interpreter confidence, and source provenance when a voice turn escalates.
+- Moshi/S2S and ASR transcript text reaches the oracle only as labeled evidence attached to the same raw-audio/interpreter bundle. It must not create a second oracle turn, overwrite the compact reflex intent directly, or become `oracle_text` unless interpreter/oracle judgment explicitly promotes it.
 - Tool calls from hypothesis-only speech require a conservative gate. Destructive or external side-effect tools require interpreter/oracle confirmation or explicit user confirmation.
 - Oracle output is guidance until committed by the speech planner.
 
@@ -199,6 +200,8 @@ driver.
   - tool calls/results that actually executed
   - interruption markers where relevant
 - Partial transcripts, Moshi/S2S hypotheses, ASR hypotheses, tentative assistant text, and acoustic chunks are not stored by default.
+- Durable oracle recovery records must follow the same rule. A queued or running oracle job may retain hypothesis evidence in the voice-session audit ledger, but durable Hermes chat history must store only promoted user wording, user-visible outcomes, executed tool/action records, and explicit interruption/cancellation markers.
+- Implementations must guard both persistence paths: the `persist_user_message` path must prefer promoted interpreter/oracle intent over raw `transcript` fields, and durable oracle records must not preserve raw hypothesis fields as if they were verified user text.
 
 ### Security and Privacy
 
@@ -216,6 +219,7 @@ driver.
 - Barge-in stop latency: under 150 ms from detected speech to playback cancellation.
 - Realtime server events expose session latency metrics for transcript hypotheses, interpreter evidence, first-text, first-audio, and barge-in paths.
 - No durable transcript pollution from partial ASR, Moshi/S2S hypotheses, or abandoned assistant drafts.
+- No durable transcript pollution through indirect oracle paths: hypothesis-only transcript strings must not become persisted Hermes user messages via `oracle_text`, request replay, or job recovery.
 - Existing one-shot voice mode continues to work.
 - Reconnect drills prove the desktop releases the microphone and clears playback/queued audio before starting the next realtime session or fallback loop.
 - Production launch-review checks include non-empty notes or artifact references for every passed manual check; booleans alone are not enough to claim Gemini Live-style quality.

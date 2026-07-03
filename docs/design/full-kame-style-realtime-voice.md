@@ -12,6 +12,12 @@ Moshi/open-S2S or classic STT text may accompany that raw voice as labeled
 context, but it must not become the scheduler, the durable transcript, or a
 second prompt competing with the interpreter.
 
+Current clarification: Moshi/STT transcript capture is not a fourth agent lane.
+It is an attachment producer for the interpreter evidence bundle. The session
+may collect transcript text opportunistically, but the unit of work remains one
+speech cut with raw audio as primary evidence, plus whatever labeled hypotheses
+were available before or after the cut.
+
 ## Purpose
 
 Hermes currently has KAME-compatible realtime voice plumbing: Discord voice transport, a realtime sidecar, streaming STT/TTS provider bridges, barge-in handling, mixer playback, and latency metrics. It is not yet a full KAME-style implementation because there is no lightweight, low-latency interface model acting as the human-facing conversational front end.
@@ -221,6 +227,13 @@ along with raw voice?" question: yes, that is exactly the desired packet shape.
 The raw voice clip and timing metadata are the primary interpreter evidence;
 Moshi/open-S2S text is a labeled clue that Gemma may accept, correct, or reject.
 
+Implementation-wise, this should be modeled as transcript evidence attaching to
+the current `turn_id` / `audio_segment_ref`, not as a parallel STT conversation.
+The adapter can emit transcript evidence before the raw clip is finalized, with
+the raw clip, or after the interpreter has already started. In every case, Hermes
+records it as a hypothesis on the same interpreter bundle and never schedules a
+second oracle request from that text alone.
+
 External frontend adapters must preserve that shape instead of flattening it into
 one text turn. A VoiceClaw/OpenClaw/Moshi-style bridge may send an `ask_brain`
 request early, but the Hermes adapter should treat it as an interpreter/oracle
@@ -242,6 +255,11 @@ Hermes may still run it through the compatibility path, but that turn is degrade
 evidence. It must not satisfy the full KAME raw-audio interpreter gate, and it
 must not promote the transcript into durable user text without interpreter or
 oracle judgment.
+
+If a Moshi-style frontend provides both audio and transcript text, the audio
+reference should be preferred even when the transcript appears cleaner. The
+transcript is useful because it shows what the realtime model believed it heard;
+it is not proof that the user said those words.
 
 ## Responsibilities
 
@@ -283,6 +301,11 @@ The presence of a Moshi/S2S transcript must be opportunistic, not blocking. A
 Gemma interpreter request can proceed with only the clipped raw audio and timing
 metadata; any Moshi/S2S or classic ASR hypothesis that arrives later can be
 attached as late evidence before irreversible oracle actions.
+
+This also means there should be no separate "wait for ASR evidence" phase in the
+normal KAME path. Waiting for transcript text is allowed only in explicit
+fallback/debug modes or when a high-risk action policy asks for additional
+literal evidence before approval.
 
 It owns:
 
@@ -837,6 +860,8 @@ mode = "from_reflex"
 dedicated_asr_mode = "disabled"
 sources = ["reflex", "moshi"]
 # Add "asr" only for explicit fallback, diagnostics, or literal-evidence checks.
+attach_to_interpreter_bundle = true
+schedule_oracle_from_transcript = false
 promote_without_interpreter = false
 
 [voice.realtime.oracle]

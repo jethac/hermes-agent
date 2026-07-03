@@ -114,6 +114,10 @@ The final voice architecture should separate low-latency conversational reflexes
 - **Heavy requests** go directly to Hermes' active oracle model. For the hackathon target, that is Nemotron 3 Super, not an MoA wrapper.
 - The reflex should produce real transcript-visible messages, not hidden filler audio.
 - Voice output should be fragmented into sentence-level chunks so text and speech arrive incrementally instead of waiting for a large monolithic response.
+- Moshi/S2S or ASR transcript text is evidence attached to the interpreter
+  bundle, not a parallel conversation. It must not become `oracle_text`, a spend
+  reason, a call payload, or durable user text unless interpreter/oracle judgment
+  promotes it.
 
 The immediate hackathon build should favor the fastest stable reflex path for
 acknowledgement and turn-taking. Gemma should be used as an interpreter/evidence
@@ -140,6 +144,10 @@ system heard the user.
 - Hermes gives a low-latency acknowledgement shortly after speech end.
 - Hermes does not claim it lacks voice capability.
 - Hermes replies in sentence-sized voice/text chunks.
+- Raw-audio interpreter evidence, reflex transcript hypotheses, Moshi/S2S
+  hypotheses, and ASR hypotheses remain separate in logs and durable records.
+  Hypothesis-only text does not leak into persisted Hermes user messages or
+  Stripe/NemoClaw/phone action payloads.
 - The active Hermes model routes to the local PGX Nemotron 3 Super endpoint.
 - Heavy planning/build/debug requests go directly through the active Hermes oracle, without the Gemma 12B + Nemotron Nano MoA path.
 - Stripe-linked provisioning is constrained by an explicit budget.
