@@ -3,7 +3,7 @@
 Status: design draft
 Target branch: `wip/full-kame-reflex-voice`
 Target deployment: one DGX Spark, with cloud providers allowed only as bring-up fallbacks
-Preferred local reflex: Moshi/PersonaPlex-class fast S2S or smaller timing model
+Preferred local reflex: Moshi/PersonaPlex-class fast S2S or smaller timing/noise-gated model
 Preferred local interpreter: Gemma 4 E2B/E4B/12B audio-multimodal
 Preferred local oracle target: Hermes active `/model`, with Nemotron 3 Super as the first Spark-local NVIDIA target to validate
 
@@ -18,8 +18,9 @@ Full KAME-style means:
    acknowledgements, short local replies, floor control, and rough transcript
    hypotheses.
 3. A parallel interpreter lane, preferably Gemma 4 audio-multimodal, reviews
-   clipped raw audio plus the reflex transcript hypothesis to produce corrected
-   multilingual evidence, entities, confidence, and oracle request patches.
+   clipped raw audio plus any reflex/Moshi transcript hypotheses to produce
+   corrected multilingual evidence, entities, confidence, and oracle request
+   patches.
 4. Hermes's oracle remains the brain: tools, memory, files, long reasoning,
    project context, and durable task execution.
 5. The reflex and interpreter broker compact requests to the oracle instead of
@@ -34,6 +35,8 @@ This design relies on the following external model and serving assumptions:
 - Moshi/PersonaPlex-class S2S models can provide very low-latency floor
   control and rough transcript hypotheses, but should not be trusted as durable
   transcript truth or granted broad tools.
+- Moshi-class transcript output, when available, is auxiliary evidence for the
+  interpreter and oracle. It must not become a separate STT-first control path.
 - Gemma 4 E2B/E4B/12B supports text, image, and audio input, and produces text output.
 - Gemma 4 E2B/E4B use a USM-style Conformer audio encoder.
 - Gemma 4 audio input is bounded; Google's model card currently lists a 30 second audio limit.
@@ -58,14 +61,16 @@ Discord voice / VoiceClaw / OpenClaw Talk / phone-SIP / desktop mic
        -> VAD / turn detector
        -> fast reflex / floor-control model
             -> immediate ack / local control / rough transcript hypothesis
+       -> auxiliary transcript evidence lane
+            -> Moshi/S2S transcript hypothesis or classic ASR hypothesis
        -> interpreter lane
-            -> Gemma 4 audio model over raw clip + reflex transcript hypothesis
+            -> Gemma 4 audio model over raw clip + reflex/Moshi/ASR hypotheses
             -> corrected transcript / entities / oracle request patch
        -> speech planner
        -> TTS or native speech output
        -> oracle router
             -> interpreter evidence
-            -> optional classic ASR evidence
+            -> auxiliary transcript evidence
             -> Hermes gateway / oracle session
             -> tools, MCP, memory, files, project context
        <- oracle hints, tool results, final answer
@@ -110,8 +115,10 @@ reasoning.
 
 The reflex transcript is a hypothesis. It is useful because it arrives early and
 captures what the live model thought it heard, but it must not become the
-unquestioned transcript of record. The interpreter and optional ASR lanes may
-correct it before the oracle executes tool calls or external actions.
+unquestioned transcript of record. Moshi/S2S transcript output belongs in this
+same class: helpful context, not authority. The interpreter and auxiliary
+transcript evidence lanes may correct it before the oracle executes tool calls
+or external actions.
 
 It owns:
 
@@ -155,7 +162,8 @@ Gemma 4 E2B's audio path should be treated as a buffered segment encoder, not as
 1. VAD detects speech start, speech energy, and speech end.
 2. The session cuts a bounded audio segment.
 3. The reflex immediately acknowledges or controls the floor from live audio.
-4. The interpreter encodes the segment plus the reflex transcript hypothesis.
+4. The interpreter encodes the segment plus the reflex/Moshi transcript
+   hypotheses and any available auxiliary transcript evidence.
 5. The interpreter emits corrected transcript, intent, entities, disagreement
    flags, and an oracle request patch.
 6. The oracle job uses the best available request and may accept late
@@ -169,6 +177,7 @@ The interpreter receives:
 
 - clipped raw audio
 - reflex transcript hypothesis
+- optional Moshi/S2S transcript hypothesis if it differs from the reflex
 - optional classic ASR transcript hypothesis
 - language and speaker metadata
 - reflex route, acknowledgement, and "interface already said" text
@@ -179,7 +188,8 @@ The interpreter emits:
 - corrected transcript or transcript alternatives
 - normalized intent and route confidence
 - entities, numbers, names, URLs, code terms, and language notes
-- disagreement flags between raw audio, reflex transcript, and ASR
+- disagreement flags between raw audio, reflex transcript, Moshi/S2S transcript,
+  and ASR
 - oracle request patch or clarification recommendation
 
 The interpreter may attach evidence to a queued oracle job before it starts or
@@ -207,21 +217,35 @@ It owns:
 
 The oracle should receive structured requests from the interface instead of raw streaming audio fragments.
 
-### Oracle-Verbatim ASR Lane
+### Auxiliary Transcript Evidence Lane
 
-The oracle-verbatim lane is not the old STT-first voice pipeline. It is a lower-level evidence path used only when Hermes needs exact wording.
+The auxiliary transcript evidence lane is not the old STT-first voice pipeline.
+It is a lower-level evidence path used when Hermes needs exact wording or when a
+fast S2S/reflex model already produced a useful but untrusted transcript
+hypothesis. Moshi-class transcript output and classic ASR output both enter
+through this lane.
 
 Modes:
 
-- `disabled`: no ASR is run; the oracle receives reflex intent and, optionally, the audio segment reference.
-- `on_escalation`: ASR runs only after the reflex chooses `defer` or `oracle_direct`.
-- `speculative`: ASR may start at speech end in parallel with the reflex, but its output is discarded for local turns and never drives the reflex.
-- `debug`: ASR runs for comparison, captions, and diagnostics.
-- `fallback`: ASR feeds the reflex only when the realtime reflex audio path is unavailable.
+- `disabled`: no separate transcript evidence is run; the oracle receives
+  reflex intent and, optionally, the audio segment reference.
+- `from_reflex`: only transcript hypotheses emitted by the reflex/S2S model are
+  forwarded as evidence.
+- `on_escalation`: dedicated ASR runs only after the reflex chooses `defer` or
+  `oracle_direct`.
+- `speculative`: dedicated ASR may start at speech end in parallel with the
+  reflex, but its output is discarded for local turns and never drives the
+  reflex.
+- `debug`: transcript evidence runs for comparison, captions, and diagnostics.
+- `fallback`: transcript evidence feeds the reflex only when the realtime reflex
+  audio path is unavailable.
 
-Default target mode: `on_escalation`.
+Default target mode: `from_reflex` when the reflex produces a transcript,
+otherwise `on_escalation`.
 
-`speculative` can be enabled if measurements show that waiting until after the reflex decision delays oracle requests. Even then, ASR is an oracle evidence lane, not a reflex dependency.
+`speculative` can be enabled if measurements show that waiting until after the
+reflex decision delays oracle requests. Even then, transcript evidence is an
+interpreter/oracle evidence lane, not a reflex dependency.
 
 ## Session Contract
 
@@ -241,7 +265,7 @@ Core input events:
 - `transport.buffer.cleared`
 - `session.stop`
 
-Optional ASR/fallback evidence events:
+Auxiliary transcript/fallback evidence events:
 
 - `transcript.partial`
 - `transcript.final`
@@ -250,11 +274,12 @@ Optional ASR/fallback evidence events:
 - `interpreter.evidence.final`
 - `interpreter.evidence.patch`
 
-These transcript events are disabled unless ASR mode is `on_escalation`,
-`speculative`, `debug`, or `fallback`. They must not make the normal KAME path
-STT-first. Reflex transcript hypotheses and interpreter evidence are separate:
-the reflex hypothesis is early and non-durable by default, while interpreter
-evidence is the corrected audio-understanding artifact offered to the oracle.
+These transcript events are disabled unless transcript evidence mode is
+`from_reflex`, `on_escalation`, `speculative`, `debug`, or `fallback`. They must
+not make the normal KAME path STT-first. Reflex/Moshi transcript hypotheses and
+interpreter evidence are separate: transcript hypotheses are early and
+non-durable by default, while interpreter evidence is the corrected
+audio-understanding artifact offered to the oracle.
 
 Interface events:
 
@@ -349,6 +374,9 @@ The interface should submit a compact structured oracle job request:
   "oracle_text": "backend Hermes request text",
   "reflex_intent": "compact live intent",
   "reflex_transcript_hypothesis": "three to the power of seventeen",
+  "auxiliary_transcript_hypotheses": [
+    {"source": "moshi", "text": "three to the power of seventeen", "confidence": 0.74}
+  ],
   "interpreter_corrected_transcript": "what is three to the power of seventeen",
   "interpreter_confidence": 0.94,
   "interpreter_disagreements": ["reflex transcript omitted request prefix"],
@@ -375,10 +403,11 @@ The interface should submit a compact structured oracle job request:
 
 This gives the oracle enough state to answer without receiving every partial
 audio event or every backchannel. The request should carry the reflex's
-early hypothesis, the interpreter's corrected evidence when available, and any
-classic ASR transcript hypothesis when enabled. The oracle should prefer
-interpreter/classic-ASR literal evidence for tool arguments while preserving the
-reflex route and "interface already said" context.
+early hypotheses, the interpreter's corrected evidence when available, and any
+auxiliary transcript hypothesis when enabled. The oracle should prefer
+interpreter evidence for tool arguments, using Moshi/S2S or classic ASR
+transcripts as supporting literal evidence while preserving the reflex route and
+"interface already said" context.
 
 ## Barge-In
 
@@ -416,7 +445,7 @@ The design should measure every turn with monotonic timestamps. Minimum required
 - audio segment ready to reflex decision
 - audio segment ready to interpreter evidence started/final
 - reflex hypothesis to interpreter correction
-- ASR transcript spans when ASR mode is enabled
+- transcript evidence spans when Moshi/S2S or ASR transcript evidence is enabled
 - oracle job accepted, queued, started, waiting, completed, failed, and cancelled
   lifecycle spans
 - interface decision to local first audio
@@ -451,7 +480,7 @@ Realtime voice sidecar / KAME session manager
 Fast reflex server
 Gemma interpreter server
 Oracle LLM server
-Streaming ASR server
+Auxiliary transcript evidence server
 Streaming TTS server
 Metrics/log collector
 ```
@@ -480,7 +509,7 @@ Preferred reflex track:
 Preferred interpreter track:
 
 - Gemma 4 E2B/E4B/12B as the first audio-understanding evidence candidate
-- raw audio plus reflex transcript hypothesis as normal input
+- raw audio plus reflex/Moshi transcript hypotheses as normal input
 - optional classic ASR transcript hypothesis as an additional comparison input
 - outputs corrected transcript, entities, language notes, confidence, and
   oracle request patches
@@ -490,9 +519,9 @@ Preferred interpreter track:
 Preferred speech track:
 
 - keep Cartesia or another cloud bridge as the baseline while local speech is being validated
-- evaluate local streaming ASR and TTS separately before combining them
+- evaluate local transcript evidence and TTS separately before combining them
 - do not feed STT into the reflex in normal full KAME mode
-- use ASR as fallback or additional oracle-verbatim evidence for escalated
+- use ASR as fallback or additional auxiliary transcript evidence for escalated
   turns, not as the realtime interface
 - use STT as reflex input only for text-only fallback, explicit debug/audit sessions, or provider comparisons
 - do not treat native S2S as the entire agent unless it beats the three-lane
@@ -533,12 +562,14 @@ base_url = "http://127.0.0.1:PORT/v1"
 model = "gemma-4-E2B-it"
 audio_input = "required"
 include_reflex_transcript_hypothesis = true
-include_asr_hypothesis = "when_available"
+include_auxiliary_transcript_hypotheses = "when_available"
 timeout_ms = 2000
 late_bind_to_oracle_jobs = true
 
-[voice.realtime.asr]
-mode = "on_escalation"
+[voice.realtime.transcript_evidence]
+mode = "from_reflex"
+dedicated_asr_mode = "on_escalation"
+sources = ["reflex", "moshi", "asr"]
 
 [voice.realtime.oracle]
 mode = "hermes_active_oracle"
@@ -606,9 +637,10 @@ The GUI environment page should expose provider/model/base URL settings for:
 - interpreter model
 - interpreter audio input mode
 - interpreter late-binding policy
-- ASR mode: disabled, on_escalation, speculative, debug, or fallback
+- transcript evidence mode: disabled, from_reflex, on_escalation, speculative,
+  debug, or fallback
 - local oracle provider target and base URL, when registering a local endpoint for the active Hermes `/model` selection
-- ASR provider/model
+- auxiliary transcript provider/model
 - TTS provider/model/voice
 - oracle job capacity, queue policy, active/running/waiting/queued counts, and
   cancellation state
@@ -658,19 +690,20 @@ This phase is the first point where the system can honestly be called KAME-style
 ### Phase 3: Gemma Interpreter Evidence Lane
 
 Add Gemma 4 as a parallel interpreter over the clipped raw audio plus the reflex
-transcript hypothesis. It should produce corrected transcript, entities,
-language notes, confidence, disagreement flags, and oracle request patches.
+and Moshi/S2S transcript hypotheses. It should produce corrected transcript,
+entities, language notes, confidence, disagreement flags, and oracle request
+patches.
 
 Deliverables:
 
 - Gemma interpreter prompt and JSON evidence schema
-- raw audio plus reflex transcript hypothesis input path
-- optional classic ASR hypothesis comparison input
+- raw audio plus reflex/Moshi transcript hypothesis input path
+- optional classic ASR hypothesis comparison input when enabled
 - corrected transcript/entity output attached to oracle jobs
 - late-binding update path for queued/running oracle jobs
 - tests proving the interpreter does not block reflex acknowledgement
 - evidence comparing oracle outcomes with reflex-only, interpreter, and
-  interpreter-plus-ASR evidence
+  interpreter-plus-auxiliary-transcript evidence
 
 ### Phase 4: Streaming Interface Behavior
 
@@ -703,7 +736,8 @@ Deliverables:
 
 ### Phase 6: DGX Spark Local Reflex, Interpreter, And Speech
 
-Move the reflex, interpreter, then ASR/TTS onto the Spark as resources allow.
+Move the reflex, interpreter, then transcript evidence/TTS onto the Spark as
+resources allow.
 
 Deliverables:
 
@@ -711,11 +745,11 @@ Deliverables:
 - Gemma 4 interpreter launch profile
 - local reflex benchmark matrix
 - local interpreter benchmark matrix, with Gemma 4 as the default candidate
-- local ASR benchmark matrix
+- local auxiliary transcript benchmark matrix
 - local TTS benchmark matrix
 - reflex acknowledgement latency comparison
 - interpreter correction latency and quality comparison
-- oracle-verbatim ASR latency and literal-accuracy comparison
+- auxiliary transcript latency and literal-accuracy comparison
 - all-local smoke test
 - cloud fallback retained behind config
 - one-command launch profile for the full local stack
@@ -760,10 +794,10 @@ Unit tests:
 - routing matrix for local/defer/oracle_direct/clarify
 - reflex rough transcript hypothesis is non-durable by default
 - interpreter evidence schema validation
-- interpreter compares raw audio, reflex transcript hypothesis, and ASR
-  hypothesis without treating any one as automatic truth
-- oracle request contains distinct reflex intent, interpreter evidence, and ASR
-  transcript fields
+- interpreter compares raw audio, reflex/Moshi transcript hypotheses, and ASR
+  hypotheses without treating any one as automatic truth
+- oracle request contains distinct reflex intent, interpreter evidence, and
+  auxiliary transcript fields
 - reflex JSON schema validation
 - oracle request construction
 - interrupted response commit behavior
@@ -789,7 +823,7 @@ Integration tests:
 - sidecar unavailable fallback
 - TTS unavailable fallback
 - realtime reflex unavailable fallback to STT-fed routing
-- escalated turn includes interpreter evidence and optional oracle-verbatim ASR
+- escalated turn includes interpreter evidence and optional auxiliary transcript
   evidence when configured
 - interpreter evidence can patch a queued/running oracle job without blocking
   the immediate reflex acknowledgement
@@ -800,7 +834,8 @@ Integration tests:
 Manual smoke tests:
 
 - `/voice join` starts KAME mode when all dependencies are healthy
-- `/voice status` reports reflex, interpreter, oracle, ASR, TTS, and fallback state
+- `/voice status` reports reflex, interpreter, oracle, transcript evidence,
+  TTS, and fallback state
 - greeting is answered locally
 - project/tool question escalates to Hermes oracle
 - user speech during bot playback stops audio quickly
@@ -823,9 +858,9 @@ voice production review is not enough for this branch. Required KAME gates are:
 - hosted Nemotron 3 Ultra excluded from one-Spark readiness claims unless local
   evidence proves otherwise
 - oracle outcome comparison with reflex-only, Gemma interpreter, and
-  Gemma-plus-ASR evidence
-- all-local DGX Spark smoke with oracle, reflex, interpreter, ASR, TTS, and
-  sidecar together
+  Gemma-plus-auxiliary-transcript evidence
+- all-local DGX Spark smoke with oracle, reflex, interpreter, transcript
+  evidence, TTS, and sidecar together
 - live Discord smoke for the full KAME path under production credentials
 
 The `kame_dgx_benchmark_evidence` production-review check must reference a
@@ -849,8 +884,8 @@ The full implementation is acceptable when:
   work separately
 - sidecar shutdown leaves no orphan sessions or playback
 - Discord fallback is explicit and understandable
-- all reflex, interpreter, ASR, TTS, routing, fallback, and local-provider
-  target choices are configurable from config and GUI
+- all reflex, interpreter, auxiliary transcript, TTS, routing, fallback, and
+  local-provider target choices are configurable from config and GUI
 - Hermes oracle model selection remains the existing `/model` mechanism, not a separate realtime voice setting
 - the full stack has a documented one-DGX-Spark launch path
 
@@ -870,16 +905,16 @@ Already present:
 - KAME interface/oracle engine in the live session path
 - structured interface-to-oracle request contract
 - local/defer/oracle_direct/reject_or_clarify routing policy
-- oracle-verbatim ASR lane for escalated turns
+- auxiliary transcript evidence lane for escalated turns
 - ephemeral versus durable transcript policy at the session boundary
 - oracle hint streaming back to live interface providers
 - explicit KAME provenance for realtime-reflex, interpreter, and STT-fed fallback turns
 - visible frontend fallback state when KAME uses local STT as the reflex fallback
-- DGX Spark launch/profile generation for reflex, interpreter, oracle, ASR, and
-  TTS targets
+- DGX Spark launch/profile generation for reflex, interpreter, oracle,
+  auxiliary transcript, and TTS targets
 - benchmark matrix templates for local reflex, interpreter, and speech candidates
-- GUI coverage for KAME reflex, interpreter, ASR, TTS, routing, barge-in,
-  fallback, and local provider target settings
+- GUI coverage for KAME reflex, interpreter, auxiliary transcript, TTS,
+  routing, barge-in, fallback, and local provider target settings
 - oracle job manager evidence for background execution, queueing, cancellation,
   and status reporting
 - DGX Spark / Nemotron 3 Super `max_concurrent=4` capacity evidence
@@ -891,9 +926,9 @@ Remaining for full KAME production readiness:
 - Gemma 4 interpreter launch evidence from the actual DGX Spark runtime
 - DGX Spark / Nemotron 3 Super `max_concurrent=4` capacity evidence
 - benchmark evidence comparing reflex-only, Gemma interpreter, and
-  Gemma-plus-ASR oracle outcomes
+  Gemma-plus-auxiliary-transcript oracle outcomes
 - benchmark evidence comparing interpreter correction against reflex transcript
   hypotheses for multilingual/code-switched turns
-- all-local DGX Spark smoke evidence with the oracle, reflex, interpreter, ASR,
-  and TTS services running together
+- all-local DGX Spark smoke evidence with the oracle, reflex, interpreter,
+  auxiliary transcript, and TTS services running together
 - live Discord smoke evidence for the full KAME path under production credentials

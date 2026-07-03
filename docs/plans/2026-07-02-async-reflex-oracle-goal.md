@@ -54,8 +54,8 @@ The reflex is the live interface. It owns:
 The interpreter is the evidence lane. It owns:
 
 - raw clipped audio review after each speech cut
-- comparison against the reflex transcript hypothesis
-- optional comparison against classic ASR hypotheses
+- comparison against the reflex/Moshi transcript hypotheses
+- optional comparison against classic ASR hypotheses when enabled
 - corrected transcript alternatives
 - multilingual intent, entities, numbers, names, URLs, code terms, and language
   notes
@@ -232,9 +232,9 @@ The reflex can use this to answer status questions and decide whether to accept
 new work, ask for prioritization, or suggest cancellation.
 
 The interpreter gets a different compact view: the current turn id, clipped
-audio reference, reflex hypothesis, optional ASR hypothesis, active job id, and
-the acknowledgement already spoken. It does not need tool schemas or broad
-Hermes state.
+audio reference, reflex hypothesis, optional Moshi/S2S transcript hypothesis,
+optional ASR hypothesis, active job id, and the acknowledgement already spoken.
+It does not need tool schemas or broad Hermes state.
 
 ## Routing Behavior
 
@@ -264,7 +264,10 @@ Scheduler: creates oracle job
 
 If Gemma interpreter evidence arrives before the job starts, the scheduler folds
 it into the job request. If it arrives after the job starts, the job manager
-attaches it as a bounded update for tool-critical checks and final audit.
+attaches it as a bounded update for tool-critical checks and final audit. That
+evidence may include the raw-audio interpretation, Moshi/S2S transcript
+hypotheses, and optional ASR hypotheses, but the raw audio plus interpreter
+judgment remains the higher-authority evidence path.
 
 ### `oracle_direct`
 
@@ -420,8 +423,8 @@ external side effects.
 
 The interpreter needs a narrow job-manager operation:
 
-- attach corrected transcript, entities, confidence, and disagreement flags to a
-  job
+- attach corrected transcript, entities, confidence, disagreement flags, and
+  transcript-hypothesis provenance to a job
 - patch queued oracle text before worker execution starts
 - mark running jobs with late evidence and expose whether it was consumed
 - never execute external side effects
@@ -546,7 +549,8 @@ Extend realtime voice tests:
   committed as durable assistant history
 - reflex transcript hypotheses are not durable unless promoted by interpreter
   or oracle-visible outcome
-- interpreter correction can update a queued job before execution starts
+- interpreter correction can update a queued job before execution starts,
+  including corrections informed by Moshi/S2S transcript evidence
 - late interpreter correction is recorded for a running job without creating a
   duplicate oracle job
 
@@ -581,7 +585,8 @@ Add a local smoke report mode that proves:
 - four fake oracle jobs can run concurrently
 - reflex still accepts a local "can you hear me?" turn while jobs run
 - Gemma interpreter evidence can arrive after the reflex acknowledgement and
-  before/after oracle job start without blocking the voice loop
+  before/after oracle job start without blocking the voice loop, using raw audio
+  plus Moshi/S2S or ASR transcript hypotheses when available
 - queued oracle job updates are visible in the reflex/status event stream
 - one job can be cancelled while others complete
 - queued oracle jobs can be cancelled before worker execution

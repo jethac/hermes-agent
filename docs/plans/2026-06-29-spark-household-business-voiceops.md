@@ -52,12 +52,13 @@ Target KAME layout:
   such as Moshi/PersonaPlex-class S2S, optimized for turn-taking, barge-in,
   immediate acknowledgement, and rough transcript hypotheses.
 - Interpreter/evidence: Gemma 4 E2B/E4B/12B-style audio-multimodal model,
-  run in parallel after each speech cut to adjudicate raw audio plus the reflex
-  transcript hypothesis into corrected transcript, multilingual intent,
-  entities, confidence, and oracle request patches.
+  run in parallel after each speech cut to adjudicate raw audio plus
+  reflex/Moshi transcript hypotheses into corrected transcript, multilingual
+  intent, entities, confidence, and oracle request patches.
 - Oracle/brain: whatever Hermes `/model` selects, with Nemotron 3 Super as the first preferred local NVIDIA candidate to evaluate on DGX Spark.
-- Speech: local ASR/TTS where practical, with classic ASR used as fallback or
-  additional oracle evidence rather than reflex input in full KAME mode.
+- Speech: local transcript evidence and TTS where practical, with Moshi/S2S or
+  classic ASR transcripts used as auxiliary oracle/interpreter evidence rather
+  than reflex input in full KAME mode.
 - Fallbacks: hosted `/model` providers, Kimi, Cartesia, or other cloud providers are acceptable during bring-up and demos when they are labeled clearly.
 
 The public demo should prefer Nemotron 3 Super on Spark for sponsor fit while allowing a clearly labeled hosted fallback only if needed. The private appliance roadmap benchmarks Super and other Spark-friendly models for the local brain.
@@ -145,7 +146,9 @@ Target:
 - sends structured requests to the oracle for real work
 
 The reflex is not the brain and should not gain broad tool authority early.
-The reflex transcript is a hypothesis, not durable truth.
+The reflex transcript is a hypothesis, not durable truth. Moshi/S2S transcript
+output belongs in the same non-durable hypothesis class unless the Gemma
+interpreter or oracle-visible outcome promotes it.
 
 ### Interpreter
 
@@ -159,6 +162,7 @@ Target inputs:
 
 - clipped raw audio segment and timing metadata
 - reflex transcript hypothesis, if the reflex produced one
+- Moshi/S2S transcript hypothesis, if the reflex stack produced one
 - optional classic ASR transcript hypothesis
 - reflex route, acknowledgement, and "interface already said" text
 - current oracle job/status context
@@ -168,7 +172,8 @@ Target outputs:
 - corrected transcript or transcript alternatives
 - normalized intent and route confidence
 - entities, numbers, names, URLs, code terms, and language notes
-- disagreement flags between audio, reflex transcript, and classic ASR
+- disagreement flags between audio, reflex transcript, Moshi/S2S transcript,
+  and classic ASR
 - oracle request patch or clarification recommendation
 
 The interpreter may attach evidence to an oracle job before it starts, or submit
@@ -195,9 +200,9 @@ Target:
 
 - VAD/endpointer drives turn cuts
 - the fast reflex consumes live audio for floor control and immediate response
-- Gemma interpreter consumes clipped audio plus reflex transcript hypothesis for
-  multilingual correction and oracle evidence
-- dedicated classic ASR is an optional oracle-verbatim evidence lane and
+- Gemma interpreter consumes clipped audio plus reflex/Moshi transcript
+  hypotheses for multilingual correction and oracle evidence
+- dedicated classic ASR is an optional auxiliary transcript evidence lane and
   fallback, not the reflex driver
 - local Nemotron Speech or equivalent streaming ASR for durable transcript evidence
 - local Magpie/Riva-style TTS when available
@@ -643,9 +648,9 @@ Move as much of the stack as possible onto one DGX Spark:
 - local Gemma interpreter launch evidence
 - local Hermes oracle endpoint registered through normal `/model` selection
 - Nemotron 3 Super evaluated as the preferred local NVIDIA brain
-- local ASR/TTS bridge evidence
-- all-local smoke with oracle, reflex, interpreter, ASR, TTS, and sidecar
-  together
+- local auxiliary transcript/TTS bridge evidence
+- all-local smoke with oracle, reflex, interpreter, auxiliary transcript
+  evidence, TTS, and sidecar together
 - benchmark evidence accepted by the generated DGX Spark matrix validator
 
 Headless command:

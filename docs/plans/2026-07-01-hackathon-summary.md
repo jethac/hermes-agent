@@ -17,8 +17,9 @@ Once provisioned, Hermes calls the user's phone and continues with the same cont
 We are building a voice-first operations layer for Hermes Agent:
 
 - **Realtime Discord voice interface** for speaking to Hermes in a live channel.
-- **KAME-style voice architecture** with a low-latency reflex, a Gemma
-  interpreter/evidence lane, and Hermes' normal oracle model.
+- **KAME-style voice architecture** with a low-latency reflex, auxiliary
+  transcript evidence, a Gemma interpreter/evidence lane, and Hermes' normal
+  oracle model.
 - **Local model serving on PGX/Spark-class hardware** using vLLM containers for reproducible iteration.
 - **Hermes-native oracle selection** where `/model` and the existing Hermes model configuration remain authoritative.
 - **Stripe-enabled spending and provisioning** so Hermes can pay for tools and services under explicit user-granted limits.
@@ -41,6 +42,9 @@ Third, the local model server runs reproducible model containers:
 - **Fast reflex model:** Moshi/PersonaPlex-class S2S or smaller floor-control
   model for barge-in, immediate acknowledgement, and rough transcript
   hypotheses.
+- **Auxiliary transcript evidence:** Moshi/S2S transcript output or classic ASR
+  output may be passed to Gemma and the oracle as supporting evidence, but does
+  not drive the reflex turn.
 - **Interpreter/evidence model:** Gemma 4 E2B/E4B/12B-style audio-multimodal
   model for raw-audio review, multilingual correction, entity extraction, and
   oracle request patches.
@@ -60,7 +64,9 @@ live demo strategy. It added too much orchestration latency to voice turns and
 made response timing harder to reason about. The demo path is now tiered:
 the reflex acknowledges immediately, Gemma interprets the raw audio plus the
 reflex transcript hypothesis in parallel, and Hermes' active model handles
-oracle work through the normal Hermes model path.
+oracle work through the normal Hermes model path. Moshi/S2S or ASR transcript
+output is supporting evidence for Gemma and the oracle, not a replacement for
+raw-audio interpretation.
 
 ## Why This Fits The Hackathon
 
@@ -84,8 +90,8 @@ The final voice architecture should separate low-latency conversational reflexes
   rough transcript hypotheses, and concise narration of what it is asking the
   oracle to do.
 - The **interpreter** model, preferably Gemma 4, reviews raw audio plus the
-  reflex hypothesis and produces corrected transcript, multilingual intent,
-  entities, confidence, and oracle request patches.
+  reflex/Moshi hypotheses and produces corrected transcript, multilingual
+  intent, entities, confidence, and oracle request patches.
 - The **oracle** is Hermes' active model and handles tool use, memory, business logic, and longer reasoning.
 - **Heavy requests** go directly to Hermes' active oracle model. For the hackathon target, that is Nemotron 3 Super, not an MoA wrapper.
 - The reflex should produce real transcript-visible messages, not hidden filler audio.
@@ -93,8 +99,8 @@ The final voice architecture should separate low-latency conversational reflexes
 
 The immediate hackathon build should favor the fastest stable reflex path for
 acknowledgement and turn-taking. Gemma should be used as an interpreter/evidence
-lane when available. External STT is fallback or additional evidence, not the
-normal reflex driver.
+lane when available. Moshi/S2S transcript output and external STT are auxiliary
+evidence for Gemma/oracle work, not the normal reflex driver.
 
 ## Demo Script
 
@@ -133,7 +139,7 @@ normal reflex driver.
   before Discord text or TTS output.
 - Gemma is the target interpreter/evidence path. External STT should be
   retained only as fallback or additional evidence, not as the normal reflex
-  driver.
+  driver. Moshi transcript output is also a hypothesis, not durable truth.
 - The sidecar and gateway must run from the same worktree/version to avoid realtime voice protocol mismatches.
 
 ## Immediate Build Priorities
