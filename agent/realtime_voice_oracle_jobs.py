@@ -448,6 +448,20 @@ class OracleJobManager:
             if status:
                 latest["delivery_status"] = status
             job.updated_at = self._clock()
+            await self._emit_locked(
+                OracleJobEventType.PROGRESS,
+                job,
+                payload={
+                    **job.to_status(),
+                    "operation": "interpreter_evidence_delivery",
+                    "interpreter_evidence_count": len(job.interpreter_evidence),
+                    "interpreter_evidence_delivered_to_oracle": bool(delivered_to_oracle),
+                    "interpreter_evidence_consumed_before_irreversible_action": bool(
+                        consumed_before_irreversible_action
+                    ),
+                    "interpreter_evidence_delivery_status": status,
+                },
+            )
             return job
 
     async def mark_waiting_for_approval(
@@ -563,9 +577,21 @@ class OracleJobManager:
             interface_already_said=request.interface_already_said,
             audio_segment_ref=_compact_evidence_text(request.audio_segment_ref, limit=240),
             audio_time_range_ms=_audio_time_range_ms(request.audio_time_range_ms),
-            reflex_transcript_hypothesis=_compact_evidence_text(request.transcript, limit=500),
-            reflex_transcript_source=_compact_evidence_text(request.transcript_source, limit=40),
-            reflex_transcript_confidence=_compact_confidence(request.transcript_confidence),
+            reflex_transcript_hypothesis=_compact_evidence_text(
+                request.reflex_transcript_hypothesis
+                or (request.transcript if request.transcript_source == "reflex_audio" else ""),
+                limit=500,
+            ),
+            reflex_transcript_source=_compact_evidence_text(
+                request.reflex_transcript_source
+                or ("reflex_audio" if request.reflex_transcript_hypothesis else ""),
+                limit=40,
+            ),
+            reflex_transcript_confidence=_compact_confidence(
+                request.reflex_transcript_confidence
+                if request.reflex_transcript_confidence is not None
+                else (request.transcript_confidence if request.transcript_source == "reflex_audio" else None)
+            ),
             auxiliary_transcript_hypotheses=_compact_auxiliary_transcript_hypotheses(
                 request.auxiliary_transcript_hypotheses
             ),

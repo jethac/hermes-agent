@@ -367,6 +367,9 @@ class KameOracleRequest:
     asr_transcript: str = ""
     asr_transcript_source: str = ""
     asr_transcript_confidence: Optional[float] = None
+    reflex_transcript_hypothesis: str = ""
+    reflex_transcript_source: str = ""
+    reflex_transcript_confidence: Optional[float] = None
     audio_segment_ref: str = ""
     audio_time_range_ms: tuple[int, int] | tuple[()] = field(default_factory=tuple)
     auxiliary_transcript_hypotheses: Sequence[Mapping[str, Any]] = field(default_factory=tuple)
@@ -441,6 +444,11 @@ class KameOracleRequest:
             metadata["kame_asr_transcript_source"] = self.asr_transcript_source or "asr"
         if self.asr_transcript_confidence is not None:
             metadata["kame_asr_transcript_confidence"] = self.asr_transcript_confidence
+        if self.reflex_transcript_hypothesis:
+            metadata["kame_reflex_transcript_hypothesis"] = self.reflex_transcript_hypothesis
+            metadata["kame_reflex_transcript_source"] = self.reflex_transcript_source or "reflex_audio"
+        if self.reflex_transcript_confidence is not None:
+            metadata["kame_reflex_transcript_confidence"] = self.reflex_transcript_confidence
         if self.audio_segment_ref:
             metadata["kame_audio_segment_ref"] = self.audio_segment_ref
         if self.audio_time_range_ms:
@@ -509,6 +517,21 @@ class KameOracleRequest:
             asr_transcript = transcript
             asr_transcript_source = transcript_source
             asr_transcript_confidence = _confidence(payload.get("transcript_confidence"))
+        reflex_transcript_hypothesis = (
+            _optional_text(payload.get("reflex_transcript_hypothesis"))
+            or _optional_text(payload.get("reflex_transcript"))
+            or _optional_text(payload.get("reflex_hypothesis"))
+            or (transcript if transcript and transcript_source == "reflex_audio" else "")
+        )
+        reflex_transcript_source = (
+            _optional_text(payload.get("reflex_transcript_source"))
+            or ("reflex_audio" if reflex_transcript_hypothesis else "")
+        )
+        reflex_transcript_confidence = _confidence(
+            payload.get("reflex_transcript_confidence")
+            if payload.get("reflex_transcript_confidence") is not None
+            else payload.get("reflex_hypothesis_confidence")
+        )
         local_reply = (
             _optional_text(payload.get("local_reply"))
             or _optional_text(payload.get("reply"))
@@ -547,6 +570,9 @@ class KameOracleRequest:
             asr_transcript=asr_transcript.strip(),
             asr_transcript_source=asr_transcript_source or ("asr" if asr_transcript else ""),
             asr_transcript_confidence=asr_transcript_confidence,
+            reflex_transcript_hypothesis=reflex_transcript_hypothesis.strip(),
+            reflex_transcript_source=reflex_transcript_source,
+            reflex_transcript_confidence=reflex_transcript_confidence,
             audio_segment_ref=_optional_text(
                 payload.get("audio_segment_ref")
                 or payload.get("audio_ref")
@@ -623,10 +649,7 @@ def kame_external_brain_request_to_oracle_request(
         or _optional_text(normalized.get("intent"))
     )
     intent = _optional_text(normalized.get("intent")) or text
-    transcript = (
-        _optional_text(normalized.get("transcript"))
-        or _optional_text(normalized.get("reflex_transcript_hypothesis"))
-    )
+    transcript = _optional_text(normalized.get("transcript"))
     if transcript:
         normalized["transcript"] = transcript
         normalized.setdefault("transcript_source", _optional_text(normalized.get("transcript_source")) or "external_frontend")

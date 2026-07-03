@@ -101,9 +101,9 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
         user_id="42",
         intent="calculate a power",
         route=KameRoute.ORACLE_DIRECT,
-        transcript="three to the power of seventeen with sk_test_abcdefghijklmnopqrstuvwxyz",
-        transcript_source="reflex_audio",
-        transcript_confidence=0.71,
+        reflex_transcript_hypothesis="three to the power of seventeen with sk_test_abcdefghijklmnopqrstuvwxyz",
+        reflex_transcript_source="reflex_audio",
+        reflex_transcript_confidence=0.71,
         audio_segment_ref="segments/turn-voice-1.wav",
         audio_time_range_ms=(120, 2480),
         auxiliary_transcript_hypotheses=(
@@ -135,6 +135,7 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
 
     assert job.audio_segment_ref == "segments/turn-voice-1.wav"
     assert job.audio_time_range_ms == (120, 2480)
+    assert "sk_test" not in job.reflex_transcript_hypothesis
     assert job.reflex_transcript_source == "reflex_audio"
     assert job.auxiliary_transcript_hypotheses == (
         {"source": "moshi", "text": "three to the power of seventeen", "authority": "hypothesis", "confidence": 0.78},
@@ -574,6 +575,57 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
     )
 
     await manager.cancel(running.job_id)
+    release.set()
+    await manager.wait_for_idle()
+
+
+@pytest.mark.asyncio
+async def test_interpreter_evidence_delivery_status_emits_progress_event():
+    events = []
+    release = asyncio.Event()
+
+    async def runner(job):
+        await release.wait()
+        return "done"
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
+    running = await manager.submit(_request("prepare spend approval"))
+    await asyncio.sleep(0)
+    await manager.add_interpreter_evidence(
+        running.job_id,
+        corrected_transcript="buy twenty dollars of phone credits",
+        normalized_intent="prepare a Stripe approval for phone credits",
+        source="gemma_interpreter",
+    )
+
+    await manager.mark_latest_interpreter_evidence_delivery(
+        running.job_id,
+        delivered_to_oracle=True,
+        consumed_before_irreversible_action=True,
+        delivery_status="included in approval packet",
+    )
+
+    delivery = next(
+        event
+        for event in events
+        if event["type"] == "oracle.job.progress"
+        and event["payload"].get("operation") == "interpreter_evidence_delivery"
+    )
+    status = await manager.status_view()
+    running_status = next(job for job in status["jobs"] if job["job_id"] == running.job_id)
+
+    assert delivery["job_id"] == running.job_id
+    assert delivery["payload"]["interpreter_evidence_delivered_to_oracle"] is True
+    assert delivery["payload"]["interpreter_evidence_consumed_before_irreversible_action"] is True
+    assert delivery["payload"]["interpreter_evidence_delivery_status"] == "included in approval packet"
+    assert running_status["interpreter_evidence_delivered_to_oracle"] is True
+    assert running_status["interpreter_evidence_consumed_before_irreversible_action"] is True
+    assert running_status["interpreter_evidence_delivery_status"] == "included in approval packet"
+
     release.set()
     await manager.wait_for_idle()
 

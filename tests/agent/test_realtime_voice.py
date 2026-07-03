@@ -12609,14 +12609,19 @@ def test_external_kame_ask_brain_bridge_becomes_oracle_request():
     assert request.route == KameRoute.ORACLE_DIRECT
     assert request.source == "voiceclaw"
     assert request.user_id == "jetha"
-    assert request.oracle_text == "use my Stripe budget to prepare a VoIP provisioning plan"
-    assert request.transcript == "use my Stripe budget to prepare a VoIP provisioning plan"
-    assert request.transcript_source == "external_frontend"
+    assert request.oracle_text == "Prepare VoIP provisioning with a Stripe budget."
+    assert request.oracle_text_source == "reflex_audio"
+    assert request.transcript == ""
+    assert request.transcript_source == "none"
+    assert request.reflex_transcript_hypothesis == "use my Stripe budget to prepare a VoIP provisioning plan"
+    assert request.reflex_transcript_source == "reflex_audio"
     assert request.interface_already_said == "I'm preparing the provisioning plan."
     assert request.conversation_summary == "The user is testing Discord voice to phone handoff."
     assert request.interface_input_source == "ask_brain"
     assert metadata["voice_architecture"] == "kame_frontend_oracle"
     assert metadata["kame_interface_input_source"] == "ask_brain"
+    assert metadata["kame_reflex_transcript_hypothesis"] == "use my Stripe budget to prepare a VoIP provisioning plan"
+    assert metadata["kame_reflex_transcript_source"] == "reflex_audio"
     assert "tool_name" not in metadata
     assert "arguments" not in metadata
 
@@ -12641,6 +12646,7 @@ def test_external_kame_s2s_hypothesis_does_not_overwrite_oracle_text():
     assert request.oracle_text == "prepare the handoff"
     assert request.oracle_text_source == "reflex_audio"
     assert request.transcript == ""
+    assert request.reflex_transcript_hypothesis == ""
     assert request.auxiliary_transcript_hypotheses == (
         {
             "source": "s2s",

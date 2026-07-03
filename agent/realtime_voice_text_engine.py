@@ -723,7 +723,6 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     "intent": str(payload.get("intent") or payload.get("text") or payload.get("query") or "").strip(),
                     "transcript": str(
                         payload.get("transcript")
-                        or payload.get("reflex_transcript_hypothesis")
                         or ""
                     ).strip(),
                     "audio_segment_ref": str(
