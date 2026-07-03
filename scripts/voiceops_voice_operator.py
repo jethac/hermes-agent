@@ -1766,6 +1766,19 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("witness_fusion_with_single_bundle") is True
         and smoke.get("witness_fusion_late_single_bundle") is True
         and smoke.get("witness_fusion_no_duplicate_oracle_jobs") is True
+        and smoke.get("witness_fusion_merge_key_observed") is True
+        and smoke.get("witness_fusion_turn_ids")
+        == {
+            "early": "witness-fusion:early",
+            "with": "witness-fusion:with",
+            "late": "witness-fusion:late",
+        }
+        and smoke.get("witness_fusion_audio_segment_refs")
+        == {
+            "early": "artifact://voice/witness-early.wav",
+            "with": "artifact://voice/witness-with.wav",
+            "late": "artifact://voice/witness-late.wav",
+        }
         and smoke.get("witness_fusion_arrival_phases")
         == ["before_raw_audio", "with_raw_audio", "after_interpreter_start"],
         "result_handling_bounded_and_durable": smoke.get("verbose_result_spoken_bounded") is True
@@ -2531,6 +2544,15 @@ def build_voice_operator_report(
             ),
             "witness_fusion_case_job_ids": dict(
                 async_oracle_smoke.get("witness_fusion_case_job_ids") or {}
+            ),
+            "witness_fusion_turn_ids": dict(
+                async_oracle_smoke.get("witness_fusion_turn_ids") or {}
+            ),
+            "witness_fusion_audio_segment_refs": dict(
+                async_oracle_smoke.get("witness_fusion_audio_segment_refs") or {}
+            ),
+            "witness_fusion_merge_key_observed": bool(
+                async_oracle_smoke.get("witness_fusion_merge_key_observed")
             ),
             "witness_fusion_early_initial_bundle_id": async_oracle_smoke.get(
                 "witness_fusion_early_initial_bundle_id"

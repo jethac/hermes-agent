@@ -2044,6 +2044,9 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "witness_fusion_timing_smoke_ok": bool(async_smoke.get("witness_fusion_timing_smoke_ok")),
             "witness_fusion_arrival_phases": async_smoke.get("witness_fusion_arrival_phases") or [],
             "witness_fusion_case_job_ids": async_smoke.get("witness_fusion_case_job_ids") or {},
+            "witness_fusion_turn_ids": async_smoke.get("witness_fusion_turn_ids") or {},
+            "witness_fusion_audio_segment_refs": async_smoke.get("witness_fusion_audio_segment_refs") or {},
+            "witness_fusion_merge_key_observed": bool(async_smoke.get("witness_fusion_merge_key_observed")),
             "witness_fusion_early_initial_bundle_id": async_smoke.get(
                 "witness_fusion_early_initial_bundle_id"
             ),

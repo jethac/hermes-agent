@@ -1274,6 +1274,17 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "with_raw_audio",
         "after_interpreter_start",
     ]
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_turn_ids"] == {
+        "early": "witness-fusion:early",
+        "with": "witness-fusion:with",
+        "late": "witness-fusion:late",
+    }
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_audio_segment_refs"] == {
+        "early": "artifact://voice/witness-early.wav",
+        "with": "artifact://voice/witness-with.wav",
+        "late": "artifact://voice/witness-late.wav",
+    }
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_merge_key_observed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_early_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_with_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_late_single_bundle"] is True

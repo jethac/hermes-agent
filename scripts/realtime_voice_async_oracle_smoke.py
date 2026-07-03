@@ -1873,6 +1873,25 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         )
         for label, job_id in case_jobs.items()
     }
+    turn_ids = {
+        "early": str(early_status_job.get("turn_id") or ""),
+        "with": str(with_status_job.get("turn_id") or ""),
+        "late": str(late_status_job.get("turn_id") or ""),
+    }
+    audio_segment_refs = {
+        "early": str(early_status_job.get("audio_segment_ref") or ""),
+        "with": str(with_status_job.get("audio_segment_ref") or ""),
+        "late": str(late_status_job.get("audio_segment_ref") or ""),
+    }
+    merge_key_observed = turn_ids == {
+        "early": "witness-fusion:early",
+        "with": "witness-fusion:with",
+        "late": "witness-fusion:late",
+    } and audio_segment_refs == {
+        "early": "artifact://voice/witness-early.wav",
+        "with": "artifact://voice/witness-with.wav",
+        "late": "artifact://voice/witness-late.wav",
+    }
     early_single_bundle = (
         early_initial_bundle_id == early_final_bundle_id
         and early_status_job.get("evidence_bundle", {}).get("status") == "primary_audio"
@@ -1897,13 +1916,23 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         for label in case_jobs
     )
     return {
-        "ok": early_single_bundle and with_single_bundle and late_single_bundle and no_duplicate_oracle_jobs,
+        "ok": (
+            early_single_bundle
+            and with_single_bundle
+            and late_single_bundle
+            and no_duplicate_oracle_jobs
+            and merge_key_observed
+        ),
         "witness_fusion_timing_smoke_ok": early_single_bundle
         and with_single_bundle
         and late_single_bundle
-        and no_duplicate_oracle_jobs,
+        and no_duplicate_oracle_jobs
+        and merge_key_observed,
         "witness_fusion_arrival_phases": ["before_raw_audio", "with_raw_audio", "after_interpreter_start"],
         "witness_fusion_case_job_ids": case_jobs,
+        "witness_fusion_turn_ids": turn_ids,
+        "witness_fusion_audio_segment_refs": audio_segment_refs,
+        "witness_fusion_merge_key_observed": merge_key_observed,
         "witness_fusion_early_initial_bundle_id": early_initial_bundle_id,
         "witness_fusion_early_final_bundle_id": early_final_bundle_id,
         "witness_fusion_early_single_bundle": early_single_bundle,
@@ -3274,6 +3303,13 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "witness_fusion_case_job_ids": witness_fusion_timing_smoke[
             "witness_fusion_case_job_ids"
+        ],
+        "witness_fusion_turn_ids": witness_fusion_timing_smoke["witness_fusion_turn_ids"],
+        "witness_fusion_audio_segment_refs": witness_fusion_timing_smoke[
+            "witness_fusion_audio_segment_refs"
+        ],
+        "witness_fusion_merge_key_observed": witness_fusion_timing_smoke[
+            "witness_fusion_merge_key_observed"
         ],
         "witness_fusion_early_initial_bundle_id": witness_fusion_timing_smoke[
             "witness_fusion_early_initial_bundle_id"

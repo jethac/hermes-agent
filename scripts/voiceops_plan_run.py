@@ -1792,6 +1792,15 @@ async def build_plan_run_async(
                     "witness_fusion_case_job_ids": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_case_job_ids"
                     ],
+                    "witness_fusion_turn_ids": voice_operator["proofs"]["async_oracle_jobs"][
+                        "witness_fusion_turn_ids"
+                    ],
+                    "witness_fusion_audio_segment_refs": voice_operator["proofs"]["async_oracle_jobs"][
+                        "witness_fusion_audio_segment_refs"
+                    ],
+                    "witness_fusion_merge_key_observed": voice_operator["proofs"]["async_oracle_jobs"][
+                        "witness_fusion_merge_key_observed"
+                    ],
                     "witness_fusion_early_single_bundle": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_early_single_bundle"
                     ],

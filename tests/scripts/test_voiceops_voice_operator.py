@@ -290,6 +290,17 @@ def _async_oracle_smoke_payload() -> dict:
             "with": "voice-oracle-004",
             "late": "voice-oracle-005",
         },
+        "witness_fusion_turn_ids": {
+            "early": "witness-fusion:early",
+            "with": "witness-fusion:with",
+            "late": "witness-fusion:late",
+        },
+        "witness_fusion_audio_segment_refs": {
+            "early": "artifact://voice/witness-early.wav",
+            "with": "artifact://voice/witness-with.wav",
+            "late": "artifact://voice/witness-late.wav",
+        },
+        "witness_fusion_merge_key_observed": True,
         "witness_fusion_early_initial_bundle_id": "kame-evidence-witness-early",
         "witness_fusion_early_final_bundle_id": "kame-evidence-witness-early",
         "witness_fusion_early_single_bundle": True,
@@ -790,6 +801,17 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         "with_raw_audio",
         "after_interpreter_start",
     ]
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_turn_ids"] == {
+        "early": "witness-fusion:early",
+        "with": "witness-fusion:with",
+        "late": "witness-fusion:late",
+    }
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_audio_segment_refs"] == {
+        "early": "artifact://voice/witness-early.wav",
+        "with": "artifact://voice/witness-with.wav",
+        "late": "artifact://voice/witness-late.wav",
+    }
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_merge_key_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_early_initial_bundle_id"] == (
         report["proofs"]["async_oracle_jobs"]["witness_fusion_early_final_bundle_id"]
     )
