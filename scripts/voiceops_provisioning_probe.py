@@ -1730,6 +1730,23 @@ def _readonly_discovery_collector_attestation(discovery: Mapping[str, Any]) -> d
     }
 
 
+def _readonly_discovery_export_payload(discovery: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a standalone discovery report that can be re-ingested later."""
+
+    payload = dict(discovery)
+    if payload.get("loaded_from_evidence") is True and "source_network_io_possible" in payload:
+        payload["network_io_possible"] = bool(payload.get("source_network_io_possible"))
+    for key in (
+        "loaded_from_evidence",
+        "evidence_path",
+        "source_network_io_possible",
+        "validation_issues",
+    ):
+        payload.pop(key, None)
+    payload["collector_attestation"] = _readonly_discovery_collector_attestation(payload)
+    return payload
+
+
 def _readonly_discovery_validation_issues(discovery: Mapping[str, Any]) -> list[str]:
     issues: list[str] = []
     if str(discovery.get("schema_version") or "") != READ_ONLY_DISCOVERY_SCHEMA_VERSION:
@@ -4059,22 +4076,23 @@ def write_probe_artifacts(output_dir: Path, report: dict[str, Any]) -> dict[str,
     _write_json(paths["json"], report)
     paths["markdown"].write_text(_markdown(report), encoding="utf-8")
     _write_json(paths["command_manifest"], _safe_command_manifest_json())
-    _write_json(paths["read_only_discovery_json"], report["read_only_discovery"])
+    read_only_discovery_export = _readonly_discovery_export_payload(report["read_only_discovery"])
+    _write_json(paths["read_only_discovery_json"], read_only_discovery_export)
     read_only_discovery_report_sha256 = _file_sha256(paths["read_only_discovery_json"])
     paths["read_only_discovery_markdown"].write_text(
-        _read_only_discovery_markdown(report["read_only_discovery"]),
+        _read_only_discovery_markdown(read_only_discovery_export),
         encoding="utf-8",
     )
     _write_json(
         paths["read_only_discovery_manifest"],
         _read_only_discovery_manifest(
-            report["read_only_discovery"],
+            read_only_discovery_export,
             report_sha256=read_only_discovery_report_sha256,
         ),
     )
     _write_jsonl(
         paths["read_only_discovery_audit_ledger"],
-        _read_only_discovery_ledger_rows(report["read_only_discovery"]),
+        _read_only_discovery_ledger_rows(read_only_discovery_export),
     )
     _write_json(paths["execution_plan_json"], execution_plan)
     paths["execution_plan_markdown"].write_text(_execution_plan_markdown(execution_plan), encoding="utf-8")

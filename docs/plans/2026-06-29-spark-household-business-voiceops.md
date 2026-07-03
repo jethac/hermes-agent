@@ -58,7 +58,7 @@ Hackathon stack:
 
 ### One-Spark Local Strategy
 
-For the long-term household/business appliance, treat Nemotron 3 Super as the first preferred Spark-local NVIDIA oracle target, but still require benchmark evidence before claiming one-Spark readiness. Nemotron 3 Ultra is not the one-Spark target; keep it as hosted or future multi-Spark context unless local evidence proves otherwise.
+For the long-term household/business appliance, Nemotron 3 Super is the preferred Spark-local NVIDIA oracle/model target, but still require benchmark evidence before claiming one-Spark readiness. One-Spark readiness still requires measured local Spark benchmark evidence. A clearly labeled hosted `/model` fallback is acceptable only when the local Spark path is unavailable. Nemotron 3 Ultra is not the one-Spark target; keep it as hosted or future multi-Spark context unless local evidence proves otherwise.
 
 Target KAME layout:
 

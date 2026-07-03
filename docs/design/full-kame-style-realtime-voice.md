@@ -1201,6 +1201,12 @@ reflex and Moshi/S2S transcript hypotheses. It should produce corrected
 transcript, entities, language notes, confidence, disagreement flags, and oracle
 request patches.
 
+The Moshi/S2S transcript is a companion signal for this interpreter request,
+not a replacement for the waveform and not a second path into the oracle. In
+normal KAME mode, the interpreter receives both raw audio and any Moshi-style
+text the live voice layer produced, then decides whether that text should be
+accepted, corrected, rejected, or left as diagnostic-only evidence.
+
 Deliverables:
 
 - Gemma interpreter prompt and JSON evidence schema

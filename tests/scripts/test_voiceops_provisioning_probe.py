@@ -1207,6 +1207,21 @@ def test_readonly_discovery_evidence_closes_gate_without_running_discovery(tmp_p
     assert report["read_only_discovery"]["network_io_possible"] is False
     assert report["read_only_discovery"]["source_network_io_possible"] is True
 
+    reexported_paths = write_probe_artifacts(tmp_path / "reexported", report)
+    exported_discovery = json.loads(Path(reexported_paths["read_only_discovery_json"]).read_text(encoding="utf-8"))
+    reloaded = load_readonly_discovery_evidence(Path(reexported_paths["read_only_discovery_manifest"]))
+
+    assert reloaded["status"] == "pass"
+    assert reloaded["validation_issues"] == []
+    assert "loaded_from_evidence" not in exported_discovery
+    assert "evidence_path" not in exported_discovery
+    assert "source_network_io_possible" not in exported_discovery
+    assert "validation_issues" not in exported_discovery
+    assert exported_discovery["network_io_possible"] is True
+    assert exported_discovery["collector_attestation"]["redacted_artifact_sha256"] == _readonly_discovery_redacted_sha256(
+        exported_discovery
+    )
+
 
 def test_readonly_discovery_manifest_rejects_missing_report_sha256(tmp_path):
     discovery_report = build_probe_report(
