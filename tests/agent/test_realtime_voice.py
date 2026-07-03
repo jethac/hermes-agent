@@ -2690,10 +2690,10 @@ def test_kame_engine_local_status_question_uses_oracle_job_state(monkeypatch):
         assert commit.payload["oracle_job_status_poll"] is True
         assert commit.payload["durable"] is False
         assert commit.payload["local_reply"] is True
-        assert commit.payload["text"] == "Oracle jobs: 1 running out of 1. running: Checking that now."
+        assert commit.payload["text"] == "Oracle jobs: 1 running out of 1. job one running: Checking that now."
         assert spoken == [
             "Checking that now.",
-            "Oracle jobs: 1 running out of 1. running: Checking that now.",
+            "Oracle jobs: 1 running out of 1. job one running: Checking that now.",
         ]
 
     asyncio.run(run())
@@ -2804,20 +2804,21 @@ def test_kame_engine_fifth_async_oracle_job_queues_and_starts_after_capacity_fre
                 },
             )
         )
+        status_commit = None
         async for event in engine.events():
             seen.append(event)
             if (
                 event.type == VoiceEventType.ASSISTANT_COMMIT
                 and str(event.payload.get("text") or "").startswith("Oracle jobs:")
             ):
-                break
-        status_commit = next(
-            event
-            for event in seen
-            if event.type == VoiceEventType.ASSISTANT_COMMIT
-            and str(event.payload.get("text") or "").startswith("Oracle jobs:")
-        )
+                status_commit = event
+                if "job five queued:" in str(event.payload.get("text") or ""):
+                    break
+        assert status_commit is not None
         assert status_commit.payload["text"].startswith("Oracle jobs: 4 running out of 4, 1 queued.")
+        assert "job one running: Starting task 1." in status_commit.payload["text"]
+        assert "job four running: Starting task 4." in status_commit.payload["text"]
+        assert "job five queued: Starting task 5." in status_commit.payload["text"]
 
         oracle.release("Run task 1")
         async for event in engine.events():

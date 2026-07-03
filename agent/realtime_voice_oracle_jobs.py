@@ -544,6 +544,7 @@ class OracleJobManager:
         return {
             "capacity": capacity,
             "jobs": jobs,
+            "reflex": _reflex_status_view(capacity=capacity, jobs=jobs),
         }
 
     async def get(self, job_id: str) -> OracleJob:
@@ -810,6 +811,69 @@ def _spoken_status(job: OracleJob) -> str:
         return job.interface_already_said
     text = " ".join((job.reflex_intent or job.oracle_text or "").split())
     return text[:160]
+
+
+def _reflex_status_view(
+    *,
+    capacity: Mapping[str, Any],
+    jobs: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Return a compact status projection suitable for the live reflex model."""
+
+    safe_capacity = {
+        key: int(capacity.get(key) or 0)
+        for key in (
+            "active",
+            "running",
+            "max_concurrent",
+            "queued",
+            "queue_limit",
+            "waiting_for_approval",
+            "cancel_requested",
+        )
+    }
+    safe_jobs = []
+    for job in jobs:
+        safe_job = _reflex_job_status(job)
+        if safe_job:
+            safe_jobs.append(safe_job)
+    return {
+        "capacity": safe_capacity,
+        "jobs": safe_jobs[:8],
+    }
+
+
+def _reflex_job_status(job: Mapping[str, Any]) -> dict[str, Any]:
+    job_id = _compact_evidence_text(job.get("job_id"), limit=80)
+    state = _compact_evidence_text(job.get("state"), limit=40)
+    if not job_id or not state:
+        return {}
+    label = _compact_evidence_text(
+        job.get("spoken_status") or job.get("intent"),
+        limit=160,
+    )
+    safe_job: dict[str, Any] = {
+        "job_id": job_id,
+        "state": state,
+    }
+    priority = _compact_evidence_text(job.get("priority"), limit=40)
+    if priority:
+        safe_job["priority"] = priority
+    if label:
+        safe_job["spoken_status"] = label
+    if state == OracleJobState.COMPLETED.value:
+        result = _compact_evidence_text(job.get("result_summary"), limit=160)
+        if result:
+            safe_job["result_summary"] = result
+    elif state == OracleJobState.FAILED.value:
+        error = _compact_evidence_text(job.get("error"), limit=160)
+        if error:
+            safe_job["error"] = error
+    elif state == OracleJobState.CANCELLED.value:
+        reason = _compact_evidence_text(job.get("cancel_reason"), limit=160)
+        if reason:
+            safe_job["cancel_reason"] = reason
+    return safe_job
 
 
 def _job_evidence_authority(job: OracleJob) -> dict[str, str]:

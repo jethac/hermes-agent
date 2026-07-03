@@ -136,6 +136,15 @@ debugging missed prefixes, code-switching, and hallucinated commands. It is
 still only a hypothesis. The correct packet shape is raw audio plus
 provenance-labeled hypotheses, not "pick whichever transcript arrived first."
 
+When the frontend is Moshi-like and produces both speech and text, the text
+should be carried to the interpreter as `reflex_transcript_hypothesis` or
+`s2s_transcript_hypothesis` alongside the clipped waveform. The interpreter may
+use it to notice that the live reflex dropped "hey Hermes", misheard a name, or
+invented a command, but the hypothesis must not become durable user text until
+the interpreter promotes it. This is the practical way to use Moshi STT output:
+it is evidence about the reflex's hearing, not a replacement for raw audio and
+not a second user message.
+
 ## Interpreter Evidence Bundle Contract
 
 Each speech cut creates one interpreter evidence bundle. This is the contract

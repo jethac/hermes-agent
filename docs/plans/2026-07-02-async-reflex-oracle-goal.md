@@ -335,6 +335,15 @@ Example:
 The reflex can use this to answer status questions and decide whether to accept
 new work, ask for prioritization, or suggest cancellation.
 
+The status surface must be speakable and referential, not just machine-readable.
+For the first live deployment target it should expose at least four active jobs
+and any queued fifth job with stable ordinal labels, for example "job one
+running", "job four running", and "job five queued". Those labels let the human
+and reflex use commands like "cancel the fourth one" or "make job five high
+priority" without exposing raw transcript hypotheses, speaker metadata,
+interpreter evidence strings, hidden reasoning, or full oracle result text.
+Additional jobs can be summarized behind a bounded "+N more" suffix.
+
 The interpreter gets a different compact view: the current turn id, clipped
 audio reference, speaker/channel metadata, reflex hypothesis, optional
 Moshi/S2S transcript hypothesis, optional ASR hypothesis, active job id, and
@@ -613,6 +622,8 @@ instead of adding a second hidden agent path.
 - The fifth job obeys configured overflow policy: queued, rejected politely, or
   requires reprioritization.
 - Reflex status can report running and queued jobs without calling the oracle.
+- Reflex status names at least four active jobs and the queued fifth job with
+  ordinal labels that match spoken control commands.
 - Reflex can accept a new local conversational turn while oracle jobs run.
 - Reflex can create a new oracle job while another oracle job is running.
 
@@ -668,6 +679,9 @@ Add tests for the oracle job manager:
 - late result from cancelled job is ignored
 - failed job records error and emits failure event
 - status view redacts raw tool traces and hidden reasoning
+- reflex-safe status projection includes compact capacity, safe job ids, states,
+  priorities, ordinal-friendly labels, and terminal summaries without raw
+  evidence metadata
 
 ### Sidecar / Session Tests
 
@@ -678,6 +692,8 @@ Extend realtime voice tests:
 - `oracle_direct` submits job without blocking next reflex turn
 - local turn during running oracle job is handled locally
 - status question during running jobs uses job manager state
+- status question with four running jobs and one queued job speaks job one
+  through job five so follow-up commands can target them
 - completed job emits a speakable summary event
 - barge-in during job-result speech stops playback but does not cancel job
 - explicit cancellation during job run cancels only the requested job

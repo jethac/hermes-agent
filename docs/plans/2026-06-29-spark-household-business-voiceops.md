@@ -117,6 +117,12 @@ Target KAME layout:
   Gemma's role is interpreter/evidence adjudicator, not a blocking ASR service.
   The reflex may queue/narrate work from provisional intent, while durable user
   wording and tool-critical fields require interpreter or oracle promotion.
+- Task-state rule: the reflex needs a compact job-status projection with safe
+  capacity counts, job ids, states, priorities, and ordinal-friendly spoken
+  labels. It must name at least the first four active oracle jobs and a queued
+  fifth job so the user can say "cancel the fourth one" or "make job five high
+  priority" without giving the reflex raw transcript hypotheses, speaker/channel
+  metadata, hidden reasoning, full oracle outputs, or tool traces.
 - Interpreter prompt rule: raw audio and timing metadata are the primary
   interpreter input. Moshi/open-S2S and classic-ASR text must be passed in a
   labeled hypotheses field with source, timing/confidence when available,

@@ -1831,9 +1831,14 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             planned_reply = self._planner.clean(reply)
             if not planned_reply:
                 return
+            max_sentences = (
+                0
+                if metadata.get("oracle_job_status_poll") is True
+                else _effective_max_spoken_sentences(self.config)
+            )
             planned_reply, truncated = _limit_spoken_text(
                 planned_reply,
-                max_sentences=_effective_max_spoken_sentences(self.config),
+                max_sentences=max_sentences,
             )
             if not planned_reply:
                 return
@@ -1841,7 +1846,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 **metadata,
                 **_voice_response_policy_payload(
                     policy=_voice_response_policy(self.config),
-                    max_sentences=_effective_max_spoken_sentences(self.config),
+                    max_sentences=max_sentences,
                     truncated=truncated,
                 ),
             }
@@ -2987,6 +2992,9 @@ def _kame_oracle_job_status_poll_requested(
 
 
 def _kame_oracle_job_status_text(status: Mapping[str, Any]) -> str:
+    reflex_status = status.get("reflex") if isinstance(status.get("reflex"), Mapping) else {}
+    if reflex_status:
+        status = reflex_status
     capacity = status.get("capacity") if isinstance(status.get("capacity"), Mapping) else {}
     jobs = [dict(job) for job in status.get("jobs", []) if isinstance(job, Mapping)]
     active = int(capacity.get("active") or 0)
@@ -3019,16 +3027,25 @@ def _kame_oracle_job_status_text(status: Mapping[str, Any]) -> str:
         fragments.append(f"{cancel_requested} cancelling")
     headline = "Oracle jobs: " + ", ".join(fragments) + "."
     labels = []
-    for job in active_jobs[:3]:
+    for index, job in enumerate(active_jobs[:5]):
         label = str(job.get("spoken_status") or job.get("intent") or "").strip()
         state = str(job.get("state") or "").strip()
+        ordinal = _ORACLE_JOB_STATUS_ORDINALS[index]
         if label and state:
-            labels.append(f"{state}: {label[:90]}")
+            labels.append(f"job {ordinal} {state}: {label[:90]}")
         elif label:
-            labels.append(label[:90])
+            labels.append(f"job {ordinal}: {label[:90]}")
+        elif state:
+            labels.append(f"job {ordinal} {state}")
+    remaining = len(active_jobs) - len(labels)
+    if remaining > 0:
+        labels.append(f"+{remaining} more")
     if labels:
         return headline + " " + " | ".join(labels)
     return headline
+
+
+_ORACLE_JOB_STATUS_ORDINALS = ("one", "two", "three", "four", "five")
 
 
 def _kame_oracle_job_recent_terminal_labels(jobs: list[dict[str, Any]]) -> list[str]:

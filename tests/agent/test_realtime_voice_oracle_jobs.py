@@ -1286,12 +1286,35 @@ async def test_status_view_reports_capacity_and_redacts_raw_metadata():
     assert status["jobs"][0]["spoken_status"] == "I'm handling inspect deployment."
     assert "metadata" not in status["jobs"][0]
     assert "oracle_text" not in status["jobs"][0]
+    assert status["reflex"]["capacity"] == status["capacity"]
+    assert status["reflex"]["jobs"][0] == {
+        "job_id": "voice-oracle-001",
+        "state": "running",
+        "priority": "normal",
+        "spoken_status": "I'm handling inspect deployment.",
+    }
+    assert status["reflex"]["jobs"][1] == {
+        "job_id": "voice-oracle-002",
+        "state": "queued",
+        "priority": "normal",
+        "spoken_status": "I'm handling check stripe.",
+    }
+    reflex_blob = json.dumps(status["reflex"], sort_keys=True)
+    assert "metadata" not in reflex_blob
+    assert "oracle_text" not in reflex_blob
+    assert "latest_interpreter_evidence" not in reflex_blob
+    assert "transcript_hypotheses" not in reflex_blob
+    assert "speaker" not in reflex_blob
+    assert "channel" not in reflex_blob
 
     release.set()
     await manager.wait_for_idle()
     done = await manager.status_view()
     assert done["jobs"][0]["result_summary"] == "safe summary"
     assert "secret trace" not in str(done)
+    assert done["reflex"]["jobs"][0]["result_summary"] == "safe summary"
+    assert "result_text" not in str(done["reflex"])
+    assert "secret trace" not in str(done["reflex"])
 
 
 @pytest.mark.asyncio
@@ -1325,6 +1348,9 @@ async def test_completed_event_preserves_full_result_without_bloating_status():
     assert status["jobs"][0]["result_summary"] == "Short spoken summary."
     assert "result_text" not in status["jobs"][0]
     assert full_text not in str(status)
+    assert status["reflex"]["jobs"][0]["result_summary"] == "Short spoken summary."
+    assert "result_text" not in str(status["reflex"])
+    assert full_text not in str(status["reflex"])
 
 
 @pytest.mark.asyncio
