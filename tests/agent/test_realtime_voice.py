@@ -13380,6 +13380,14 @@ def test_external_kame_brain_request_submits_oracle_job_without_waiting(monkeypa
         assert response["job_id"] == "voice-oracle-001"
         assert response["state"] in {"queued", "running"}
         assert response["capacity"]["active"] == 1
+        assert response["reflex_status"]["capacity"]["active"] == 1
+        assert response["reflex_status"]["jobs"][0]["job_id"] == "voice-oracle-001"
+        assert response["reflex_status"]["jobs"][0]["state"] in {"queued", "running"}
+        assert response["placeholder"].startswith("Accepted job one ")
+        assert "I'm preparing the provisioning plan." in response["placeholder"]
+        response_blob = json.dumps(response, sort_keys=True)
+        assert "transcript_hypotheses" not in response_blob
+        assert "prepare a voip provisioning plan" not in response_blob
 
         seen = []
         async for event in engine.events():
@@ -13634,6 +13642,8 @@ def test_session_client_interface_oracle_request_submits_external_kame_job(monke
         assert tool_result.payload["accepted"] is True
         assert tool_result.payload["job_id"] == "voice-oracle-001"
         assert tool_result.payload["tool_call_id"] == "call-1"
+        assert tool_result.payload["reflex_status"]["jobs"][0]["job_id"] == "voice-oracle-001"
+        assert tool_result.payload["placeholder"].startswith("Accepted job one ")
         assert oracle.requests[0].source == "voiceclaw"
         assert oracle.requests[0].interface_input_source == "ask_brain"
         assert oracle.requests[0].interface_tool_call_id == "call-1"

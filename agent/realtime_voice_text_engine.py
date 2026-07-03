@@ -277,6 +277,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             self._oracle_job_context_by_turn_id.pop(request.turn_id, None)
             return {"accepted": False, "reason": "oracle_job_queue_full"}
         status = await manager.status_view()
+        reflex_status = status.get("reflex") if isinstance(status.get("reflex"), Mapping) else {}
         return {
             "accepted": True,
             "job_id": job.job_id,
@@ -284,6 +285,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             "turn_id": request.turn_id,
             "source": request.source,
             "capacity": status.get("capacity", {}),
+            "reflex_status": reflex_status,
+            "placeholder": _external_kame_job_placeholder(job.job_id, reflex_status),
             "reflex_validation_error": request.reflex_validation_error,
         }
 
@@ -3575,6 +3578,20 @@ def _playback_generation_from_turn_id(turn_id: str) -> int:
 
 def _external_kame_turn_id(session_id: str) -> str:
     return f"{session_id}:external:{time.time_ns()}"
+
+
+def _external_kame_job_placeholder(job_id: str, reflex_status: Mapping[str, Any]) -> str:
+    jobs = reflex_status.get("jobs") if isinstance(reflex_status.get("jobs"), list) else []
+    for index, job in enumerate(jobs[:5]):
+        if not isinstance(job, Mapping) or str(job.get("job_id") or "") != job_id:
+            continue
+        state = str(job.get("state") or "accepted").strip() or "accepted"
+        label = str(job.get("spoken_status") or "").strip()
+        ordinal = _ORACLE_JOB_STATUS_ORDINALS[index]
+        if label:
+            return f"Accepted job {ordinal} {state}: {label[:120]}"
+        return f"Accepted job {ordinal} {state}."
+    return f"Accepted oracle job {job_id}."
 
 
 def _external_kame_bridge_arguments(payload: Mapping[str, Any]) -> dict[str, Any]:

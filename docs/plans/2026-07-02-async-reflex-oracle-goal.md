@@ -608,7 +608,10 @@ Responsibilities:
   `auxiliary_transcript_hypotheses`, and correlation ids, instead of flattening
   them into a single transcript string
 - create a normal oracle job with a Hermes session id and audit id
-- return an immediate accepted/queued/status placeholder to the frontend
+- return an immediate accepted/queued/status placeholder to the frontend,
+  including the same reflex-safe status projection used by spoken job controls
+  and excluding raw transcript hypotheses, speaker/channel metadata, hidden
+  reasoning, full oracle text, and tool traces
 - stream job progress, failure, cancellation, and terminal result events back
   through the same KAME event stream
 - reject or ignore requests for direct Hermes tool schemas from the frontend
