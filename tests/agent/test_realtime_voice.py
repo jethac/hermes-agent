@@ -53,9 +53,11 @@ from agent.realtime_voice_text_engine import (
     KameInterfaceOracleEngine,
     TextOracleTTSEngine,
     _external_kame_bridge_arguments,
+    _interpreter_evidence_from_payload,
     _kame_oracle_job_control_operation,
     _kame_oracle_job_status_text,
     _oracle_job_control_active_jobs,
+    _payload_has_interpreter_evidence,
     _take_speakable_chunk,
 )
 
@@ -7597,6 +7599,38 @@ def test_kame_engine_from_reflex_transcript_final_is_witness_not_oracle_turn():
         await engine.close()
 
     asyncio.run(run())
+
+
+def test_frontend_witness_payload_maps_to_auxiliary_interpreter_evidence_only():
+    payload = {
+        "job_id": "voice-oracle-002",
+        "kind": "frontend_witness_hypothesis",
+        "authority": "hypothesis",
+        "text": "spend two hundred dollars and call my phone",
+        "source": "moshi",
+        "transcript_source": "moshi",
+        "confidence": 0.72,
+    }
+
+    assert _payload_has_interpreter_evidence(payload) is True
+
+    evidence = _interpreter_evidence_from_payload(
+        payload,
+        fallback_text="spend two hundred dollars and call my phone",
+    )
+
+    assert evidence["corrected_transcript"] == ""
+    assert evidence["normalized_intent"] == ""
+    assert evidence["reflex_transcript_hypothesis"] is None
+    assert evidence["auxiliary_transcript_hypotheses"] == [
+        {
+            "kind": "frontend_witness_hypothesis",
+            "source": "moshi",
+            "text": "spend two hundred dollars and call my phone",
+            "authority": "hypothesis",
+            "confidence": 0.72,
+        }
+    ]
 
 
 def test_kame_engine_allows_live_provider_tool_transcript_final(monkeypatch):
@@ -18073,6 +18107,55 @@ def test_kame_session_treats_interface_intent_final_as_turn_boundary():
             {"role": "user", "content": "Check deployment status."},
             {"role": "assistant", "content": "Checking."},
         ]
+        await session.close()
+
+    asyncio.run(run())
+
+
+def test_kame_session_keeps_frontend_witness_transcript_non_pending_and_non_durable():
+    class WitnessEventEngine:
+        async def start(self, config):
+            return None
+
+        async def receive_event(self, event):
+            return None
+
+        async def events(self):
+            yield VoiceEvent(
+                type=VoiceEventType.TRANSCRIPT_FINAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "text": "what the frontend believed it heard",
+                    "voice_architecture": "kame_frontend_oracle",
+                    "durable": False,
+                    "authority": "hypothesis",
+                    "kind": "frontend_witness_hypothesis",
+                    "transcript_source": "moshi",
+                    "input_generation": 3,
+                },
+            )
+
+        async def close(self):
+            return None
+
+    async def run():
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            ),
+            engine=WitnessEventEngine(),
+        )
+        await session.start()
+
+        event = await anext(session.events())
+
+        assert event.type == VoiceEventType.TRANSCRIPT_FINAL
+        assert event.payload["session_state"] == RealtimeVoiceSessionState.LISTENING.value
+        assert session.state == RealtimeVoiceSessionState.LISTENING
+        assert session.transcript.partial_user_text == ""
+        assert session.durable_messages() == []
         await session.close()
 
     asyncio.run(run())

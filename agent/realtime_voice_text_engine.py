@@ -4022,6 +4022,8 @@ def _payload_has_interpreter_evidence(payload: Mapping[str, Any]) -> bool:
     update_type = str(payload.get("update_type") or "").strip().lower()
     if update_type in {"interpreter_evidence", "interpreter-evidence", "interpreter"}:
         return True
+    if _payload_is_frontend_witness_hypothesis(payload):
+        return True
     return any(
         key in payload
         for key in (
@@ -4075,7 +4077,7 @@ def _interpreter_evidence_from_payload(payload: Mapping[str, Any], *, fallback_t
             or str(payload.get("intent") or "").strip()
         )
     auxiliary_hypotheses = _auxiliary_transcript_hypotheses_from_payload(payload)
-    if not promoted_source:
+    if not promoted_source and not _payload_is_frontend_witness_hypothesis(payload):
         auxiliary_hypotheses.extend(
             _unpromoted_interpreter_text_hypotheses(
                 payload,
@@ -4114,6 +4116,23 @@ def _interpreter_evidence_from_payload(payload: Mapping[str, Any], *, fallback_t
 def _interpreter_evidence_source_can_promote(source: str) -> bool:
     normalized = str(source or "").strip().lower()
     return normalized in {"gemma_interpreter", "interpreter", "interpreter_audio"}
+
+
+def _payload_is_frontend_witness_hypothesis(payload: Mapping[str, Any]) -> bool:
+    kind = str(payload.get("kind") or "").strip().lower()
+    if kind != "frontend_witness_hypothesis":
+        return False
+    authority = str(payload.get("authority") or "hypothesis").strip().lower()
+    if authority not in {"hypothesis", "auxiliary_hypothesis"}:
+        return False
+    return bool(
+        str(
+            payload.get("text")
+            or payload.get("transcript")
+            or payload.get("hypothesis")
+            or ""
+        ).strip()
+    )
 
 
 def _unpromoted_interpreter_text_hypotheses(
@@ -4218,6 +4237,17 @@ def _transcript_hypothesis_from_value(
 def _auxiliary_transcript_hypotheses_from_payload(payload: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     value = payload.get("auxiliary_transcript_hypotheses", payload.get("auxiliary_transcripts"))
     hypotheses: list[Mapping[str, Any]] = []
+    if _payload_is_frontend_witness_hypothesis(payload):
+        hypothesis: dict[str, Any] = {
+            "kind": "frontend_witness_hypothesis",
+            "source": str(payload.get("transcript_source") or payload.get("source") or "frontend_witness"),
+            "text": str(payload.get("text") or payload.get("transcript") or payload.get("hypothesis") or "").strip(),
+            "authority": "hypothesis",
+        }
+        confidence = _interpreter_confidence_from_payload(payload.get("confidence"))
+        if confidence is not None:
+            hypothesis["confidence"] = confidence
+        hypotheses.append(hypothesis)
     if isinstance(value, list):
         hypotheses.extend(item for item in value if isinstance(item, Mapping))
     elif isinstance(value, Mapping):

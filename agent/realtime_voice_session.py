@@ -223,6 +223,7 @@ class RealtimeVoiceSession:
             self.transcript.partial_user_text = str(event.payload.get("text") or "")
         elif event.type in {VoiceEventType.TRANSCRIPT_FINAL, VoiceEventType.INTERFACE_INTENT_FINAL}:
             text = _durable_user_text_from_final_user_event(event.payload)
+            non_durable = _payload_non_durable(event.payload)
             generation = _payload_generation(event.payload)
             if generation is not None:
                 self.transcript.active_playback_generation = max(
@@ -233,13 +234,14 @@ class RealtimeVoiceSession:
             turn_key = _final_user_turn_key(event.payload)
             if (
                 text
-                and not _payload_non_durable(event.payload)
+                and not non_durable
                 and (not turn_key or turn_key not in self._committed_final_user_turn_keys)
             ):
                 self.transcript.final_user_segments.append(text)
                 if turn_key:
                     self._committed_final_user_turn_keys.add(turn_key)
-            self.state = RealtimeVoiceSessionState.ASSISTANT_PENDING
+            if not non_durable:
+                self.state = RealtimeVoiceSessionState.ASSISTANT_PENDING
         elif event.type == VoiceEventType.ASSISTANT_TEXT_PARTIAL:
             generation = _payload_generation(event.payload)
             if generation is not None:
@@ -392,6 +394,8 @@ class RealtimeVoiceSession:
         if event.type == VoiceEventType.TRANSCRIPT_PARTIAL:
             return self.state
         if event.type in {VoiceEventType.TRANSCRIPT_FINAL, VoiceEventType.INTERFACE_INTENT_FINAL}:
+            if _payload_non_durable(event.payload):
+                return self.state
             return RealtimeVoiceSessionState.ASSISTANT_PENDING
         if event.type in {
             VoiceEventType.INTERFACE_REPLY_LOCAL,
