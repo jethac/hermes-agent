@@ -193,6 +193,17 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     },
                 )
                 return
+            if (
+                self.config is not None
+                and self.config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE
+                and _allow_kame_transcript_events(self.config)
+                and not _kame_transcript_final_can_start_turn(self.config, event.payload)
+            ):
+                await self._emit(
+                    VoiceEventType.TRANSCRIPT_FINAL,
+                    _kame_witness_transcript_payload(event.payload, transcript=transcript),
+                )
+                return
             await self._start_turn(
                 transcript,
                 metadata=transcript_metadata_from_payload(event.payload),
@@ -492,6 +503,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                     if self._is_stale_sidecar_input(payload):
                         continue
                     if not _kame_transcript_final_can_start_turn(self.config, payload):
+                        if _allow_kame_transcript_events(self.config):
+                            await self._emit(
+                                VoiceEventType.TRANSCRIPT_FINAL,
+                                _kame_witness_transcript_payload(payload),
+                            )
                         continue
                     text = str(payload.get("text") or "").strip()
                     if text:
@@ -2842,21 +2858,49 @@ def _kame_cancellation_token(config: Optional[RealtimeVoiceSessionConfig], playb
 def _allow_kame_transcript_events(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
     if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
         return True
-    if config.asr_mode.value in {"debug", "fallback"}:
+    if config.asr_mode.value in {"debug", "fallback", "from_reflex"}:
         return True
     return str(config.interface_audio_input or "").strip().lower() == "text_fallback"
+
+
+def _kame_interface_audio_input(config: Optional[RealtimeVoiceSessionConfig]) -> str:
+    if config is None:
+        return "auto"
+    return str(config.interface_audio_input or "").strip().lower().replace("-", "_") or "auto"
 
 
 def _kame_transcript_final_can_start_turn(
     config: Optional[RealtimeVoiceSessionConfig],
     payload: Mapping[str, Any],
 ) -> bool:
-    if _allow_kame_transcript_events(config):
+    if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+        return True
+    if config.asr_mode.value in {"debug", "fallback"}:
+        return True
+    if _kame_interface_audio_input(config) == "text_fallback":
         return True
     source = str(payload.get("source") or "").strip().lower()
     if source in {"gemini_live_tool", "openai_realtime_tool", "kame_interface_tool"}:
         return True
     return False
+
+
+def _kame_witness_transcript_payload(
+    payload: Mapping[str, Any],
+    *,
+    transcript: str = "",
+) -> dict[str, Any]:
+    witness = transcript_event_payload_from_payload(payload)
+    text = str(transcript or witness.get("text") or payload.get("transcript") or "").strip()
+    if text:
+        witness["text"] = text
+    source = str(payload.get("source") or payload.get("transcript_source") or "").strip() or "reflex"
+    witness.setdefault("voice_architecture", "kame_frontend_oracle")
+    witness.setdefault("durable", False)
+    witness.setdefault("authority", "hypothesis")
+    witness.setdefault("transcript_source", source)
+    witness.setdefault("kind", "frontend_witness_hypothesis")
+    return witness
 
 
 def _turn_acknowledgement_text(config: Optional[RealtimeVoiceSessionConfig]) -> str:

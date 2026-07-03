@@ -3594,6 +3594,7 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["discord.realtime_voice.asr_mode"]["type"] == "select"
         assert CONFIG_SCHEMA["discord.realtime_voice.asr_mode"]["options"] == [
             "disabled",
+            "from_reflex",
             "on_escalation",
             "speculative",
             "debug",

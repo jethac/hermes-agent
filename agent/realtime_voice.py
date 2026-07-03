@@ -33,6 +33,7 @@ class RealtimeVoiceASRMode(StrEnum):
     """ASR role in a KAME-style realtime voice session."""
 
     DISABLED = "disabled"
+    FROM_REFLEX = "from_reflex"
     ON_ESCALATION = "on_escalation"
     SPECULATIVE = "speculative"
     DEBUG = "debug"

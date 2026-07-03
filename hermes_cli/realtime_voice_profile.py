@@ -234,7 +234,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--kame-asr-mode",
         default="on_escalation",
-        choices=("disabled", "on_escalation", "speculative", "debug", "fallback"),
+        choices=("disabled", "from_reflex", "on_escalation", "speculative", "debug", "fallback"),
         help="ASR role for --preset kame",
     )
     parser.add_argument(
@@ -1104,8 +1104,8 @@ def build_kame_realtime_voice_profile(
     if audio_mode not in {"auto", "native_audio", "text_fallback"}:
         raise ValueError("--kame-interface-audio-input must be auto, native_audio, or text_fallback")
     asr = str(asr_mode or "on_escalation").strip() or "on_escalation"
-    if asr not in {"disabled", "on_escalation", "speculative", "debug", "fallback"}:
-        raise ValueError("--kame-asr-mode must be disabled, on_escalation, speculative, debug, or fallback")
+    if asr not in {"disabled", "from_reflex", "on_escalation", "speculative", "debug", "fallback"}:
+        raise ValueError("--kame-asr-mode must be disabled, from_reflex, on_escalation, speculative, debug, or fallback")
     response_policy = str(voice_response_policy or "sentence_cap").strip().lower().replace("-", "_")
     if response_policy not in {"sentence_cap", "brief_summary", "full"}:
         raise ValueError("--kame-voice-response-policy must be sentence_cap, brief_summary, or full")

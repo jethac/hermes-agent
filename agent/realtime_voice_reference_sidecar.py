@@ -2682,7 +2682,7 @@ def _bounded_confidence(value: Any) -> Optional[float]:
 def _allow_kame_transcript_events(config: Optional[RealtimeVoiceSessionConfig]) -> bool:
     if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
         return True
-    if config.asr_mode.value in {"debug", "fallback"}:
+    if config.asr_mode.value in {"debug", "fallback", "from_reflex"}:
         return True
     return str(config.interface_audio_input or "").strip().lower() == "text_fallback"
 

@@ -823,7 +823,7 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "voice.realtime.asr_mode": {
         "type": "select",
         "description": "ASR role in KAME realtime voice",
-        "options": ["disabled", "on_escalation", "speculative", "debug", "fallback"],
+        "options": ["disabled", "from_reflex", "on_escalation", "speculative", "debug", "fallback"],
         "category": "voice",
     },
     "voice.realtime.asr_provider": {
@@ -1410,7 +1410,7 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "discord.realtime_voice.asr_mode": {
         "type": "select",
         "description": "ASR role in Discord KAME realtime voice",
-        "options": ["disabled", "on_escalation", "speculative", "debug", "fallback"],
+        "options": ["disabled", "from_reflex", "on_escalation", "speculative", "debug", "fallback"],
         "category": "discord",
     },
     "discord.realtime_voice.asr_provider": {

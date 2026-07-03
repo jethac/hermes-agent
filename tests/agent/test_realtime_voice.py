@@ -281,6 +281,20 @@ def test_session_config_round_trips_kame_fields():
     assert restored.barge_in_policy == {"min_rms": 350, "min_speech_ms": 120}
 
 
+def test_session_config_round_trips_from_reflex_asr_mode():
+    config = RealtimeVoiceSessionConfig(
+        session_id="voice-123",
+        engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        interface_audio_input="native_audio",
+        asr_mode=RealtimeVoiceASRMode.FROM_REFLEX,
+    )
+
+    restored = RealtimeVoiceSessionConfig.from_wire(config.to_wire())
+
+    assert restored.asr_mode == RealtimeVoiceASRMode.FROM_REFLEX
+    assert restored.to_wire()["asr_mode"] == "from_reflex"
+
+
 def test_kame_session_contract_reports_redacted_stack_choices():
     config = RealtimeVoiceSessionConfig(
         session_id="voice-123",
@@ -358,6 +372,21 @@ def test_kame_session_contract_reports_redacted_stack_choices():
     assert "asr.local" not in serialized
     assert "tts.local" not in serialized
     assert "secret-" not in serialized
+
+
+def test_kame_session_contract_reports_from_reflex_witness_mode():
+    config = RealtimeVoiceSessionConfig(
+        session_id="voice-123",
+        engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        interface_audio_input="native_audio",
+        asr_mode=RealtimeVoiceASRMode.FROM_REFLEX,
+    )
+
+    payload = realtime_voice_session_contract_payload(config)
+
+    assert payload["kame_stack"]["transcript_evidence"]["mode"] == "from_reflex"
+    assert payload["kame_stack"]["transcript_evidence"]["authority"] == "hypothesis"
+    assert payload["kame_stack"]["transcript_evidence"]["schedule_oracle_from_transcript"] is False
 
 
 def test_session_config_normalizes_kame_interface_audio_input():
@@ -7484,6 +7513,85 @@ def test_kame_engine_ignores_raw_live_provider_transcript_final():
             )
         )
 
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(anext(events), timeout=0.05)
+        await engine.close()
+
+    asyncio.run(run())
+
+
+def test_kame_engine_from_reflex_transcript_final_is_witness_not_oracle_turn():
+    class WitnessTranscriptSidecar:
+        def __init__(self):
+            self._events = asyncio.Queue()
+            self.received = []
+
+        async def start(self, config):
+            self.config = config
+
+        async def send_event(self, event):
+            self.received.append(event)
+
+        async def speak(self, event):
+            self.received.append(event)
+
+        async def events(self):
+            while True:
+                event = await self._events.get()
+                if event is None:
+                    return
+                yield event
+
+        async def close(self):
+            await self._events.put(None)
+
+    class FailingOracle:
+        async def stream_answer_for_request(self, request):
+            raise AssertionError("from_reflex transcript witness must not drive the KAME oracle")
+            yield ""
+
+    async def run():
+        sidecar = WitnessTranscriptSidecar()
+        engine = KameInterfaceOracleEngine(oracle=FailingOracle(), sidecar=sidecar)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="moshi",
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.FROM_REFLEX,
+            )
+        )
+        events = engine.events()
+        started = await asyncio.wait_for(anext(events), timeout=1)
+        assert started.type == VoiceEventType.SESSION_STARTED
+
+        await sidecar._events.put(
+            VoiceEvent(
+                type=VoiceEventType.TRANSCRIPT_FINAL,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "text": "what the frontend believed it heard",
+                    "source": "moshi",
+                    "confidence": 0.72,
+                    "input_generation": 3,
+                },
+            )
+        )
+
+        final = await asyncio.wait_for(anext(events), timeout=1)
+        assert final.type == VoiceEventType.TRANSCRIPT_FINAL
+        assert final.payload == {
+            "text": "what the frontend believed it heard",
+            "confidence": 0.72,
+            "input_generation": 3,
+            "voice_architecture": "kame_frontend_oracle",
+            "durable": False,
+            "authority": "hypothesis",
+            "transcript_source": "moshi",
+            "kind": "frontend_witness_hypothesis",
+        }
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(anext(events), timeout=0.05)
         await engine.close()
@@ -14618,6 +14726,44 @@ def test_reference_sidecar_kame_on_escalation_does_not_start_streaming_stt(monke
                 frontend_provider="gemma4",
                 interface_audio_input="native_audio",
                 asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+            )
+        )
+        await sidecar.close()
+
+    asyncio.run(run())
+    assert created == []
+
+
+def test_reference_sidecar_kame_from_reflex_does_not_start_streaming_stt(monkeypatch):
+    created = []
+
+    class FakeBridge:
+        def __init__(self, *, path="/v1/realtime-text/session"):
+            created.append(path)
+
+        async def start(self, config):
+            raise AssertionError("KAME from_reflex should not start streaming STT at session start")
+
+    monkeypatch.setattr(
+        "agent.realtime_voice_reference_sidecar.RealtimeVoiceSidecarClient",
+        FakeBridge,
+    )
+
+    async def run():
+        sidecar = ReferenceRealtimeVoiceSidecarSession(
+            ReferenceSidecarRuntimeConfig(
+                streaming_stt_base_url="http://streaming-stt.local:9000",
+                vllm_base_url="http://vllm.local:8000/v1",
+                vllm_model="google/gemma-4-E2B-it",
+            )
+        )
+        await sidecar.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="gemma4",
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.FROM_REFLEX,
             )
         )
         await sidecar.close()

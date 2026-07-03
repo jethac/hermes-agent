@@ -168,7 +168,7 @@ def add_dgx_spark_arguments(parser: argparse.ArgumentParser) -> argparse.Argumen
     parser.add_argument(
         "--asr-mode",
         default="on_escalation",
-        choices=("disabled", "on_escalation", "speculative", "debug", "fallback"),
+        choices=("disabled", "from_reflex", "on_escalation", "speculative", "debug", "fallback"),
     )
     parser.add_argument("--vllm-image", default=DEFAULT_VLLM_IMAGE)
     parser.add_argument("--hermes-image", default=DEFAULT_HERMES_IMAGE)
