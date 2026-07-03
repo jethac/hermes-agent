@@ -57,13 +57,19 @@ Target KAME layout:
   reflex/Moshi transcript hypotheses into corrected transcript, multilingual
   intent, entities, confidence, and oracle request patches. Raw audio is the
   primary signal; Moshi/S2S and classic ASR transcripts are labeled hypotheses
-  supplied as context, not prerequisites or authority.
+  supplied as context in the same interpreter evidence bundle, not
+  prerequisites, separate turns, or authority.
 - Oracle/brain: whatever Hermes `/model` selects, with Nemotron 3 Super as the first preferred local NVIDIA candidate to evaluate on DGX Spark.
 - Speech: local transcript evidence and TTS where practical, with Moshi/S2S or
   classic ASR transcripts used as auxiliary oracle/interpreter evidence rather
   than reflex input in full KAME mode. The system must not require ASR evidence
   before acknowledging or submitting work when the raw-audio/reflex path is
   available.
+- Evidence: a speech cut should preserve raw audio, reflex hypothesis,
+  Moshi/S2S hypothesis, optional ASR hypothesis, and interpreter correction as
+  distinct provenance-labeled fields. Only interpreter/oracle judgment can
+  promote a transcript hypothesis into durable user text or tool-critical
+  arguments.
 - Fallbacks: hosted `/model` providers, Kimi, Cartesia, or other cloud providers are acceptable during bring-up and demos when they are labeled clearly.
 
 The public demo should prefer Nemotron 3 Super on Spark for sponsor fit while allowing a clearly labeled hosted fallback only if needed. The private appliance roadmap benchmarks Super and other Spark-friendly models for the local brain.

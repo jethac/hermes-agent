@@ -75,7 +75,10 @@ transcript output is supporting evidence for Gemma and the oracle, not a
 replacement for raw-audio interpretation. If the Moshi-style frontend emits a
 transcript, it should be attached to the same interpreter request as the clipped
 audio segment so Gemma can compare what the live reflex thought it heard against
-the waveform.
+the waveform. The demo must keep those fields separate in logs and prompts:
+raw audio is primary interpreter evidence, Moshi/S2S and ASR text are labeled
+hypotheses, and only interpreter/oracle judgment can promote wording into a
+durable user request or tool-critical argument.
 
 ## Why This Fits The Hackathon
 
@@ -151,7 +154,8 @@ system heard the user.
 - Gemma is the target interpreter/evidence path. External STT should be
   retained only as fallback or additional evidence, not as the normal reflex
   driver. Moshi transcript output is also a hypothesis, not durable truth, but
-  it should be valuable context for Gemma when paired with the raw voice clip.
+  it should be valuable context for Gemma when paired with the raw voice clip in
+  the same evidence bundle.
 - The sidecar and gateway must run from the same worktree/version to avoid realtime voice protocol mismatches.
 
 ## Immediate Build Priorities

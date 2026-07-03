@@ -220,11 +220,13 @@ STT should not feed the reflex in normal full KAME mode. A second interpretation
 
 Moshi-class transcript output is different from classic STT operationally but
 must be treated the same way semantically: it is a hypothesis attached to the
-interpreter request. The interpreter may use it to recover prefixes, names,
-numbers, or code-switched phrases, but it must be able to reject it when the raw
-audio contradicts it. If a Moshi transcript contains words the user did not say,
-the disagreement must be visible in interpreter evidence and must not be written
-as durable user text.
+same interpreter request as the clipped waveform. It should not be a separate
+turn, a separate oracle prompt, or a competing source of durable transcript
+truth. The interpreter may use it to recover prefixes, names, numbers, or
+code-switched phrases, but it must be able to reject it when the raw audio
+contradicts it. If a Moshi transcript contains words the user did not say, the
+disagreement must be visible in interpreter evidence and must not be written as
+durable user text.
 
 The interpreter receives:
 
@@ -248,6 +250,37 @@ The interpreter emits:
 The interpreter may attach evidence to a queued oracle job before it starts or
 send a bounded update to a running oracle job. It must not stall the reflex
 acknowledgement and must not receive broad Hermes tools.
+
+The interpreter input bundle is the durable boundary between "live hearing" and
+"evidence for action." Each speech cut should create at most one bundle:
+
+```json
+{
+  "turn_id": "voice-turn-id",
+  "audio_segment_ref": "artifact-or-buffer-ref",
+  "audio_time_range_ms": [12840, 15320],
+  "reflex_route": "defer",
+  "reflex_intent": "calculate a power",
+  "reflex_transcript_hypothesis": "three to the power of seventeen",
+  "auxiliary_transcript_hypotheses": [
+    {
+      "source": "moshi",
+      "text": "what is three to the power of seventeen",
+      "confidence": 0.78,
+      "latency_ms": 140,
+      "authority": "hypothesis"
+    }
+  ],
+  "interface_already_said": "I'm checking that.",
+  "speaker": {"channel_user_id": "discord-user-id", "display_name": "jetha"}
+}
+```
+
+The bundle preserves provenance. The raw audio reference is the primary
+evidence. Reflex and Moshi/S2S transcript strings are low-latency hints. Classic
+ASR output, when present, is another hint. The interpreter owns the decision to
+promote any wording into `interpreter_corrected_transcript`; nothing else in
+the bundle is durable user text by default.
 
 ### Oracle
 
@@ -311,6 +344,17 @@ otherwise `on_escalation`.
 `speculative` can be enabled if measurements show that waiting until after the
 reflex decision delays oracle requests. Even then, transcript evidence is an
 interpreter/oracle evidence lane, not a reflex dependency.
+
+Acceptance gates:
+
+- a voice turn may acknowledge and create an oracle job without ASR evidence
+- Moshi/S2S transcript evidence must be labeled `authority = "hypothesis"`
+- interpreter prompts must include raw audio whenever an audio segment is
+  available, even when Moshi or ASR produced a complete-looking transcript
+- oracle jobs must distinguish `reflex_transcript_hypothesis`,
+  `auxiliary_transcript_hypotheses`, and `interpreter_corrected_transcript`
+- durable transcript writes and tool-critical arguments must use interpreter or
+  oracle judgment, not raw Moshi/ASR text alone
 
 ## Session Contract
 

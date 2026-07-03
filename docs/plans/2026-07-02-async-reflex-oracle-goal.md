@@ -65,8 +65,21 @@ The interpreter is the evidence lane. It owns:
 
 The interpreter does not require a separate ASR proof before it can help the
 oracle. A Moshi/S2S transcript, when available, is passed as hypothesis context
-beside the raw audio. Classic ASR is retained for fallback, diagnostics, or
-literal wording checks, not as the normal reflex driver.
+inside the same evidence bundle as the raw audio. Classic ASR is retained for
+fallback, diagnostics, or literal wording checks, not as the normal reflex
+driver.
+
+The evidence bundle must preserve provenance:
+
+- raw audio reference: primary evidence
+- reflex transcript: low-latency hypothesis
+- Moshi/S2S transcript: auxiliary hypothesis
+- classic ASR transcript: optional fallback or comparison hypothesis
+- interpreter correction: first durable transcript candidate
+
+The oracle may see all of those fields, but only after they are labeled. It must
+never receive a Moshi or ASR transcript as if it were the user's verified
+utterance.
 
 The oracle is the worker. It owns:
 
@@ -240,7 +253,9 @@ new work, ask for prioritization, or suggest cancellation.
 The interpreter gets a different compact view: the current turn id, clipped
 audio reference, reflex hypothesis, optional Moshi/S2S transcript hypothesis,
 optional ASR hypothesis, active job id, and the acknowledgement already spoken.
-It does not need tool schemas or broad Hermes state.
+Those fields should arrive as one evidence bundle for the speech cut, not as
+independent prompts racing each other. The interpreter does not need tool
+schemas or broad Hermes state.
 
 ## Routing Behavior
 
@@ -340,6 +355,7 @@ Durable Hermes history should not record:
 - stale late oracle output
 - every status poll
 - reflex transcript hypotheses unless promoted by interpreter/oracle evidence
+- Moshi/S2S transcript hypotheses unless promoted by interpreter/oracle evidence
 
 The voice-session task log should still retain enough event detail to reconstruct
 what happened without bloating the oracle context: normalized frontend events,

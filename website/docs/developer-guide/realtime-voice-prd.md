@@ -27,8 +27,8 @@ Realtime voice should ship in visible tiers instead of as a single "done" switch
 0. **One-shot fallback**: existing MediaRecorder upload, transcript submission, and TTS playback. This remains available for machines, browsers, or profiles where realtime preflight fails.
 1. **Portable desktop path**: desktop streams microphone frames to Hermes, Hermes owns session state, barge-in, permissions, durable transcript boundaries, and fallback to one-shot voice. This tier must not require local audio-model hardware.
 2. **External text-oracle sidecar path**: a loopback, LAN, or provider-backed sidecar supplies STT/audio understanding plus TTS. If the sidecar reports `streaming_stt: true` and `tts: true`, Hermes can treat it as live-like for text-oracle conversation. If it only has utterance STT, it is useful but not Gemini Live-style yet.
-3. **Gemma/frontend LLM path**: Gemma 4 E4B-IT, or a similar audio-capable frontend model, can run inside the sidecar as speech understanding and frontend reasoning. Gemma is not the Hermes oracle by default; the backend oracle remains whatever Hermes is configured to use for memory, files, tools, MCP, approvals, and profile behavior.
-4. **Native S2S path**: a sidecar speaks directly in a speech-to-speech loop and receives asynchronous `oracle.hint` events from Hermes. This is the best long-term path for prosody and interruption feel, but it is not required for a first English/Japanese private alpha if the streaming text-oracle path meets the evidence gates.
+3. **Gemma/interpreter LLM path**: Gemma 4 E2B/E4B/12B, or a similar audio-capable frontend model, can run inside the sidecar as an interpreter over clipped raw audio plus provenance-labeled transcript hypotheses. Gemma is not the Hermes oracle; the backend oracle remains whatever Hermes is configured to use for memory, files, tools, MCP, approvals, and profile behavior.
+4. **Native S2S/reflex path**: a sidecar speaks directly in a speech-to-speech loop and submits asynchronous oracle jobs to Hermes through a narrow `ask_brain`/`interface.oracle.request` bridge. This is the best long-term path for prosody and interruption feel, but it is not required for a first English/Japanese private alpha if the streaming text-oracle path meets the evidence gates.
 5. **Gemini Live-style production quality**: requires `voice.realtime.production_evidence_report` to point at at least three verified EN/JA smoke report runs by default and `voice.realtime.production_review_report` to point at an evidence-backed launch-review JSON report. The combined gate covers repeatable latency evidence, full audio-session evidence from fixture audio through STT, Hermes oracle text, and TTS, interruption reliability, multilingual metadata preservation, desktop reconnect recovery, graceful fallback, security review, and enough real conversation testing to prove the experience remains coherent under noise, remote sidecar latency, TTS/provider failure, and tool-using Hermes answers.
 
 The ladder is intentionally hardware-neutral. A developer may use a large local inference workstation, a small desktop with cloud STT/TTS, a LAN model server, or a hosted provider, but the product contract is capabilities and evidence: preflight status, sidecar health, live-like `conversation_quality`, evidence-backed `production_readiness`, latency targets, English/Japanese fixture reports, launch-review checks, and safe fallback behavior.
@@ -130,9 +130,10 @@ Hermes oracle
 
 ### Speech Understanding
 
-- The engine emits `transcript.partial` for unstable speech.
-- The engine emits `transcript.final` when a segment is stable enough to commit to the live session state.
-- Gemma can be used as a speech understanding/frontend model, but Hermes must not depend on Gemma being the backend oracle model.
+- The engine may emit `transcript.partial` for unstable speech.
+- The engine may emit `transcript.final` when a segment is stable enough to commit to the live session state in text-oracle or fallback modes.
+- In full KAME mode, Moshi/S2S and ASR transcript strings are hypotheses attached to the same interpreter evidence bundle as the clipped raw audio. They are not committed as durable user text unless promoted by interpreter/oracle judgment.
+- Gemma can be used as a speech understanding/interpreter model over raw audio plus transcript hypotheses, but Hermes must not depend on Gemma being the backend oracle model.
 - STT/audio-understanding prompts must preserve source language and script unless the user explicitly asks for translation.
 - Transcript events may include `language`, `locale`, `script`, and provider confidence metadata when available, but the protocol must also work when a provider cannot identify language.
 
@@ -148,9 +149,9 @@ Hermes oracle
 
 ### Hermes Oracle
 
-- The oracle uses the model Hermes is configured to use unless the voice session explicitly overrides it.
-- The oracle can see final transcript and selected partial transcript state.
-- Tool calls from partial speech require a conservative gate. Destructive or external side-effect tools require final transcript or explicit confirmation.
+- The oracle uses the model Hermes is configured to use. Voice configuration must not add a separate `oracle_model`; model selection stays in the normal Hermes `/model` and provider configuration path.
+- The oracle can see corrected transcript, reflex transcript hypothesis, Moshi/S2S transcript hypothesis, optional ASR hypothesis, interpreter confidence, and source provenance when a voice turn escalates.
+- Tool calls from hypothesis-only speech require a conservative gate. Destructive or external side-effect tools require interpreter/oracle confirmation or explicit user confirmation.
 - Oracle output is guidance until committed by the speech planner.
 
 ### Speech Planning
@@ -180,11 +181,11 @@ Hermes oracle
 ### Persistence
 
 - Durable session history only stores:
-  - final user transcript segments
+  - final user transcript segments promoted by interpreter/oracle judgment
   - committed assistant text
   - tool calls/results that actually executed
   - interruption markers where relevant
-- Partial transcripts, tentative assistant text, and acoustic chunks are not stored by default.
+- Partial transcripts, Moshi/S2S hypotheses, ASR hypotheses, tentative assistant text, and acoustic chunks are not stored by default.
 
 ### Security and Privacy
 
@@ -196,12 +197,12 @@ Hermes oracle
 
 ## Success Metrics
 
-- Median first transcript partial: under 300 ms on LAN.
+- Median first transcript or reflex hypothesis partial: under 300 ms on LAN.
 - Median first assistant text after final user speech: under 500 ms for simple responses.
 - Median first assistant audio after final user speech: under 900 ms for simple responses.
 - Barge-in stop latency: under 150 ms from detected speech to playback cancellation.
-- Realtime server events expose session latency metrics for transcript, first-text, first-audio, and barge-in paths.
-- No durable transcript pollution from partial ASR or abandoned assistant drafts.
+- Realtime server events expose session latency metrics for transcript hypotheses, interpreter evidence, first-text, first-audio, and barge-in paths.
+- No durable transcript pollution from partial ASR, Moshi/S2S hypotheses, or abandoned assistant drafts.
 - Existing one-shot voice mode continues to work.
 - Reconnect drills prove the desktop releases the microphone and clears playback/queued audio before starting the next realtime session or fallback loop.
 - Production launch-review checks include non-empty notes or artifact references for every passed manual check; booleans alone are not enough to claim Gemini Live-style quality.
@@ -219,8 +220,8 @@ Hermes oracle
 
 ## Open Questions
 
-- Which streaming STT should be the first supported provider?
-- Should Gemma receive raw audio chunks, transcript chunks, or both in the first prototype?
-- How aggressively should the planner allow early speech before the final transcript?
+- Which local reflex/S2S path should provide the first low-latency transcript hypotheses?
+- What is the maximum acceptable delay from speech end to Gemma interpreter evidence for escalated turns?
+- How aggressively should the planner allow early speech before interpreter evidence arrives?
 - Which tool classes are safe during partial transcript state?
 - Should voice session traces be saved as optional debug artifacts?
