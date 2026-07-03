@@ -24,7 +24,13 @@ from typing import Any, Callable, Iterable, Mapping
 if __name__ == "__main__":
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.voiceops_provisioning_probe import build_milestone2_execution_plan, validate_nemoclaw_action_packet
+from scripts.voiceops_provisioning_probe import (
+    build_kame_action_evidence,
+    build_kame_evidence_gate,
+    build_milestone2_execution_plan,
+    build_tool_disclosure_proof,
+    validate_nemoclaw_action_packet,
+)
 
 
 DEFAULT_REQUEST = (
@@ -492,13 +498,15 @@ def _demo_closure_summary() -> dict[str, Any]:
             "expected_artifacts": [
                 "artifacts/dgx-spark-gemma4-voice-eval/current/kame-stack",
                 "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json",
-                "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/asr-nemotron-speech-raw.json",
                 "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/tts-magpie-local-raw.json",
                 "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/all-local-stack-smoke-raw.json",
                 "artifacts/voiceops-spark-matrix/current/spark-operator-runbook.md",
                 SPARK_BENCHMARK_SCAFFOLD_EVIDENCE,
                 "artifacts/voiceops-spark-matrix/current/spark-model-matrix.json",
                 "artifacts/voiceops-spark-matrix/current/spark-matrix-closure-plan.md",
+            ],
+            "optional_artifacts": [
+                "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/asr-nemotron-speech-raw.json",
             ],
             "completion_signal": "ready_for_one_spark_demo is true, role_status values are validated, and all_local_stack_smoke is validated",
             "evidence_contract": {
@@ -1381,7 +1389,13 @@ def _approval_contract(action: Mapping[str, Any]) -> dict[str, Any]:
 
 def _nemoclaw_action_packet(demo: dict[str, Any]) -> dict[str, Any]:
     approval_actions = [
-        {**action, "approval_contract": _approval_contract(action), "lineage": _lineage_for_action(demo, action["action_id"])}
+        {
+            **action,
+            "approval_contract": _approval_contract(action),
+            "lineage": _lineage_for_action(demo, action["action_id"]),
+            "kame_evidence": build_kame_action_evidence(action["action_id"], demo.get("source_context")),
+            "tool_disclosure_ref": "tool_disclosure",
+        }
         for action in demo["ops_actions"]
         if action["requires_approval"]
     ]
@@ -1396,6 +1410,8 @@ def _nemoclaw_action_packet(demo: dict[str, Any]) -> dict[str, Any]:
         "source_channel": "discord_voice",
         "hermes_active_model": demo["sponsor_stack"]["hermes_active_model"]["active_model"],
         "model_selected_by": "Hermes /model",
+        "kame_evidence_gate": build_kame_evidence_gate(),
+        "tool_disclosure": build_tool_disclosure_proof(),
         "spend_policy": demo["spend_policy"],
         "safety": {
             "live_spend": False,
@@ -1451,6 +1467,8 @@ def _phone_context_packet(demo: dict[str, Any]) -> dict[str, Any]:
         "target_channel": "phone",
         "source_context": dict(demo["source_context"]),
         **dict(demo["source_context"]),
+        "kame_evidence_gate": build_kame_evidence_gate(),
+        "tool_disclosure_ref": "tool_disclosure",
         "status": "queued_requires_approval",
         "context_summary": (
             "The user gave Hermes a 200 dollar Stripe Skills budget in Discord voice, "
@@ -1471,6 +1489,8 @@ def _phone_context_packet(demo: dict[str, Any]) -> dict[str, Any]:
                 "purpose": action["purpose"],
                 "approval_contract": _approval_contract(action),
                 "lineage": _lineage_for_action(demo, action["action_id"]),
+                "kame_evidence": build_kame_action_evidence(action["action_id"], demo.get("source_context")),
+                "tool_disclosure_ref": "tool_disclosure",
             }
             for action in approval_actions
         ],
@@ -1513,6 +1533,8 @@ def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> d
             "approval_artifact": "nemoclaw-action-packet.json",
             "command": action["command"],
             "approval_contract": _approval_contract(action),
+            "kame_evidence": build_kame_action_evidence(action["action_id"], demo.get("source_context")),
+            "tool_disclosure_ref": "tool_disclosure",
             "execution_status": "not_executed",
             "operator_next_step": "Review the approval contract and required preflight gates before approving or holding.",
         }

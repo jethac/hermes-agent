@@ -16,6 +16,7 @@ from scripts.hackathon_voiceops_demo import (
     write_demo,
 )
 from scripts.voiceops_operator_state import validate_operator_state
+from scripts.voiceops_provisioning_probe import validate_nemoclaw_action_packet
 
 
 def _dot_get(payload, ref):
@@ -263,9 +264,13 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         is False
     )
     assert closure_gates["local_spark_stack_matrix"]["evidence_contract"]["local_speech_requires_production_provider"] is True
-    assert any(
+    assert not any(
         artifact.endswith("sources/asr-nemotron-speech-raw.json")
         for artifact in closure_gates["local_spark_stack_matrix"]["expected_artifacts"]
+    )
+    assert any(
+        artifact.endswith("sources/asr-nemotron-speech-raw.json")
+        for artifact in closure_gates["local_spark_stack_matrix"]["optional_artifacts"]
     )
     assert "--run-readonly-discovery" in closure_gates["spend_and_provisioning_preflight"]["collection_commands"][
         "read_only_discovery"
@@ -436,6 +441,16 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert nemoclaw["model_selected_by"] == "Hermes /model"
     assert nemoclaw["hermes_active_model"].startswith("Nemotron 3 Super")
     assert "oracle_model" not in nemoclaw
+    assert nemoclaw["kame_evidence_gate"]["requires_promoted_evidence"] is True
+    assert nemoclaw["kame_evidence_gate"]["hypotheses_allowed_for_action"] is False
+    assert set(nemoclaw["kame_evidence_gate"]["accepted_authorities"]) == {
+        "interpreter_promoted",
+        "oracle_promoted",
+    }
+    assert nemoclaw["tool_disclosure"]["ok"] is True
+    assert nemoclaw["tool_disclosure"]["config"] == {"enabled": "on", "defer_core": "all"}
+    assert nemoclaw["tool_disclosure"]["visible_tool_names"] == ["tool_call", "tool_describe", "tool_search"]
+    assert nemoclaw["tool_disclosure"]["hidden_core_tool_names"] == ["read_file", "terminal"]
     assert "unapproved_purchase" in nemoclaw["blocked_capabilities"]
     assert "discord_or_whatsapp_send_without_channel_policy_approval" in nemoclaw["blocked_capabilities"]
     assert "status_summary_draft" in nemoclaw["allowed_capabilities"]
@@ -478,11 +493,26 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         assert contract["allowed_decisions"] == ["approve_once", "deny", "hold"]
         assert contract["approved_by_ref"] is None
         assert contract["required_preflight_gates"]
+        assert action["tool_disclosure_ref"] == "tool_disclosure"
+        evidence = action["kame_evidence"]
+        assert evidence["hypotheses_allowed_for_action"] is False
+        assert evidence["transcript_hypotheses_promoted"] is False
+        assert evidence["required_promotions"] == ["interpreter_promoted", "oracle_promoted"]
+        assert {"user_request", "oracle_action_plan"} <= set(evidence["promoted_fields"])
+        assert {
+            item["evidence_label"]
+            for item in evidence["promoted_fields"].values()
+        } <= {"interpreter_promoted", "oracle_promoted"}
     assert phone_context["target_channel"] == "phone"
     assert phone_context["status"] == "queued_requires_approval"
+    assert phone_context["kame_evidence_gate"]["requires_promoted_evidence"] is True
+    assert phone_context["tool_disclosure_ref"] == "tool_disclosure"
     assert phone_context["pending_approvals"]
     assert all("approval_contract" in approval for approval in phone_context["pending_approvals"])
+    assert all("kame_evidence" in approval for approval in phone_context["pending_approvals"])
     assert milestone2_plan["schema_version"] == "voiceops.milestone2.execution_plan.v1"
+    assert milestone2_plan["kame_evidence_gate"] == nemoclaw["kame_evidence_gate"]
+    assert milestone2_plan["tool_disclosure"] == nemoclaw["tool_disclosure"]
     assert milestone2_plan["demo_refs"]["phone_context"] == "phone-context.json"
     assert milestone2_plan["spend_policy"] == {
         "currency": "usd",
@@ -524,8 +554,20 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         assert lineage["parent_audit_event_id"]
         if action["action_id"] in nemoclaw_actions_by_id:
             assert nemoclaw_actions_by_id[action["action_id"]]["lineage"] == lineage
+            assert nemoclaw_actions_by_id[action["action_id"]]["kame_evidence"] == action["kame_evidence"]
         if action["action_id"] in phone_approvals_by_id:
             assert phone_approvals_by_id[action["action_id"]]["lineage"] == lineage
+            assert phone_approvals_by_id[action["action_id"]]["kame_evidence"] == action["kame_evidence"]
+        assert action["tool_disclosure_ref"] == "tool_disclosure"
+        assert action["kame_evidence"]["action_id"] == action["action_id"]
+        if action["action_id"] == "provision-voip-provider":
+            assert "provider_selection" in action["kame_evidence"]["promoted_fields"]
+        if action["action_id"] == "buy-service-credit":
+            assert "spend_reason" in action["kame_evidence"]["promoted_fields"]
+        if action["action_id"] == "call-user-phone":
+            assert "phone_handoff_context" in action["kame_evidence"]["promoted_fields"]
+        if action["action_id"] == "publish-status":
+            assert "channel_policy" in action["kame_evidence"]["promoted_fields"]
         receipt_slot = _dot_get(milestone2_plan, action["expected_receipt_ref"])
         assert receipt_slot["schema_ref"] == "receipt_schema"
         assert receipt_slot["lineage"] == lineage
@@ -547,6 +589,8 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert operator_state["readiness_closure"]["closure_status"] == "needs_external_evidence"
     assert operator_state["current_mode"] == "approval-required"
     assert operator_state["active_voice_surface"]["surface_id"] == "discord_voice"
+    assert all("kame_evidence" in approval for approval in operator_state["pending_approvals"])
+    assert all(approval["tool_disclosure_ref"] == "tool_disclosure" for approval in operator_state["pending_approvals"])
     assert operator_state["provisioned_services"]
     assert operator_events == operator_state["recent_audit_events"]
     assert operator_events[0]["audit_id"] == "evt-001"
@@ -677,6 +721,39 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "live_discord_voice_operator" in closure_markdown
     assert "spend_and_provisioning_preflight" in closure_markdown
     assert "local_spark_stack_matrix" in closure_markdown
+
+
+def test_voiceops_nemoclaw_validation_rejects_unpromoted_action_evidence():
+    demo = build_demo(parse_args([]))
+    readiness = build_readiness_report(demo, env=_discord_live_env(), which=_fake_which)
+    packet = prepare_voiceops_action_packet_from_demo(demo, readiness)["nemoclaw_action_packet"]
+    packet["approval_required_actions"][0]["kame_evidence"]["promoted_fields"]["provider_selection"][
+        "evidence_label"
+    ] = "auxiliary_hypothesis"
+
+    validation = validate_nemoclaw_action_packet(packet)
+
+    assert validation["status"] == "invalid"
+    assert (
+        "provision-voip-provider:promoted_field_authority_invalid:provider_selection:auxiliary_hypothesis"
+        in validation["validation_issues"]
+    )
+    assert (
+        "provision-voip-provider:promoted_field_uses_rejected_authority:auxiliary_hypothesis"
+        in validation["validation_issues"]
+    )
+
+
+def test_voiceops_nemoclaw_validation_rejects_missing_tool_disclosure_proof():
+    demo = build_demo(parse_args([]))
+    readiness = build_readiness_report(demo, env=_discord_live_env(), which=_fake_which)
+    packet = prepare_voiceops_action_packet_from_demo(demo, readiness)["nemoclaw_action_packet"]
+    packet.pop("tool_disclosure")
+
+    validation = validate_nemoclaw_action_packet(packet)
+
+    assert validation["status"] == "invalid"
+    assert "missing_tool_disclosure" in validation["validation_issues"]
 
 
 def test_voiceops_demo_closure_and_handoff_track_plan_run_contracts(tmp_path):

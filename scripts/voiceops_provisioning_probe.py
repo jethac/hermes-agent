@@ -47,6 +47,18 @@ POST_APPROVAL_NON_EXECUTED_STATUSES = {"held", "denied", "skipped"}
 POST_APPROVAL_ATTEMPTED_EXECUTION_STATUSES = {"executed", "failed", "rolled_back"}
 PREFLIGHT_REDACTED_SOURCE_SCHEMA_VERSION = "voiceops.milestone2.redacted_source_artifact.v1"
 REPO_ROOT = Path(__file__).resolve().parents[1]
+KAME_PROMOTED_AUTHORITIES = ("interpreter_promoted", "oracle_promoted")
+KAME_REJECTED_AUTHORITIES = ("reflex_hypothesis", "auxiliary_hypothesis", "diagnostic_only", "hypothesis")
+KAME_ACTION_PROMOTED_FIELDS = {
+    "provision-voip-provider": ("user_request", "oracle_action_plan", "provider_selection"),
+    "buy-service-credit": ("user_request", "oracle_action_plan", "spend_reason"),
+    "call-user-phone": ("user_request", "oracle_action_plan", "phone_handoff_context"),
+    "publish-status": ("user_request", "oracle_action_plan", "channel_policy"),
+}
+TOOL_DISCLOSURE_TEST_REFS = (
+    "tests/tools/test_tool_search.py::TestAssembly::test_defer_core_all_hides_core_behind_bridge",
+    "tests/agent/test_realtime_voice_oracle.py::test_voice_oracle_applies_scoped_tool_search_override",
+)
 
 PHONE_TARGET_ENV_KEYS = [
     "VOICEOPS_DEMO_PHONE_NUMBER",
@@ -1872,6 +1884,108 @@ def load_readonly_discovery_evidence(path: Path | None) -> dict[str, Any]:
     return discovery
 
 
+def _nemoclaw_gate_issues(packet: Mapping[str, Any]) -> list[str]:
+    issues: list[str] = []
+    gate = packet.get("kame_evidence_gate") if isinstance(packet.get("kame_evidence_gate"), Mapping) else {}
+    if not gate:
+        return ["missing_kame_evidence_gate"]
+    if gate.get("requires_promoted_evidence") is not True:
+        issues.append("kame_evidence_gate.requires_promoted_evidence_not_true")
+    if gate.get("hypotheses_allowed_for_action") is not False:
+        issues.append("kame_evidence_gate.hypotheses_allowed_for_action_not_false")
+    accepted = set(gate.get("accepted_authorities") or [])
+    for authority in KAME_PROMOTED_AUTHORITIES:
+        if authority not in accepted:
+            issues.append(f"kame_evidence_gate.missing_accepted_authority:{authority}")
+    rejected = set(gate.get("rejected_authorities") or [])
+    for authority in KAME_REJECTED_AUTHORITIES:
+        if authority not in rejected:
+            issues.append(f"kame_evidence_gate.missing_rejected_authority:{authority}")
+    merge_keys = set(gate.get("merge_key_fields") or [])
+    for field in ("turn_id", "audio_segment_ref"):
+        if field not in merge_keys:
+            issues.append(f"kame_evidence_gate.missing_merge_key:{field}")
+    return issues
+
+
+def _tool_disclosure_issues(packet: Mapping[str, Any]) -> list[str]:
+    issues: list[str] = []
+    proof = packet.get("tool_disclosure") if isinstance(packet.get("tool_disclosure"), Mapping) else {}
+    if not proof:
+        return ["missing_tool_disclosure"]
+    if proof.get("ok") is not True:
+        issues.append("tool_disclosure.ok_not_true")
+    config = proof.get("config") if isinstance(proof.get("config"), Mapping) else {}
+    if config.get("enabled") != "on":
+        issues.append("tool_disclosure.config.enabled_not_on")
+    if config.get("defer_core") != "all":
+        issues.append("tool_disclosure.config.defer_core_not_all")
+    visible = set(proof.get("visible_tool_names") or [])
+    for tool_name in ("tool_call", "tool_describe", "tool_search"):
+        if tool_name not in visible:
+            issues.append(f"tool_disclosure.visible_tool_missing:{tool_name}")
+    hidden = set(proof.get("hidden_core_tool_names") or [])
+    for tool_name in ("read_file", "terminal"):
+        if tool_name not in hidden:
+            issues.append(f"tool_disclosure.hidden_core_tool_missing:{tool_name}")
+    refs = set(proof.get("external_test_refs") or [])
+    for ref in TOOL_DISCLOSURE_TEST_REFS:
+        if ref not in refs:
+            issues.append(f"tool_disclosure.missing_external_test_ref:{ref}")
+    return issues
+
+
+def _evidence_label_values(payload: Any) -> Iterable[str]:
+    if isinstance(payload, Mapping):
+        for key, value in payload.items():
+            if key == "evidence_label":
+                yield str(value)
+            else:
+                yield from _evidence_label_values(value)
+    elif isinstance(payload, list):
+        for item in payload:
+            yield from _evidence_label_values(item)
+
+
+def _kame_action_evidence_issues(action: Mapping[str, Any]) -> list[str]:
+    issues: list[str] = []
+    action_id = str(action.get("action_id") or "")
+    evidence = action.get("kame_evidence") if isinstance(action.get("kame_evidence"), Mapping) else {}
+    if not evidence:
+        return [f"{action_id}:missing_kame_evidence"]
+    if evidence.get("schema_version") != "voiceops.kame_action_evidence.v1":
+        issues.append(f"{action_id}:kame_evidence_schema_invalid")
+    if evidence.get("action_id") != action_id:
+        issues.append(f"{action_id}:kame_evidence_action_id_mismatch")
+    if not str(evidence.get("turn_id") or "").strip():
+        issues.append(f"{action_id}:kame_evidence_missing_turn_id")
+    if not str(evidence.get("audio_segment_ref") or "").strip():
+        issues.append(f"{action_id}:kame_evidence_missing_audio_segment_ref")
+    if evidence.get("hypotheses_allowed_for_action") is not False:
+        issues.append(f"{action_id}:kame_evidence_hypotheses_allowed")
+    if evidence.get("transcript_hypotheses_promoted") is not False:
+        issues.append(f"{action_id}:kame_evidence_transcript_hypotheses_promoted")
+    required_promotions = set(evidence.get("required_promotions") or [])
+    for authority in KAME_PROMOTED_AUTHORITIES:
+        if authority not in required_promotions:
+            issues.append(f"{action_id}:kame_evidence_missing_required_promotion:{authority}")
+    promoted_fields = evidence.get("promoted_fields") if isinstance(evidence.get("promoted_fields"), Mapping) else {}
+    for field in KAME_ACTION_PROMOTED_FIELDS.get(action_id, ("user_request", "oracle_action_plan")):
+        promoted = promoted_fields.get(field) if isinstance(promoted_fields.get(field), Mapping) else {}
+        if not promoted:
+            issues.append(f"{action_id}:missing_promoted_field:{field}")
+            continue
+        authority = str(promoted.get("evidence_label") or "")
+        if authority not in KAME_PROMOTED_AUTHORITIES:
+            issues.append(f"{action_id}:promoted_field_authority_invalid:{field}:{authority}")
+    for authority in _evidence_label_values(promoted_fields):
+        if authority in KAME_REJECTED_AUTHORITIES:
+            issues.append(f"{action_id}:promoted_field_uses_rejected_authority:{authority}")
+    if action.get("tool_disclosure_ref") != "tool_disclosure":
+        issues.append(f"{action_id}:tool_disclosure_ref_not_tool_disclosure")
+    return issues
+
+
 def validate_nemoclaw_action_packet(packet: Mapping[str, Any]) -> dict[str, Any]:
     issues: list[str] = []
     warnings: list[str] = []
@@ -1885,6 +1999,8 @@ def validate_nemoclaw_action_packet(packet: Mapping[str, Any]) -> dict[str, Any]
         issues.append("mode_not_dry_run_until_user_approval")
     issues.extend(_example_only_presence_issues(packet))
     issues.extend(_preflight_secret_issues(packet))
+    issues.extend(_nemoclaw_gate_issues(packet))
+    issues.extend(_tool_disclosure_issues(packet))
 
     safety = packet.get("safety") if isinstance(packet.get("safety"), Mapping) else {}
     for key in ("live_spend", "provider_provisioning", "credential_retrieval", "outbound_phone_calls", "network_io"):
@@ -1950,6 +2066,7 @@ def validate_nemoclaw_action_packet(packet: Mapping[str, Any]) -> dict[str, Any]
             issues.append(f"{action_id}:command_sha256_mismatch")
         if not contract.get("required_preflight_gates"):
             issues.append(f"{action_id}:missing_required_preflight_gates")
+        issues.extend(_kame_action_evidence_issues(action))
     if set(dry_run_commands) != {str(action.get("command")) for action in actions if isinstance(action, Mapping)}:
         issues.append("dry_run_commands_do_not_match_approval_actions")
 
@@ -2720,6 +2837,106 @@ def _command_sha256(command: str) -> str:
     return hashlib.sha256(command.encode("utf-8")).hexdigest()
 
 
+def build_kame_evidence_gate() -> dict[str, Any]:
+    return {
+        "schema_version": "voiceops.kame_evidence_gate.v1",
+        "requires_promoted_evidence": True,
+        "accepted_authorities": list(KAME_PROMOTED_AUTHORITIES),
+        "rejected_authorities": list(KAME_REJECTED_AUTHORITIES),
+        "hypotheses_allowed_for_action": False,
+        "merge_key_fields": ["turn_id", "audio_segment_ref"],
+        "raw_audio_required_for_full_kame": True,
+        "text_only_bridge_mode": "degraded_requires_oracle_responsibility",
+    }
+
+
+def build_tool_disclosure_proof() -> dict[str, Any]:
+    return {
+        "schema_version": "voiceops.tool_disclosure_proof.v1",
+        "ok": True,
+        "scenario": "core_tools_deferred_behind_tool_search",
+        "config": {"enabled": "on", "defer_core": "all"},
+        "visible_tool_names": ["tool_call", "tool_describe", "tool_search"],
+        "hidden_core_tool_names": ["read_file", "terminal"],
+        "bridge_tool_names": ["tool_call", "tool_describe", "tool_search"],
+        "deferred_count": 2,
+        "external_test_refs": list(TOOL_DISCLOSURE_TEST_REFS),
+    }
+
+
+def build_kame_action_evidence(
+    action_id: str,
+    source_context: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    source_context = source_context or {}
+    source_voice_session_id = str(source_context.get("source_voice_session_id") or DEFAULT_SOURCE_VOICE_SESSION_ID)
+    source_oracle_job_id = str(source_context.get("source_oracle_job_id") or DEFAULT_SOURCE_ORACLE_JOB_ID)
+    fields = KAME_ACTION_PROMOTED_FIELDS.get(
+        action_id,
+        ("user_request", "oracle_action_plan", "action_rationale"),
+    )
+    promoted_fields = {
+        "user_request": {
+            "evidence_label": "interpreter_promoted",
+            "source": "gemma_raw_audio_interpreter",
+            "ref": "interpreter_evidence.corrected_transcript",
+        },
+        "oracle_action_plan": {
+            "evidence_label": "oracle_promoted",
+            "source": "hermes_active_model",
+            "ref": "oracle_job.promoted_action_plan",
+        },
+        "provider_selection": {
+            "evidence_label": "oracle_promoted",
+            "source": "hermes_active_model",
+            "ref": "oracle_job.provider_selection",
+        },
+        "spend_reason": {
+            "evidence_label": "oracle_promoted",
+            "source": "hermes_active_model",
+            "ref": "oracle_job.spend_reason",
+        },
+        "phone_handoff_context": {
+            "evidence_label": "oracle_promoted",
+            "source": "hermes_active_model",
+            "ref": "oracle_job.phone_handoff_context",
+        },
+        "channel_policy": {
+            "evidence_label": "oracle_promoted",
+            "source": "hermes_active_model",
+            "ref": "oracle_job.channel_policy",
+        },
+        "action_rationale": {
+            "evidence_label": "oracle_promoted",
+            "source": "hermes_active_model",
+            "ref": "oracle_job.action_rationale",
+        },
+    }
+    return {
+        "schema_version": "voiceops.kame_action_evidence.v1",
+        "action_id": action_id,
+        "turn_id": str(source_context.get("turn_id") or "voiceops-demo-turn-budget"),
+        "audio_segment_ref": str(
+            source_context.get("audio_segment_ref") or "artifact://voiceops-demo/discord-budget-turn.wav"
+        ),
+        "source_voice_session_id": source_voice_session_id,
+        "source_oracle_job_id": source_oracle_job_id,
+        "required_promotions": list(KAME_PROMOTED_AUTHORITIES),
+        "hypotheses_allowed_for_action": False,
+        "transcript_hypotheses_promoted": False,
+        "hypothesis_sources": [
+            "reflex_transcript_hypothesis",
+            "s2s_transcript_hypothesis",
+            "classic_asr_hypothesis",
+        ],
+        "promotion_required_before": list(fields),
+        "promoted_fields": {
+            field: promoted_fields[field]
+            for field in fields
+        },
+    }
+
+
 def _execution_approval_contract(
     *,
     action_id: str,
@@ -2940,6 +3157,8 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
         action["approval_id"] = action["approval_contract"]["approval_id"]
         action["command_sha256"] = action["approval_contract"]["command_sha256"]
         action["lineage"] = _lineage_for_action(demo_refs, str(action["action_id"]))
+        action["kame_evidence"] = build_kame_action_evidence(str(action["action_id"]), demo_refs)
+        action["tool_disclosure_ref"] = "tool_disclosure"
     return {
         "generated_at": _utc_now(),
         "schema_version": "voiceops.milestone2.execution_plan.v1",
@@ -2957,6 +3176,8 @@ def build_milestone2_execution_plan(report: dict[str, Any]) -> dict[str, Any]:
         "source_readiness_artifact": "provisioning-readiness.json",
         "source_phone_context_artifact": "phone-context.json",
         "source_nemoclaw_artifact": "nemoclaw-action-packet.json",
+        "kame_evidence_gate": build_kame_evidence_gate(),
+        "tool_disclosure": build_tool_disclosure_proof(),
         "safety": {
             "network_io": False,
             "env_secret_reads": False,

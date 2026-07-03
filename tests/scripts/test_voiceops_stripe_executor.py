@@ -47,6 +47,8 @@ def _packet_from_plan(plan):
                 "status": "queued",
                 "approval_contract": contract,
                 "lineage": dict(action["lineage"]),
+                "kame_evidence": dict(action["kame_evidence"]),
+                "tool_disclosure_ref": action["tool_disclosure_ref"],
             }
         )
     return {
@@ -60,6 +62,8 @@ def _packet_from_plan(plan):
         "source_channel": "discord_voice",
         "hermes_active_model": "Nemotron 3 Super",
         "model_selected_by": "Hermes /model",
+        "kame_evidence_gate": dict(plan["kame_evidence_gate"]),
+        "tool_disclosure": dict(plan["tool_disclosure"]),
         "spend_policy": {"limit_cents": 20_000, "currency": "usd"},
         "safety": {
             "live_spend": False,

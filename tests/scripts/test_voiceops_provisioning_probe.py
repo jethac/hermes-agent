@@ -11,6 +11,8 @@ import pytest
 from scripts.voiceops_provisioning_probe import (
     CommandResult,
     PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS,
+    build_kame_action_evidence,
+    build_kame_evidence_gate,
     build_preflight_evidence_example,
     build_preflight_evidence_manifest_example,
     build_preflight_evidence_template,
@@ -18,6 +20,7 @@ from scripts.voiceops_provisioning_probe import (
     build_post_approval_receipts_example,
     build_post_approval_receipts_template,
     build_probe_report,
+    build_tool_disclosure_proof,
     load_nemoclaw_action_packet,
     load_payment_skill_bundle_evidence,
     load_post_approval_receipts,
@@ -52,6 +55,8 @@ def _nemoclaw_packet(command: str = "stripe projects add twilio/voice") -> dict[
         "requires_approval": True,
         "status": "queued",
         "approval_contract": contract,
+        "kame_evidence": build_kame_action_evidence("provision-voip-provider"),
+        "tool_disclosure_ref": "tool_disclosure",
     }
     return {
         "schema_version": "voiceops.nemoclaw_action_packet.v1",
@@ -59,6 +64,8 @@ def _nemoclaw_packet(command: str = "stripe projects add twilio/voice") -> dict[
         "packet_id": "voiceops-nemoclaw-test-001",
         "runtime": "NemoClaw",
         "mode": "dry_run_until_user_approval",
+        "kame_evidence_gate": build_kame_evidence_gate(),
+        "tool_disclosure": build_tool_disclosure_proof(),
         "safety": {
             "live_spend": False,
             "provider_provisioning": False,
