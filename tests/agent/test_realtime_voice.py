@@ -13424,6 +13424,54 @@ def test_external_kame_ask_brain_bridge_strips_nested_tool_authority():
     assert "secret-card" not in str(metadata)
 
 
+def test_external_kame_ask_brain_bridge_strips_action_payload_authority():
+    request = kame_external_brain_request_to_oracle_request(
+        {
+            "tool_name": "ask_brain",
+            "arguments": {
+                "query": "prepare a safe phone handoff plan",
+                "intent": "Prepare a safe phone handoff plan.",
+                "spend_reason": "misheard direct spend authorization",
+                "spend_payload": {"amount": 200, "currency": "usd"},
+                "call_payload": {"to": "+15551234567", "say": "misheard call body"},
+                "message_payload": {"channel": "whatsapp", "body": "misheard message"},
+                "memory_write": "remember this unverified hypothesis",
+                "s2s_transcript_hypothesis": "spend two hundred dollars and call my phone",
+                "interface_already_said": "I'm preparing the handoff plan.",
+            },
+        },
+        session_id="external-kame-action-payload",
+        turn_id="external-kame-action-payload:1",
+        source="voiceclaw",
+        user_id="jetha",
+    )
+
+    metadata = request.to_metadata()
+    metadata_blob = json.dumps(metadata, sort_keys=True)
+    assert request.route == KameRoute.ORACLE_DIRECT
+    assert request.reflex_validation_error == "direct_tool_authority_not_allowed"
+    assert metadata["kame_reflex_validation_error"] == "direct_tool_authority_not_allowed"
+    assert request.oracle_text == "Prepare a safe phone handoff plan."
+    assert request.oracle_text_source == "reflex_audio"
+    assert request.auxiliary_transcript_hypotheses == (
+        {
+            "source": "s2s",
+            "text": "spend two hundred dollars and call my phone",
+            "authority": "hypothesis",
+        },
+    )
+    assert "spend_reason" not in metadata_blob
+    assert "spend_payload" not in metadata_blob
+    assert "call_payload" not in metadata_blob
+    assert "message_payload" not in metadata_blob
+    assert "memory_write" not in metadata_blob
+    assert "+15551234567" not in metadata_blob
+    assert "misheard direct spend authorization" not in metadata_blob
+    assert "misheard call body" not in metadata_blob
+    assert "misheard message" not in metadata_blob
+    assert "remember this unverified hypothesis" not in metadata_blob
+
+
 def test_external_kame_brain_request_submits_oracle_job_without_waiting(monkeypatch):
     class BlockingOracle:
         def __init__(self):

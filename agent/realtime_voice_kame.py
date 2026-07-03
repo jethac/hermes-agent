@@ -161,15 +161,29 @@ KAME_DIRECT_TOOL_AUTHORITY_KEYS = frozenset(
         "function_call",
         "function_calls",
         "function_name",
+        "call_payload",
+        "email_payload",
+        "file_content",
+        "file_write",
         "mcp",
         "mcp_call",
         "mcp_server",
         "mcp_tool",
+        "message_payload",
         "tool",
         "tool_call",
         "tool_call_id",
         "tool_calls",
         "tool_name",
+        "payment_payload",
+        "phone_call_payload",
+        "provisioning_payload",
+        "purchase_payload",
+        "sms_payload",
+        "spend_payload",
+        "spend_reason",
+        "stripe_payload",
+        "whatsapp_payload",
         "write_file",
         "write_memory",
         "memory_write",
@@ -228,7 +242,8 @@ def kame_reflex_instruction_text(
         "and a brief affirmative local_reply. Only use local for greetings, repeats, "
         "can-you-hear-me checks, or low-risk conversational glue. Use oracle_direct for tools, "
         "files, memory, projects, or any nontrivial answer. The reflex has no direct tool, MCP, "
-        "filesystem, or memory-write authority; do not include tool/function call fields."
+        "filesystem, payment, provisioning, message, call, or memory-write authority; "
+        "do not include tool/function call fields or action payload fields."
         f"{routing_text} ASR evidence mode is {asr_mode}; do not rely on external tools. "
         f"{preflight_text}JSON schema: {schema_json}. Do not add markdown or commentary."
     )
