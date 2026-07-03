@@ -934,6 +934,15 @@ Move as much of the stack as possible onto one DGX Spark:
   together
 - benchmark evidence accepted by the generated DGX Spark matrix validator
 
+The target Spark shape is the same three-tier KAME contract as the Discord
+voice design: a fast reflex owns floor control, Gemma-style direct-audio
+interpretation owns transcript promotion, and Hermes' active `/model` owns
+oracle work. Moshi/open-S2S transcript text is allowed and useful, but only as a
+frontend witness attached to the same raw-audio interpreter bundle. It must not
+count as a separate Spark readiness role, create a second Hermes turn, replace
+raw-audio evidence, or satisfy spend/provisioning/phone approval gates without
+interpreter or oracle promotion.
+
 Headless command:
 
 ```bash

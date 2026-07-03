@@ -298,6 +298,10 @@ interpreter input is both signals together. The transcript tells Gemma what the
 realtime frontend believed it heard; the waveform and timing metadata remain
 the primary evidence. If the transcript arrives late, it is late evidence on
 the same oracle job, not a reason to create or replay another Hermes turn.
+If the adapter cannot prove whether the string came from the reflex model or an
+adjacent caption component, store it as `frontend_witness_hypothesis` and keep
+`authority = "hypothesis"`. The name should make the trust boundary obvious:
+the frontend witnessed something; Gemma has not promoted it yet.
 
 When raw audio is missing, the request must be marked degraded. Text-only
 VoiceClaw/OpenClaw or Moshi compatibility paths are useful bring-up paths, but

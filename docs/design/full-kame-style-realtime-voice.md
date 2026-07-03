@@ -574,6 +574,11 @@ This is the answer to the "can we provide the Moshi STT transcript as context
 along with raw voice?" question: yes, that is exactly the desired packet shape.
 The raw voice clip and timing metadata are the primary interpreter evidence;
 Moshi/open-S2S text is a labeled clue that Gemma may accept, correct, or reject.
+The implementation should prefer calling this `frontend_witness_hypothesis`
+unless the adapter can prove the exact producer. That keeps the semantics stable
+across Moshi, OpenClaw, VoiceClaw, classic-ASR captions, and future open-S2S
+frontends: the text is what a frontend believed it heard, not what Hermes has
+verified the user said.
 
 The prompt should make that visible to Gemma in plain language: "The audio is
 primary. The witness transcript is what the frontend believed it heard. Use it
