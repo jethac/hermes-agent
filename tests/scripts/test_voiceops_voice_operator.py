@@ -253,6 +253,19 @@ def _async_oracle_smoke_payload() -> dict:
             "oracle.job.started": 1,
             "oracle.job.completed": 1,
         },
+        "unpromoted_hypothesis_smoke_ok": True,
+        "unpromoted_hypothesis_job_id": "voice-oracle-002",
+        "unpromoted_hypothesis_source": "moshi",
+        "unpromoted_hypothesis_authority": "hypothesis",
+        "unpromoted_hypothesis_text": "spend two hundred dollars and call my phone",
+        "unpromoted_hypothesis_confidence": 0.71,
+        "unpromoted_hypothesis_oracle_text_preserved": True,
+        "unpromoted_hypothesis_transcript_preserved": True,
+        "unpromoted_hypothesis_intent_preserved": True,
+        "unpromoted_hypothesis_attached": True,
+        "unpromoted_hypothesis_promoted": False,
+        "unpromoted_hypothesis_update_observed": True,
+        "unpromoted_hypothesis_update_summary": "interpreter evidence: auxiliary_hypotheses=1",
         "audit_scalar_smoke_ok": True,
         "audit_scalar_payload_redacted": True,
         "audit_scalar_secret_canary_checked": True,
@@ -650,6 +663,20 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_durable_record_count"] == 1
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_direct_tool_authority_exposed"] is False
     assert report["requirements"]["async_oracle_external_frontend_bridge"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_smoke_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_source"] == "moshi"
+    assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_authority"] == "hypothesis"
+    assert (
+        report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_text"]
+        == "spend two hundred dollars and call my phone"
+    )
+    assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_oracle_text_preserved"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_transcript_preserved"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_intent_preserved"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_attached"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_promoted"] is False
+    assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_update_observed"] is True
+    assert report["requirements"]["async_oracle_transcript_hypotheses_unpromoted"] is True
     assert report["proofs"]["async_oracle_jobs"]["audit_scalar_smoke_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["audit_scalar_payload_redacted"] is True
     assert report["proofs"]["async_oracle_jobs"]["audit_scalar_secret_canary_checked"] is True
@@ -765,6 +792,14 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_add_update_redacts_secret_like_text_from_status_and_events"
         in report["async_oracle_acceptance"]["job_control_updates_reach_oracle"]["test_refs"]
     )
+    transcript_authority = report["async_oracle_acceptance"]["transcript_hypotheses_stay_non_authoritative"]
+    assert transcript_authority["ok"] is True
+    assert transcript_authority["evidence"] == "async_oracle_smoke_plus_interpreter_authority_tests"
+    assert transcript_authority["verification_mode"] == "loopback_smoke_plus_focused_tests"
+    assert (
+        "tests/agent/test_realtime_voice.py::test_kame_engine_does_not_promote_moshi_only_queued_evidence"
+        in transcript_authority["test_refs"]
+    )
     external_frontend = report["async_oracle_acceptance"]["external_frontend_bridge_submits_oracle_job"]
     assert external_frontend["ok"] is True
     assert external_frontend["evidence"] == "async_oracle_smoke_plus_external_frontend_tests"
@@ -873,6 +908,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:cancel_drain_holds_capacity" in issues
     assert "missing_async_oracle_coverage:failed_job_reported_without_crash" in issues
     assert "missing_async_oracle_coverage:job_control_updates_reach_oracle" in issues
+    assert "missing_async_oracle_coverage:transcript_hypotheses_remain_unpromoted" in issues
     assert "missing_async_oracle_coverage:result_handling_bounded_and_durable" in issues
     assert "missing_async_oracle_coverage:discord_session_cleanup_preserves_oracle_state" in issues
     assert "missing_async_oracle_acceptance:four_oracle_jobs_reflex_responsive" in issues
@@ -880,6 +916,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_acceptance:approval_wait_is_visible_and_redacted" in issues
     assert "missing_async_oracle_acceptance:failed_job_is_reported_without_crashing_session" in issues
     assert "missing_async_oracle_acceptance:job_control_updates_reach_oracle" in issues
+    assert "missing_async_oracle_acceptance:transcript_hypotheses_stay_non_authoritative" in issues
     assert "missing_async_oracle_acceptance:discord_session_cleanup_preserves_oracle_state" in issues
     result_handling = report["async_oracle_acceptance"]["result_handling_is_bounded_and_durable"]
     assert result_handling["ok"] is False
@@ -937,6 +974,18 @@ def test_voice_operator_validation_rejects_missing_queued_cancel_proof():
     assert "missing_async_oracle_coverage:queued_job_cancelled_before_start" in issues
     assert "stale_async_oracle_coverage:queued_job_cancelled_before_start" in issues
     assert "missing_async_oracle_acceptance:cancellation_controls_are_isolated" in issues
+
+
+def test_voice_operator_validation_rejects_promoted_transcript_hypothesis():
+    report = _voice_operator_report()
+    report["async_oracle_smoke"]["unpromoted_hypothesis_promoted"] = True
+    report["async_oracle_smoke"]["unpromoted_hypothesis_oracle_text_preserved"] = False
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_coverage:transcript_hypotheses_remain_unpromoted" in issues
+    assert "stale_async_oracle_coverage:transcript_hypotheses_remain_unpromoted" in issues
+    assert "missing_async_oracle_acceptance:transcript_hypotheses_stay_non_authoritative" in issues
 
 
 def test_voice_operator_validation_rejects_async_approval_secret_leak():

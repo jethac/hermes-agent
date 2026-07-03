@@ -152,6 +152,18 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_event_counts"]["oracle.job.accepted"] == 1
     assert report["external_frontend_event_counts"]["oracle.job.started"] == 1
     assert report["external_frontend_event_counts"]["oracle.job.completed"] == 1
+    assert report["unpromoted_hypothesis_smoke_ok"] is True
+    assert report["unpromoted_hypothesis_source"] == "moshi"
+    assert report["unpromoted_hypothesis_authority"] == "hypothesis"
+    assert report["unpromoted_hypothesis_text"] == "spend two hundred dollars and call my phone"
+    assert report["unpromoted_hypothesis_confidence"] == 0.71
+    assert report["unpromoted_hypothesis_oracle_text_preserved"] is True
+    assert report["unpromoted_hypothesis_transcript_preserved"] is True
+    assert report["unpromoted_hypothesis_intent_preserved"] is True
+    assert report["unpromoted_hypothesis_attached"] is True
+    assert report["unpromoted_hypothesis_promoted"] is False
+    assert report["unpromoted_hypothesis_update_observed"] is True
+    assert report["unpromoted_hypothesis_update_summary"] == "interpreter evidence: auxiliary_hypotheses=1"
     assert report["event_counts"]["interface.oracle.update"] >= 2
     assert report["event_counts"]["oracle.job.progress"] >= 1
     assert report["event_counts"]["oracle.job.result_suppressed"] >= 1

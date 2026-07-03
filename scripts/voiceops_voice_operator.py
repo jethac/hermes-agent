@@ -127,6 +127,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_kame_engine_can_reprioritize_queued_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_update_to_queued_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_does_not_promote_moshi_only_queued_evidence",
         "tests/agent/test_realtime_voice.py::test_kame_engine_merges_sequential_queued_transcript_hypotheses_before_start",
         "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_update_to_running_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_interpreter_evidence_to_running_async_oracle_job",
@@ -1530,6 +1531,15 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("running_update_latest_update_visible") is True
         and smoke.get("running_update_reached_oracle") is True
         and smoke.get("running_update_delivery_metadata_ok") is True,
+        "transcript_hypotheses_remain_unpromoted": smoke.get("unpromoted_hypothesis_smoke_ok") is True
+        and smoke.get("unpromoted_hypothesis_source") == "moshi"
+        and smoke.get("unpromoted_hypothesis_authority") == "hypothesis"
+        and smoke.get("unpromoted_hypothesis_oracle_text_preserved") is True
+        and smoke.get("unpromoted_hypothesis_transcript_preserved") is True
+        and smoke.get("unpromoted_hypothesis_intent_preserved") is True
+        and smoke.get("unpromoted_hypothesis_attached") is True
+        and smoke.get("unpromoted_hypothesis_promoted") is False
+        and smoke.get("unpromoted_hypothesis_update_observed") is True,
         "external_frontend_bridge_submits_oracle_job": smoke.get("external_frontend_bridge_smoke_ok") is True
         and smoke.get("external_frontend_request_accepted") is True
         and smoke.get("external_frontend_tool_result_observed") is True
@@ -1723,6 +1733,13 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
         "job_control_updates_reach_oracle": _async_oracle_acceptance_row(
             ok=smoke_ok and bool(async_oracle_coverage.get("job_control_updates_reach_oracle")),
             evidence="async_oracle_smoke_plus_control_tests",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["control_updates"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "transcript_hypotheses_stay_non_authoritative": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("transcript_hypotheses_remain_unpromoted")),
+            evidence="async_oracle_smoke_plus_interpreter_authority_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["control_updates"],
             verification_mode="loopback_smoke_plus_focused_tests",
             runtime_verified_by_this_report=True,
@@ -2187,6 +2204,37 @@ def build_voice_operator_report(
             "external_frontend_event_counts": dict(
                 async_oracle_smoke.get("external_frontend_event_counts") or {}
             ),
+            "unpromoted_hypothesis_smoke_ok": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_smoke_ok")
+            ),
+            "unpromoted_hypothesis_job_id": async_oracle_smoke.get("unpromoted_hypothesis_job_id"),
+            "unpromoted_hypothesis_source": async_oracle_smoke.get("unpromoted_hypothesis_source"),
+            "unpromoted_hypothesis_authority": async_oracle_smoke.get("unpromoted_hypothesis_authority"),
+            "unpromoted_hypothesis_text": async_oracle_smoke.get("unpromoted_hypothesis_text"),
+            "unpromoted_hypothesis_confidence": async_oracle_smoke.get(
+                "unpromoted_hypothesis_confidence"
+            ),
+            "unpromoted_hypothesis_oracle_text_preserved": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_oracle_text_preserved")
+            ),
+            "unpromoted_hypothesis_transcript_preserved": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_transcript_preserved")
+            ),
+            "unpromoted_hypothesis_intent_preserved": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_intent_preserved")
+            ),
+            "unpromoted_hypothesis_attached": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_attached")
+            ),
+            "unpromoted_hypothesis_promoted": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_promoted")
+            ),
+            "unpromoted_hypothesis_update_observed": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_update_observed")
+            ),
+            "unpromoted_hypothesis_update_summary": async_oracle_smoke.get(
+                "unpromoted_hypothesis_update_summary"
+            ),
             "audit_scalar_smoke_ok": bool(async_oracle_smoke.get("audit_scalar_smoke_ok")),
             "audit_scalar_payload_redacted": bool(async_oracle_smoke.get("audit_scalar_payload_redacted")),
             "audit_scalar_secret_canary_checked": bool(
@@ -2299,6 +2347,9 @@ def build_voice_operator_report(
             ],
             "async_oracle_external_frontend_bridge": async_oracle_coverage[
                 "external_frontend_bridge_submits_oracle_job"
+            ],
+            "async_oracle_transcript_hypotheses_unpromoted": async_oracle_coverage[
+                "transcript_hypotheses_remain_unpromoted"
             ],
             "async_oracle_late_cancelled_output_dropped": async_oracle_coverage["late_cancelled_output_not_spoken"],
             "async_oracle_late_cancelled_output_not_durable": async_oracle_coverage[
@@ -2421,6 +2472,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "cancel_drain_holds_capacity",
         "failed_job_reported_without_crash",
         "job_control_updates_reach_oracle",
+        "transcript_hypotheses_remain_unpromoted",
         "external_frontend_bridge_submits_oracle_job",
         "result_handling_bounded_and_durable",
         "discord_session_cleanup_preserves_oracle_state",
