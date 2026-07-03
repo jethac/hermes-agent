@@ -99,6 +99,12 @@ attach to that bundle with source and authority labels. A field called "Moshi
 STT" is still stored as a hypothesis: useful context for Gemma, not the user
 message of record.
 
+If a VoiceClaw/OpenClaw/Moshi-compatible frontend can only provide text, the
+demo should label that turn as degraded compatibility mode. That path can be
+useful for bring-up, but it is not full raw-audio KAME and should not be used
+as proof for Stripe spend, NemoClaw execution, phone-call payloads, or local
+Spark readiness.
+
 The right mental model is witness context. Moshi/OpenClaw/VoiceClaw text tells
 Gemma what the realtime frontend believed it heard. That is valuable evidence,
 especially for clipped starts, names, numbers, and code-switched speech, but it
@@ -162,6 +168,9 @@ The final voice architecture should separate low-latency conversational reflexes
   bundle, not a parallel conversation. It must not become `oracle_text`, a spend
   reason, a call payload, or durable user text unless interpreter/oracle judgment
   promotes it.
+- The interpreter prompt must explicitly tell Gemma that raw audio is primary
+  and that witness transcripts are clues about what the frontend believed it
+  heard, not authoritative user messages.
 
 The immediate hackathon build should favor the fastest stable reflex path for
 acknowledgement and turn-taking. Gemma should be used as an interpreter/evidence

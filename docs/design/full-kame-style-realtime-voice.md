@@ -96,6 +96,15 @@ the realtime interface believed it heard, while the waveform remains the
 primary evidence. This does not add a fourth agent, does not require classic
 ASR, and does not allow transcript-only scheduling when raw audio is available.
 
+2026-07-04 three-tier amendment: the field-aligned shape is reflex, interpreter,
+oracle. The reflex may be Moshi-like, VoiceClaw-like, or a simpler local
+floor-control model. It is allowed to emit a transcript-looking witness, but
+that witness is context for the interpreter, not the interpreter itself. Gemma
+receives the clipped waveform, VAD/energy timing, reflex route, spoken
+acknowledgement, and all witness transcript hypotheses in one bundle, then
+promotes or rejects wording for the active Hermes oracle. If the raw waveform is
+missing, the turn is degraded compatibility mode, not full KAME.
+
 ## Purpose
 
 Hermes currently has KAME-compatible realtime voice plumbing: Discord voice transport, a realtime sidecar, streaming STT/TTS provider bridges, barge-in handling, mixer playback, and latency metrics. It is not yet a full KAME-style implementation because there is no lightweight, low-latency interface model acting as the human-facing conversational front end.
@@ -369,6 +378,10 @@ Lifecycle rules:
   `interpreter_promoted` or later `oracle_promoted` authority
 - text-only external `ask_brain` calls remain compatibility inputs; they are
   useful, but they do not satisfy the full raw-audio KAME interpreter path
+- the interpreter bundle must carry a `degraded_reason` when raw audio is
+  missing, unavailable, clipped below the configured evidence floor, or rejected
+  by speaker/energy checks; degraded turns may draft or ask clarifications, but
+  they cannot satisfy readiness or high-risk action gates on witness text alone
 
 ## Model Assumptions To Validate
 
@@ -483,6 +496,14 @@ This is the answer to the "can we provide the Moshi STT transcript as context
 along with raw voice?" question: yes, that is exactly the desired packet shape.
 The raw voice clip and timing metadata are the primary interpreter evidence;
 Moshi/open-S2S text is a labeled clue that Gemma may accept, correct, or reject.
+
+The prompt should make that visible to Gemma in plain language: "The audio is
+primary. The witness transcript is what the frontend believed it heard. Use it
+as a clue, especially for clipped prefixes, names, numbers, and code-switching,
+but reject it when it conflicts with the waveform, speaker, energy timing, or
+conversation state." That instruction belongs in the interpreter prompt, not in
+the oracle prompt, because Hermes' active `/model` should receive promoted
+evidence rather than raw witness text masquerading as the user message.
 
 Do not implement this as two conversations where one lane asks Hermes from raw
 audio and another lane asks Hermes from Moshi text. The frontend may emit
@@ -829,8 +850,14 @@ Acceptance gates:
 
 - a voice turn may acknowledge and create an oracle job without ASR evidence
 - Moshi/S2S transcript evidence must be labeled `authority = "hypothesis"`
+- Moshi/OpenClaw/VoiceClaw witness text is accepted only as interpreter context
+  joined to the same `turn_id` and `audio_segment_ref` as the raw audio
 - interpreter prompts must include raw audio whenever an audio segment is
   available, even when Moshi or ASR produced a complete-looking transcript
+- interpreter prompts explicitly identify witness transcripts as non-authority
+  and ask the model to compare them against raw audio before promotion
+- text-only VoiceClaw/OpenClaw compatibility requests are marked degraded when
+  no raw audio is available
 - oracle jobs must distinguish `reflex_transcript_hypothesis`,
   `auxiliary_transcript_hypotheses`, and `interpreter_corrected_transcript`
 - durable transcript writes and tool-critical arguments must use interpreter or

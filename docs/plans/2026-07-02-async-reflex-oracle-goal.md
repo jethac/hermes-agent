@@ -195,6 +195,14 @@ message of record. The interpreter receives the witness text and raw audio in
 one bundle and decides whether to promote, correct, reject, or downgrade it to
 diagnostic-only evidence.
 
+Three-tier rule: the desired implementation is reflex, interpreter, oracle. A
+Moshi/OpenClaw/VoiceClaw transcript-looking field is not a fourth tier and not a
+parallel STT conversation. It is witness evidence attached to the interpreter
+bundle. The reflex keeps floor control and acknowledgement fast; Gemma compares
+raw audio against witness text after the cut; Hermes' active `/model` acts only
+on promoted evidence. If the raw waveform is unavailable, the turn must be
+marked degraded compatibility mode and must not count as full KAME evidence.
+
 Action-authority rule: any Stripe, NemoClaw, provider provisioning, phone-call,
 memory, file, or external-message action that depends on spoken content must use
 `interpreter_promoted` or `oracle_promoted` evidence for the action text and

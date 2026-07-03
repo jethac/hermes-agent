@@ -88,6 +88,12 @@ Target KAME layout:
   distinct provenance-labeled fields. Only interpreter/oracle judgment can
   promote a transcript hypothesis into durable user text or tool-critical
   arguments.
+- Degraded compatibility: if a VoiceClaw/OpenClaw/Moshi-style frontend can
+  provide only text and no raw audio reference, Hermes may still draft,
+  clarify, or submit a low-risk compatibility request, but the turn must be
+  marked degraded. It cannot satisfy full KAME readiness, Stripe/NemoClaw/phone
+  action gates, or promoted transcript evidence without interpreter/oracle
+  promotion.
 - Merge point: the Gemma interpreter request is the normal merge point for raw
   audio plus transcript hypotheses. Moshi/S2S transcript output should be
   supplied as context beside the waveform, not as a replacement for the waveform
