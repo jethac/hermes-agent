@@ -13043,6 +13043,116 @@ def test_session_client_interface_oracle_request_submits_external_kame_job(monke
     asyncio.run(run())
 
 
+def test_session_client_interface_oracle_request_preserves_nested_evidence_bundle(monkeypatch):
+    class BlockingOracle:
+        def __init__(self):
+            self.requests = []
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.started.set()
+            await self.release.wait()
+            yield "I preserved the nested evidence bundle."
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            pass
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = BlockingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+            ),
+            engine=engine,
+        )
+        await session.start()
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "tool": "ask_brain",
+                    "tool_call_id": "voiceclaw-call-1",
+                    "source": "voiceclaw",
+                    "turn_id": "voice-123:voiceclaw:7",
+                    "arguments": {
+                        "query": "prepare the phone handoff",
+                        "transcript": "repair the phone handoff",
+                        "transcript_source": "voiceclaw",
+                        "transcript_confidence": 0.57,
+                        "audio_segment_ref": "artifact://voice/turn-7.wav",
+                        "audio_time_range_ms": [120, 1840],
+                        "reflex_transcript_hypothesis": "prepare the phone handoff",
+                        "auxiliary_transcript_hypotheses": [
+                            {
+                                "source": "moshi",
+                                "text": "prepare phone hand off",
+                                "confidence": 0.61,
+                            }
+                        ],
+                        "interface_already_said": "I'm preparing the handoff.",
+                    },
+                },
+            )
+        )
+
+        seen = []
+        async for event in session.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_STARTED:
+                break
+        await asyncio.wait_for(oracle.started.wait(), timeout=1)
+
+        request = oracle.requests[0]
+        assert request.source == "voiceclaw"
+        assert request.turn_id == "voice-123:voiceclaw:7"
+        assert request.interface_input_source == "ask_brain"
+        assert request.interface_tool_call_id == "voiceclaw-call-1"
+        assert request.oracle_text == "prepare the phone handoff"
+        assert request.transcript == ""
+        assert request.audio_segment_ref == "artifact://voice/turn-7.wav"
+        assert request.audio_time_range_ms == (120, 1840)
+        assert request.reflex_transcript_hypothesis == "prepare the phone handoff"
+        assert request.interface_already_said == "I'm preparing the handoff."
+        assert request.auxiliary_transcript_hypotheses == (
+            {
+                "source": "moshi",
+                "text": "prepare phone hand off",
+                "authority": "hypothesis",
+                "confidence": 0.61,
+            },
+            {
+                "source": "voiceclaw",
+                "text": "repair the phone handoff",
+                "authority": "hypothesis",
+                "confidence": 0.57,
+            },
+        )
+        metadata = request.to_metadata()
+        assert "tool_name" not in metadata
+        assert "arguments" not in metadata
+
+        tool_result = next(event for event in seen if event.type == VoiceEventType.TOOL_RESULT)
+        assert tool_result.payload["tool_call_id"] == "voiceclaw-call-1"
+        assert tool_result.payload["accepted"] is True
+
+        oracle.release.set()
+        async for event in session.events():
+            if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
+                break
+        await session.close()
+
+    asyncio.run(run())
+
+
 def test_reference_sidecar_kame_reflex_never_speaks_voice_denial_locally():
     payload = reference_sidecar_module._kame_reflex_payload_from_content(
         json.dumps(

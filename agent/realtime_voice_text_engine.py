@@ -715,44 +715,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         source = str(payload.get("provider") or payload.get("source") or payload.get("transport") or "").strip()
         if tool not in {"ask_brain", "ask_hermes_oracle", "agent_consult", "openclaw_agent_consult"}:
             return False
+        arguments = _external_kame_bridge_arguments(payload)
         response = await self.submit_external_brain_request(
             {
                 "tool_name": tool,
                 "tool_call_id": str(payload.get("tool_call_id") or ""),
-                "arguments": {
-                    "query": str(payload.get("text") or payload.get("query") or "").strip(),
-                    "intent": str(payload.get("intent") or payload.get("text") or payload.get("query") or "").strip(),
-                    "transcript": str(
-                        payload.get("transcript")
-                        or ""
-                    ).strip(),
-                    "audio_segment_ref": str(
-                        payload.get("audio_segment_ref")
-                        or payload.get("audio_ref")
-                        or payload.get("clipped_audio_ref")
-                        or payload.get("audio_artifact_ref")
-                        or ""
-                    ).strip(),
-                    "audio_time_range_ms": payload.get("audio_time_range_ms") or (),
-                    "reflex_transcript_hypothesis": str(
-                        payload.get("reflex_transcript_hypothesis") or ""
-                    ).strip(),
-                    "moshi_transcript_hypothesis": str(
-                        payload.get("moshi_transcript_hypothesis") or ""
-                    ).strip(),
-                    "s2s_transcript_hypothesis": str(
-                        payload.get("s2s_transcript_hypothesis") or ""
-                    ).strip(),
-                    "auxiliary_transcript_hypotheses": payload.get("auxiliary_transcript_hypotheses") or (),
-                    "interface_already_said": str(
-                        payload.get("interface_already_said")
-                        or payload.get("already_said")
-                        or payload.get("placeholder")
-                        or ""
-                    ).strip(),
-                    "conversation_summary": str(payload.get("conversation_summary") or "").strip(),
-                    "requested_response_style": payload.get("requested_response_style") or {},
-                },
+                "arguments": arguments,
             },
             turn_id=str(payload.get("turn_id") or ""),
             source=source or "external_kame_frontend",
@@ -3555,6 +3523,79 @@ def _playback_generation_from_turn_id(turn_id: str) -> int:
 
 def _external_kame_turn_id(session_id: str) -> str:
     return f"{session_id}:external:{time.time_ns()}"
+
+
+def _external_kame_bridge_arguments(payload: Mapping[str, Any]) -> dict[str, Any]:
+    arguments: dict[str, Any] = {}
+    raw_arguments = payload.get("arguments")
+    if isinstance(raw_arguments, Mapping):
+        arguments.update(raw_arguments)
+    elif isinstance(raw_arguments, str):
+        try:
+            decoded = json.loads(raw_arguments)
+        except json.JSONDecodeError:
+            decoded = None
+        if isinstance(decoded, Mapping):
+            arguments.update(decoded)
+
+    _overlay_first_text(arguments, payload, "query", ("text", "query"))
+    _overlay_first_text(arguments, payload, "intent", ("intent", "text", "query"))
+    _overlay_first_text(arguments, payload, "transcript", ("transcript",))
+    _overlay_first_text(
+        arguments,
+        payload,
+        "audio_segment_ref",
+        ("audio_segment_ref", "audio_ref", "clipped_audio_ref", "audio_artifact_ref"),
+    )
+    _overlay_first_value(arguments, payload, "audio_time_range_ms", ("audio_time_range_ms",))
+    _overlay_first_text(arguments, payload, "reflex_transcript_hypothesis", ("reflex_transcript_hypothesis",))
+    _overlay_first_text(arguments, payload, "moshi_transcript_hypothesis", ("moshi_transcript_hypothesis",))
+    _overlay_first_text(arguments, payload, "s2s_transcript_hypothesis", ("s2s_transcript_hypothesis",))
+    _overlay_first_value(
+        arguments,
+        payload,
+        "auxiliary_transcript_hypotheses",
+        ("auxiliary_transcript_hypotheses",),
+    )
+    _overlay_first_text(
+        arguments,
+        payload,
+        "interface_already_said",
+        ("interface_already_said", "already_said", "placeholder"),
+    )
+    _overlay_first_text(arguments, payload, "conversation_summary", ("conversation_summary",))
+    _overlay_first_value(arguments, payload, "requested_response_style", ("requested_response_style",))
+    return arguments
+
+
+def _overlay_first_text(
+    target: dict[str, Any],
+    source: Mapping[str, Any],
+    target_key: str,
+    source_keys: tuple[str, ...],
+) -> None:
+    for key in source_keys:
+        value = source.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            target[target_key] = text
+            return
+
+
+def _overlay_first_value(
+    target: dict[str, Any],
+    source: Mapping[str, Any],
+    target_key: str,
+    source_keys: tuple[str, ...],
+) -> None:
+    for key in source_keys:
+        value = source.get(key)
+        if value in (None, "", (), [], {}):
+            continue
+        target[target_key] = value
+        return
 
 
 def _kame_interface_payload(request: KameOracleRequest, playback_generation: int) -> dict[str, Any]:
