@@ -1318,6 +1318,15 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if request is None:
             raise RuntimeError("oracle job is missing its KAME request")
         request = _oracle_request_for_job(job, request)
+        manager = self._oracle_job_manager
+        if manager is not None and _job_has_queued_interpreter_evidence(job):
+            with contextlib.suppress(OracleJobNotFoundError):
+                await manager.mark_latest_interpreter_evidence_delivery(
+                    job.job_id,
+                    delivered_to_oracle=True,
+                    consumed_before_irreversible_action=True,
+                    delivery_status="included_in_initial_oracle_request",
+                )
         metadata = dict(job.metadata)
         metadata.update(request.to_metadata())
         oracle = self._oracle or NullRealtimeOracle()
@@ -3684,6 +3693,17 @@ def _oracle_request_for_job(job: OracleJob, request: KameOracleRequest) -> KameO
         priority=job.priority,
         job_updates=updates,
     )
+
+
+def _job_has_queued_interpreter_evidence(job: OracleJob) -> bool:
+    if not job.interpreter_evidence:
+        return False
+    latest = job.interpreter_evidence[-1]
+    if not isinstance(latest, Mapping):
+        return False
+    if bool(latest.get("late")):
+        return False
+    return "delivered_to_oracle" not in latest
 
 
 def _oracle_request_with_queued_interpreter_evidence(

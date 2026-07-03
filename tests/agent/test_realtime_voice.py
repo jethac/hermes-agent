@@ -3380,6 +3380,19 @@ def test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job(mo
         else:
             assert False, [(event.type.value, event.payload) for event in seen]
         await oracle.wait_for_requests(2)
+        for _ in range(16):
+            event = await asyncio.wait_for(engine.events().__anext__(), timeout=1)
+            seen.append(event)
+            if (
+                event.type == VoiceEventType.ORACLE_JOB_PROGRESS
+                and event.payload.get("operation") == "interpreter_evidence_delivery"
+                and event.payload.get("job_id") == "voice-oracle-002"
+            ):
+                break
+        else:
+            assert False, [(event.type.value, event.payload) for event in seen]
+        status = await engine.get_oracle_job_status()
+        queued_job_status = next(job for job in status["jobs"] if job["job_id"] == "voice-oracle-002")
 
         await engine.close()
         evidence = next(
@@ -3388,6 +3401,13 @@ def test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job(mo
             if event.type == VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_ATTACHED
         )
         update = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE)
+        delivery = next(
+            event
+            for event in seen
+            if event.type == VoiceEventType.ORACLE_JOB_PROGRESS
+            and event.payload.get("operation") == "interpreter_evidence_delivery"
+            and event.payload.get("job_id") == "voice-oracle-002"
+        )
         assert evidence.payload["job_id"] == "voice-oracle-002"
         assert evidence.payload["interpreter_evidence_late"] is False
         assert update.payload["job_id"] == "voice-oracle-002"
@@ -3403,6 +3423,12 @@ def test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job(mo
             "latest_interpreter_evidence"
         ]
         assert "audio=attached" in update.payload["latest_interpreter_evidence"]
+        assert delivery.payload["interpreter_evidence_delivered_to_oracle"] is True
+        assert delivery.payload["interpreter_evidence_consumed_before_irreversible_action"] is True
+        assert delivery.payload["interpreter_evidence_delivery_status"] == "included_in_initial_oracle_request"
+        assert queued_job_status["interpreter_evidence_delivered_to_oracle"] is True
+        assert queued_job_status["interpreter_evidence_consumed_before_irreversible_action"] is True
+        assert queued_job_status["interpreter_evidence_delivery_status"] == "included_in_initial_oracle_request"
         assert oracle.requests[1].intent == "answer a math question"
         assert oracle.requests[1].intent_source == "gemma_interpreter"
         assert oracle.requests[1].oracle_text == "what is three to the power of seventeen"
