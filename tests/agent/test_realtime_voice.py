@@ -13102,6 +13102,8 @@ def test_external_kame_ask_brain_bridge_becomes_oracle_request():
     assert metadata["voice_architecture"] == "kame_frontend_oracle"
     assert metadata["kame_interface_input_source"] == "ask_brain"
     assert metadata["kame_interface_tool_call_id"] == "call-voiceclaw-1"
+    assert metadata["kame_raw_audio_available"] is False
+    assert metadata["kame_evidence_bundle_status"] == "degraded_text_only"
     assert metadata["kame_reflex_transcript_hypothesis"] == "use my Stripe budget to prepare a VoIP provisioning plan"
     assert metadata["kame_reflex_transcript_source"] == "reflex_audio"
     assert metadata["kame_transcript_hypotheses"] == (
@@ -13218,6 +13220,8 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
     }
     assert request.audio_segment_ref == "artifact://voiceclaw/turn-42.wav"
     assert request.audio_time_range_ms == (120, 1840)
+    assert request.raw_audio_available is True
+    assert request.evidence_bundle_status == "primary_audio"
     assert request.audio_metadata == {
         "audio_segment_ref": "artifact://voiceclaw/turn-42.wav",
         "time_range_ms": (120, 1840),
@@ -13269,6 +13273,8 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
         },
     )
     assert metadata["kame_audio"] == request.audio_metadata
+    assert metadata["kame_raw_audio_available"] is True
+    assert metadata["kame_evidence_bundle_status"] == "primary_audio"
     assert metadata["kame_speaker"] == request.speaker_metadata
     assert metadata["kame_channel"] == request.channel_metadata
     assert "must-not-copy" not in str(metadata)
@@ -13535,10 +13541,15 @@ def test_external_kame_brain_request_submits_oracle_job_without_waiting(monkeypa
             if event.type == VoiceEventType.ORACLE_JOB_STARTED:
                 break
         await asyncio.wait_for(oracle.started.wait(), timeout=1)
+        started = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_STARTED)
+        assert started.payload["raw_audio_available"] is False
+        assert started.payload["evidence_bundle_status"] == "degraded_text_only"
         assert not any(event.type == VoiceEventType.ORACLE_JOB_COMPLETED for event in seen)
         assert oracle.requests[0].source == "voiceclaw"
         assert oracle.requests[0].interface_input_source == "ask_brain"
         assert oracle.requests[0].oracle_text == "prepare a VoIP provisioning plan"
+        assert oracle.requests[0].raw_audio_available is False
+        assert oracle.requests[0].evidence_bundle_status == "degraded_text_only"
         assert oracle.requests[0].transcript == ""
         assert oracle.requests[0].auxiliary_transcript_hypotheses[0]["text"] == "prepare a voip provisioning plan"
         assert oracle.requests[0].auxiliary_transcript_hypotheses[0]["authority"] == "hypothesis"
@@ -13877,6 +13888,8 @@ def test_session_client_interface_oracle_request_preserves_nested_evidence_bundl
         assert request.oracle_text == "prepare the phone handoff"
         assert request.transcript == ""
         assert request.audio_segment_ref == "artifact://voice/turn-7.wav"
+        assert request.raw_audio_available is True
+        assert request.evidence_bundle_status == "primary_audio"
         assert request.audio_time_range_ms == (120, 1840)
         assert request.reflex_transcript_hypothesis == "prepare the phone handoff"
         assert request.interface_already_said == "I'm preparing the handoff."

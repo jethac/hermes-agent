@@ -136,6 +136,9 @@ class OracleJob:
                 status["approval"] = _compact_approval_payload(self.approval)
         if self.interface_tool_call_id:
             status["interface_tool_call_id"] = self.interface_tool_call_id
+        if self.request is not None:
+            status["raw_audio_available"] = self.request.raw_audio_available
+            status["evidence_bundle_status"] = self.request.evidence_bundle_status
         if self.audio_segment_ref:
             status["audio_segment_ref"] = self.audio_segment_ref
         if self.audio_time_range_ms:

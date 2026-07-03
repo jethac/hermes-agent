@@ -419,6 +419,26 @@ class KameOracleRequest:
     reflex_provider: str = ""
 
     @property
+    def raw_audio_available(self) -> bool:
+        """Return whether this request carries primary raw-audio evidence."""
+
+        return bool(self.audio_segment_ref or self.audio_metadata)
+
+    @property
+    def evidence_bundle_status(self) -> str:
+        """Return the request's interpreter-evidence completeness class."""
+
+        if self.raw_audio_available:
+            return "primary_audio"
+        if self.interface_audio_input_fallback:
+            return "fallback_text_only"
+        if _optional_text(self.interface_input_source) in KAME_FRONTEND_BRAIN_BRIDGE_NAMES:
+            return "degraded_text_only"
+        if _optional_text(self.source) in {"external_kame_frontend", "voiceclaw", "openclaw_talk"}:
+            return "degraded_text_only"
+        return "degraded_no_raw_audio"
+
+    @property
     def oracle_text(self) -> str:
         """Return promoted text for the user's oracle-facing message."""
 
@@ -557,6 +577,8 @@ class KameOracleRequest:
             "kame_mode": self.mode,
             "kame_urgency": self.urgency,
             "kame_oracle_text_source": self.oracle_text_source,
+            "kame_raw_audio_available": self.raw_audio_available,
+            "kame_evidence_bundle_status": self.evidence_bundle_status,
             "kame_evidence_authority": dict(self.evidence_authority),
             "max_spoken_sentences": self.max_spoken_sentences,
             "voice_response_policy": response_style.get("policy") or "sentence_cap",

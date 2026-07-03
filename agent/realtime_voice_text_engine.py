@@ -3460,6 +3460,8 @@ def _oracle_job_payload(job: OracleJob) -> dict[str, Any]:
                 "playback_generation": playback_generation,
                 "intent_source": request.intent_source,
                 "oracle_text_source": request.oracle_text_source,
+                "raw_audio_available": request.raw_audio_available,
+                "evidence_bundle_status": request.evidence_bundle_status,
             }
         )
         if request.user_id:
@@ -3701,6 +3703,8 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
         "intent_source": request.intent_source,
         "text": request.oracle_text,
         "oracle_text_source": request.oracle_text_source,
+        "raw_audio_available": request.raw_audio_available,
+        "evidence_bundle_status": request.evidence_bundle_status,
         "playback_generation": playback_generation,
         "source": request.source,
         "mode": request.mode,
