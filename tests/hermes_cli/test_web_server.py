@@ -8137,6 +8137,122 @@ class TestRealtimeVoiceWebSocket:
         assert body["engine"] == "text_oracle_tts"
         assert body["sidecar"]["mode"] == "none"
         assert body["sidecar"]["healthy"] is None
+        assert body["oracle_job_state"]["active_sessions"] == 0
+
+    def test_status_reports_live_oracle_job_state_from_active_sessions(self, monkeypatch):
+        monkeypatch.setattr(
+            self.ws_module,
+            "load_config",
+            lambda: {
+                "voice": {
+                    "realtime": {
+                        "enabled": True,
+                        "engine": "kame_interface_oracle",
+                        "oracle_jobs": {
+                            "enabled": True,
+                            "max_concurrent": 4,
+                            "queue_limit": 16,
+                        },
+                    }
+                }
+            },
+        )
+
+        class FakeSession:
+            async def get_oracle_job_status(self):
+                return {
+                    "enabled": True,
+                    "capacity": {
+                        "active": 2,
+                        "running": 1,
+                        "max_concurrent": 4,
+                        "queued": 1,
+                        "queue_limit": 16,
+                        "waiting_for_approval": 1,
+                        "cancel_requested": 0,
+                    },
+                    "jobs": [
+                        {
+                            "job_id": "voice-oracle-raw",
+                            "state": "running",
+                            "oracle_text": "raw oracle prompt should not leak",
+                            "metadata": {"secret": "not for status"},
+                        }
+                    ],
+                    "reflex": {
+                        "capacity": {
+                            "active": 2,
+                            "running": 1,
+                            "max_concurrent": 4,
+                            "queued": 1,
+                            "queue_limit": 16,
+                            "waiting_for_approval": 1,
+                            "cancel_requested": 0,
+                        },
+                        "jobs": [
+                            {
+                                "ordinal": "job one",
+                                "job_id": "voice-oracle-001",
+                                "state": "running",
+                                "priority": "high",
+                                "spoken_status": "checking provisioning",
+                            },
+                            {
+                                "ordinal": "job two",
+                                "job_id": "voice-oracle-002",
+                                "state": "waiting_for_approval",
+                                "priority": "normal",
+                                "spoken_status": "waiting on spend approval",
+                                "approval_reason": "Stripe spend approval",
+                            },
+                        ],
+                        "more_jobs": 1,
+                    },
+                }
+
+        session = FakeSession()
+        self.ws_module._register_realtime_voice_session("voice-live-status", session)
+        try:
+            response = self.client.get("/api/voice/realtime/status")
+        finally:
+            self.ws_module._unregister_realtime_voice_session("voice-live-status", session)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["oracle_jobs"]["enabled"] is True
+        assert body["oracle_jobs"]["max_concurrent"] == 4
+        assert body["oracle_job_state"]["active_sessions"] == 1
+        assert body["oracle_job_state"]["capacity"] == {
+            "active": 2,
+            "running": 1,
+            "max_concurrent": 4,
+            "queued": 1,
+            "queue_limit": 16,
+            "waiting_for_approval": 1,
+            "cancel_requested": 0,
+        }
+        live_session = body["oracle_job_state"]["sessions"][0]
+        assert live_session["session_id"] == "voice-live-status"
+        assert live_session["reflex"]["jobs"] == [
+            {
+                "ordinal": "job one",
+                "job_id": "voice-oracle-001",
+                "state": "running",
+                "priority": "high",
+                "spoken_status": "checking provisioning",
+            },
+            {
+                "ordinal": "job two",
+                "job_id": "voice-oracle-002",
+                "state": "waiting_for_approval",
+                "priority": "normal",
+                "spoken_status": "waiting on spend approval",
+                "approval_reason": "Stripe spend approval",
+            },
+        ]
+        assert "jobs" not in live_session
+        assert "oracle_text" not in json.dumps(body["oracle_job_state"])
+        assert "secret" not in json.dumps(body["oracle_job_state"])
 
     def test_status_reports_managed_loopback_sidecar_available_before_start(self, monkeypatch):
         def fake_urlopen(url, timeout):

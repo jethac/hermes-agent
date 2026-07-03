@@ -15452,6 +15452,7 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
     metrics_policy = _realtime_voice_metrics_policy_payload(realtime)
     output_events_policy = _realtime_voice_output_events_payload(realtime)
     base_url = _realtime_voice_sidecar_base_url(realtime)
+    oracle_jobs_policy = _realtime_voice_oracle_jobs_payload(realtime)
     connect_timeout_seconds = _positive_float_config(
         realtime.get("sidecar_connect_timeout_seconds"),
         default=10.0,
@@ -15663,6 +15664,8 @@ def _realtime_voice_status_payload(*, probe_health: bool = True) -> Dict[str, An
         "routing": routing_policy,
         "metrics": metrics_policy,
         "output_events": output_events_policy,
+        "oracle_jobs": oracle_jobs_policy,
+        "oracle_job_state": _empty_realtime_voice_oracle_job_state(oracle_jobs_policy),
         "conversation_quality": conversation_quality,
         "production_readiness": production_readiness,
         "kame_stack": kame_stack,
@@ -16578,6 +16581,139 @@ def _realtime_voice_config_from_request(ws: WebSocket):
 
 _REALTIME_VOICE_AUDIO_SEND_TIMEOUT_SECONDS = 2.0
 _REALTIME_VOICE_EVENT_SEND_TIMEOUT_SECONDS = 2.0
+_REALTIME_VOICE_ACTIVE_SESSIONS: Dict[str, Any] = {}
+_REALTIME_VOICE_ACTIVE_SESSIONS_LOCK = threading.RLock()
+
+
+def _register_realtime_voice_session(session_id: str, session: Any) -> None:
+    session_key = str(session_id or "").strip()
+    if not session_key:
+        return
+    with _REALTIME_VOICE_ACTIVE_SESSIONS_LOCK:
+        _REALTIME_VOICE_ACTIVE_SESSIONS[session_key] = session
+
+
+def _unregister_realtime_voice_session(session_id: str, session: Any) -> None:
+    session_key = str(session_id or "").strip()
+    if not session_key:
+        return
+    with _REALTIME_VOICE_ACTIVE_SESSIONS_LOCK:
+        existing = _REALTIME_VOICE_ACTIVE_SESSIONS.get(session_key)
+        if existing is session:
+            _REALTIME_VOICE_ACTIVE_SESSIONS.pop(session_key, None)
+
+
+def _empty_realtime_voice_oracle_job_state(policy: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+    policy = policy if isinstance(policy, Mapping) else {}
+    return {
+        "active_sessions": 0,
+        "sessions": [],
+        "capacity": {
+            "active": 0,
+            "running": 0,
+            "max_concurrent": int(policy.get("max_concurrent") or 0),
+            "queued": 0,
+            "queue_limit": int(policy.get("queue_limit") or 0),
+            "waiting_for_approval": 0,
+            "cancel_requested": 0,
+        },
+    }
+
+
+def _aggregate_realtime_voice_capacity(items: Sequence[Mapping[str, Any]], policy: Mapping[str, Any]) -> Dict[str, int]:
+    keys = (
+        "active",
+        "running",
+        "max_concurrent",
+        "queued",
+        "queue_limit",
+        "waiting_for_approval",
+        "cancel_requested",
+    )
+    capacity = {key: 0 for key in keys}
+    for item in items:
+        raw = item.get("capacity") if isinstance(item, Mapping) else {}
+        raw = raw if isinstance(raw, Mapping) else {}
+        for key in keys:
+            capacity[key] += int(raw.get(key) or 0)
+    if not items:
+        capacity["max_concurrent"] = int(policy.get("max_concurrent") or 0)
+        capacity["queue_limit"] = int(policy.get("queue_limit") or 0)
+    return capacity
+
+
+def _safe_realtime_voice_oracle_session_state(session_id: str, status: Mapping[str, Any]) -> Dict[str, Any]:
+    capacity = status.get("capacity") if isinstance(status, Mapping) else {}
+    capacity = capacity if isinstance(capacity, Mapping) else {}
+    reflex = status.get("reflex") if isinstance(status, Mapping) else {}
+    reflex = reflex if isinstance(reflex, Mapping) else {}
+    jobs = reflex.get("jobs") if isinstance(reflex.get("jobs"), list) else []
+    return {
+        "session_id": session_id,
+        "enabled": status.get("enabled") is True,
+        "capacity": {
+            "active": int(capacity.get("active") or 0),
+            "running": int(capacity.get("running") or 0),
+            "max_concurrent": int(capacity.get("max_concurrent") or 0),
+            "queued": int(capacity.get("queued") or 0),
+            "queue_limit": int(capacity.get("queue_limit") or 0),
+            "waiting_for_approval": int(capacity.get("waiting_for_approval") or 0),
+            "cancel_requested": int(capacity.get("cancel_requested") or 0),
+        },
+        "reflex": {
+            "capacity": dict(reflex.get("capacity") if isinstance(reflex.get("capacity"), Mapping) else {}),
+            "jobs": [dict(job) for job in jobs if isinstance(job, Mapping)],
+            "more_jobs": int(reflex.get("more_jobs") or 0),
+        },
+    }
+
+
+async def _realtime_voice_oracle_job_state_payload(
+    policy: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    policy = policy if isinstance(policy, Mapping) else {}
+    with _REALTIME_VOICE_ACTIVE_SESSIONS_LOCK:
+        sessions = list(_REALTIME_VOICE_ACTIVE_SESSIONS.items())
+    if not sessions:
+        return _empty_realtime_voice_oracle_job_state(policy)
+
+    session_payloads: List[Dict[str, Any]] = []
+    for session_id, session in sessions:
+        getter = getattr(session, "get_oracle_job_status", None)
+        if not callable(getter):
+            continue
+        try:
+            status = getter()
+            if asyncio.iscoroutine(status) or hasattr(status, "__await__"):
+                status = await status
+        except Exception as exc:
+            session_payloads.append(
+                {
+                    "session_id": str(session_id),
+                    "enabled": False,
+                    "capacity": {
+                        "active": 0,
+                        "running": 0,
+                        "max_concurrent": 0,
+                        "queued": 0,
+                        "queue_limit": 0,
+                        "waiting_for_approval": 0,
+                        "cancel_requested": 0,
+                    },
+                    "reflex": {"capacity": {}, "jobs": [], "more_jobs": 0},
+                    "error": sanitize_realtime_voice_error(exc),
+                }
+            )
+            continue
+        if not isinstance(status, Mapping) or not status:
+            continue
+        session_payloads.append(_safe_realtime_voice_oracle_session_state(str(session_id), status))
+
+    return {
+        "active_sessions": len(session_payloads),
+        "sessions": session_payloads,
+        "capacity": _aggregate_realtime_voice_capacity(session_payloads, policy),
+    }
 
 
 def _realtime_voice_event_from_binary_frame(frame: bytes):
@@ -16767,7 +16903,11 @@ async def realtime_voice_smoke(
 @app.get("/api/voice/realtime/status")
 async def realtime_voice_status() -> Dict[str, Any]:
     """Return realtime voice capability and sidecar health for preflight UI."""
-    return _realtime_voice_status_payload()
+    payload = _realtime_voice_status_payload()
+    payload["oracle_job_state"] = await _realtime_voice_oracle_job_state_payload(
+        payload.get("oracle_jobs") if isinstance(payload.get("oracle_jobs"), Mapping) else {}
+    )
+    return payload
 
 
 @app.websocket("/api/voice/realtime")
@@ -16847,6 +16987,7 @@ async def realtime_voice_ws(ws: WebSocket) -> None:
         )
         await ws.close(code=1011, reason=_ws_close_reason(error))
         return
+    _register_realtime_voice_session(config.session_id, session)
 
     async def pump_events() -> None:
         from agent.realtime_voice import VoiceEventType, is_output_audio_event_type
@@ -16895,6 +17036,7 @@ async def realtime_voice_ws(ws: WebSocket) -> None:
             await event_task
         except (asyncio.CancelledError, Exception):
             pass
+        _unregister_realtime_voice_session(config.session_id, session)
         await session.close()
 
 

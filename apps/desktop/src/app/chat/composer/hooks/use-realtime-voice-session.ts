@@ -95,6 +95,47 @@ export interface RealtimeVoiceLanguageSupport {
   sidecar_languages_are_diagnostics?: boolean
 }
 
+export interface RealtimeVoiceOracleJobCapacity {
+  active?: number
+  cancel_requested?: number
+  max_concurrent?: number
+  queue_limit?: number
+  queued?: number
+  running?: number
+  waiting_for_approval?: number
+}
+
+export interface RealtimeVoiceOracleJobReflexItem {
+  approval_reason?: string
+  evidence_bundle_id?: string
+  evidence_bundle_status?: string
+  degraded_reason?: string
+  job_id?: string
+  ordinal?: number | string
+  ordinal_label?: string
+  priority?: string
+  spoken_status?: string
+  state?: string
+}
+
+export interface RealtimeVoiceOracleJobSessionState {
+  capacity?: RealtimeVoiceOracleJobCapacity
+  enabled?: boolean
+  error?: string
+  reflex?: {
+    capacity?: RealtimeVoiceOracleJobCapacity
+    jobs?: RealtimeVoiceOracleJobReflexItem[]
+    more_jobs?: number
+  }
+  session_id?: string
+}
+
+export interface RealtimeVoiceOracleJobState {
+  active_sessions?: number
+  capacity?: RealtimeVoiceOracleJobCapacity
+  sessions?: RealtimeVoiceOracleJobSessionState[]
+}
+
 export interface RealtimeVoiceStatus {
   available: boolean
   enabled: boolean
@@ -106,6 +147,7 @@ export interface RealtimeVoiceStatus {
   language_support?: RealtimeVoiceLanguageSupport
   pre_roll_ms?: number
   quality_targets_ms?: RealtimeVoiceQualityTargetsMs
+  oracle_job_state?: RealtimeVoiceOracleJobState
   require_live_like?: boolean
   silence_timeout_ms?: number
   speech_level_threshold?: number

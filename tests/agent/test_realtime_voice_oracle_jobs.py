@@ -1574,6 +1574,16 @@ async def test_status_view_reports_capacity_and_redacts_raw_metadata():
     assert "metadata" not in status["jobs"][0]
     assert "oracle_text" not in status["jobs"][0]
     assert status["reflex"]["capacity"] == status["capacity"]
+    expected_first_bundle_id = kame_evidence_bundle_id(
+        session_id="voice-session-1",
+        turn_id="turn:inspect deployment",
+        evidence_bundle_status="degraded_no_raw_audio",
+    )
+    expected_second_bundle_id = kame_evidence_bundle_id(
+        session_id="voice-session-1",
+        turn_id="turn:check stripe",
+        evidence_bundle_status="degraded_no_raw_audio",
+    )
     assert status["reflex"]["jobs"][0] == {
         "job_id": "voice-oracle-001",
         "state": "running",
@@ -1581,6 +1591,7 @@ async def test_status_view_reports_capacity_and_redacts_raw_metadata():
         "ordinal_label": "job one",
         "priority": "normal",
         "spoken_status": "I'm handling inspect deployment.",
+        "evidence_bundle_id": expected_first_bundle_id,
         "evidence_bundle_status": "degraded_no_raw_audio",
         "degraded_reason": "degraded_no_raw_audio",
     }
@@ -1591,6 +1602,7 @@ async def test_status_view_reports_capacity_and_redacts_raw_metadata():
         "ordinal_label": "job two",
         "priority": "normal",
         "spoken_status": "I'm handling check stripe.",
+        "evidence_bundle_id": expected_second_bundle_id,
         "evidence_bundle_status": "degraded_no_raw_audio",
         "degraded_reason": "degraded_no_raw_audio",
     }
