@@ -104,6 +104,13 @@ ASR should create a second oracle turn, overwrite `oracle_text` directly, or
 block acknowledgement. Only interpreter evidence or later oracle judgment may
 promote a hypothesis into durable user text or tool-critical arguments.
 
+For this goal, transcript evidence is a side-channel sensor, not a scheduler.
+It can arrive before, with, or after the interpreter result. The scheduler
+should preserve it with provenance, but should not wait for it when the reflex
+has already routed the turn and a raw-audio interpreter request is possible.
+The first available transcript is useful for latency analysis; it is not
+authority.
+
 The oracle is the worker. It owns:
 
 - tool execution
@@ -319,6 +326,12 @@ the job manager attaches it as a bounded update for tool-critical checks and
 final audit. That evidence may include the raw-audio interpretation, Moshi/S2S
 transcript hypotheses, and optional ASR hypotheses, but the raw audio plus
 interpreter judgment remains the higher-authority evidence path.
+
+Queued-job fold-in must keep the original hypothesis fields as evidence rather
+than deleting them. The oracle request should be able to show: "the reflex
+thought it heard X, Moshi/ASR suggested Y, Gemma promoted Z." That is the only
+way to debug missed prefixes, truncated turns, and hallucinated command text
+without bloating durable Hermes chat history.
 
 ### `oracle_direct`
 
@@ -641,6 +654,9 @@ Add a local smoke report mode that proves:
 - Gemma interpreter evidence can arrive after the reflex acknowledgement and
   before/after oracle job start without blocking the voice loop, using raw audio
   plus Moshi/S2S or ASR transcript hypotheses when available
+- interpreter evidence provenance survives queued and late updates:
+  raw-audio ref, time range, reflex hypothesis, auxiliary hypotheses, promoted
+  transcript, confidence, entities, and disagreement flags remain distinct
 - queued oracle job updates are visible in the reflex/status event stream
 - one job can be cancelled while others complete
 - queued oracle jobs can be cancelled before worker execution

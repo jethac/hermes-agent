@@ -348,6 +348,12 @@ You must be in a voice channel before running `/voice join`. The bot joins the s
 
 ### How It Works
 
+The flow below describes the legacy Discord voice path. The realtime/full-KAME
+path is different: a fast reflex handles floor control and acknowledgement,
+Gemma or another interpreter reviews clipped raw audio plus transcript
+hypotheses, and Hermes's active `/model` remains the oracle for tools, memory,
+and durable work.
+
 When the bot joins a voice channel, it:
 
 1. **Listens** to each user's audio stream independently
@@ -410,7 +416,10 @@ voice:
 
 # Speech-to-Text
 stt:
-  enabled: true                     # set to false to skip auto-transcription —
+  enabled: true                     # legacy one-shot or optional fallback evidence;
+                                    # full KAME does not require STT before the
+                                    # reflex can acknowledge or route a turn.
+                                    # set to false to skip auto-transcription —
                                     # the gateway still caches the audio file and
                                     # passes its path to the agent as part of the
                                     # inbound message, useful for custom pipelines

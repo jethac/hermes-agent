@@ -3,7 +3,7 @@
 Status: design draft
 Target branch: `wip/full-kame-reflex-voice`
 Target deployment: one DGX Spark, with cloud providers allowed only as bring-up fallbacks
-Preferred local reflex: Moshi/PersonaPlex-class fast S2S or smaller timing/noise-gated model
+Preferred local reflex: fastest stable floor-control model, such as Moshi/PersonaPlex-class S2S or a smaller timing/noise-gated model
 Preferred local interpreter: Gemma 4 E2B/E4B/12B audio-multimodal
 Preferred local oracle target: Hermes active `/model`, with Nemotron 3 Super as the first Spark-local NVIDIA target to validate
 
@@ -56,6 +56,14 @@ This split is what makes the system KAME-style. A direct Gemma audio request can
 help the interpreter, and a cloud STT/TTS bridge can prove transport behavior,
 but neither is the full reflex/oracle architecture by itself.
 
+The current design choice is deliberately not "Gemma as reflex" and not "ASR in
+front of the reflex." The reflex must be the fastest reliable live-audio loop we
+can run, even if it only produces a route, acknowledgement, and rough hypothesis.
+Gemma is the interpreter after the cut: it receives the waveform and any
+transcript-like side channels, then decides what wording is safe to offer to the
+oracle. This keeps the voice loop immediate without pretending an early
+transcript is ground truth.
+
 ## Signal Authority Rules
 
 The realtime stack may produce several text-like artifacts for one spoken turn.
@@ -83,6 +91,13 @@ If the reflex has enough signal to acknowledge or create a background oracle
 job, it should do so immediately. The interpreter can attach corrected evidence
 before the job starts, or as a bounded late update before irreversible spend,
 provisioning, message, memory, file, or call actions rely on the earlier text.
+
+Moshi/VoiceClaw/OpenClaw transcript output is especially valuable because it
+describes what the live interface model thought it heard at the moment it
+decided how to respond. That makes it better than a generic caption for
+debugging missed prefixes, code-switching, and hallucinated commands. It is
+still only a hypothesis. The correct packet shape is raw audio plus
+provenance-labeled hypotheses, not "pick whichever transcript arrived first."
 
 ## Model Assumptions To Validate
 
@@ -383,6 +398,12 @@ fallback, diagnostics, or literal-evidence checks.
 reflex decision delays oracle requests. Even then, transcript evidence remains
 an interpreter/oracle hypothesis input, not a reflex dependency and not a peer
 conversation path.
+
+`speculative` is also not a request to make ASR authoritative. It exists only to
+hide optional comparison latency behind the reflex decision. If speculative ASR
+or a Moshi transcript disagrees with raw-audio interpretation, the disagreement
+must be visible in interpreter evidence and the oracle request must prefer the
+interpreter-promoted wording for tool-critical arguments.
 
 Acceptance gates:
 
@@ -732,6 +753,7 @@ mode = "from_reflex"
 dedicated_asr_mode = "disabled"
 sources = ["reflex", "moshi"]
 # Add "asr" only for explicit fallback, diagnostics, or literal-evidence checks.
+promote_without_interpreter = false
 
 [voice.realtime.oracle]
 mode = "hermes_active_oracle"
@@ -801,6 +823,8 @@ The GUI environment page should expose provider/model/base URL settings for:
 - interpreter late-binding policy
 - transcript evidence mode: disabled, from_reflex, on_escalation, speculative,
   debug, or fallback
+- transcript evidence authority: hypotheses only; promotion requires
+  interpreter or oracle judgment
 - local oracle provider target and base URL, when registering a local endpoint for the active Hermes `/model` selection
 - auxiliary transcript provider/model
 - TTS provider/model/voice

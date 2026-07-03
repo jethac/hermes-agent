@@ -48,10 +48,11 @@ For the long-term household/business appliance, treat Nemotron 3 Super as the fi
 
 Target KAME layout:
 
-- Reflex/interface: a very fast always-warm voice model or classifier path,
-  such as Moshi/PersonaPlex-class S2S, optimized for turn-taking, barge-in,
-  immediate acknowledgement, and rough transcript hypotheses. This model owns
-  live floor control, not tool execution or durable transcript truth.
+- Reflex/interface: the fastest stable always-warm live-audio path available,
+  such as Moshi/PersonaPlex-class S2S or an even smaller timing/noise-gated
+  classifier path, optimized for turn-taking, barge-in, immediate
+  acknowledgement, and rough transcript hypotheses. This model owns live floor
+  control, not tool execution or durable transcript truth.
 - Interpreter/evidence: Gemma 4 E2B/E4B/12B-style audio-multimodal model,
   run non-blocking after each speech cut to adjudicate raw audio plus
   reflex/Moshi transcript hypotheses into corrected transcript, multilingual
@@ -75,6 +76,11 @@ Target KAME layout:
   supplied as context beside the waveform, not as a replacement for the waveform
   and not as a second oracle prompt. Classic ASR uses the same path only when
   enabled for fallback, diagnostics, or literal-evidence checks.
+- Promotion rule: no Moshi/S2S, VoiceClaw/OpenClaw, or classic ASR transcript
+  can become durable user text, `oracle_text`, a tool argument, a spend reason,
+  or a call/message payload without interpreter or oracle judgment. The
+  transcript that arrives first is never automatically the transcript of
+  record.
 - Fallbacks: hosted `/model` providers, Kimi, Cartesia, or other cloud providers are acceptable during bring-up and demos when they are labeled clearly.
 
 The public demo should prefer Nemotron 3 Super on Spark for sponsor fit while allowing a clearly labeled hosted fallback only if needed. The private appliance roadmap benchmarks Super and other Spark-friendly models for the local brain.
@@ -177,6 +183,11 @@ emits only audio or produces a hallucinated transcript, the system should still
 make floor-control decisions from live audio/VAD and let the interpreter decide
 what evidence is safe to pass to the oracle.
 
+This is why the Moshi transcript belongs beside the waveform rather than in
+front of the system. It can tell Gemma what the reflex believed it heard, but it
+must not force the oracle down a false path when the waveform, energy gate,
+speaker metadata, or later interpreter correction disagrees.
+
 This is the core KAME rule for VoiceOps: the live voice model may speak and
 route, the interpreter may promote evidence, and Hermes' active oracle may act.
 No transcript hypothesis from Moshi, VoiceClaw/OpenClaw, or classic ASR should
@@ -247,6 +258,8 @@ Target:
   hypotheses for multilingual correction and oracle evidence
 - dedicated classic ASR is an optional auxiliary transcript evidence lane and
   fallback, not the reflex driver
+- speculative ASR or S2S transcript capture may run to hide latency, but the
+  result stays a labeled hypothesis until interpreter/oracle promotion
 - local Nemotron Speech or equivalent streaming ASR only as optional fallback,
   diagnostic, caption, or literal-evidence hypothesis input
 - local Magpie/Riva-style TTS when available

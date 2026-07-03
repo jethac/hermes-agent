@@ -80,6 +80,12 @@ audio is primary interpreter evidence, Moshi/S2S and ASR text are labeled
 hypotheses, and only interpreter/oracle judgment can promote wording into a
 durable user request or tool-critical argument.
 
+For the demo narrative, this is an advantage rather than a complication: Hermes
+can acknowledge quickly from the reflex, then show the judges a safer evidence
+trail before spending money or placing a call. If a transcript side channel
+mishears the user, the artifact should show it as a rejected or corrected
+hypothesis instead of silently baking it into the action packet.
+
 ## Why This Fits The Hackathon
 
 The hackathon asks for agents that can earn, spend, and run real operations. This project demonstrates all three ingredients in a single workflow:
@@ -156,6 +162,10 @@ system heard the user.
   driver. Moshi transcript output is also a hypothesis, not durable truth, but
   it should be valuable context for Gemma when paired with the raw voice clip in
   the same evidence bundle.
+- The demo should not claim "ASR proved the command." The stronger claim is:
+  raw audio, reflex hypothesis, optional Moshi/ASR hypotheses, and Gemma
+  correction were preserved separately before any Stripe/NemoClaw/phone action
+  became eligible for approval.
 - The sidecar and gateway must run from the same worktree/version to avoid realtime voice protocol mismatches.
 
 ## Immediate Build Priorities

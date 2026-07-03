@@ -732,7 +732,7 @@ voice:
     sidecar_base_url: "http://127.0.0.1:8766"
     frontend_provider: "elevenlabs"   # optional
     frontend_model: ""                # optional
-    preferred_local_oracle_model: ""  # optional provider registration hint; /model still selects Hermes's oracle
+    preferred_local_oracle_model: ""   # optional display/evidence hint only; /model still selects Hermes's oracle
     tts_provider: ""                  # optional
 
 discord:
@@ -863,4 +863,3 @@ Leave `everyone` and `roles` at `false` unless you know exactly why you need the
 :::
 
 For more information on securing your Hermes Agent deployment, see the [Security Guide](../security.md).
-

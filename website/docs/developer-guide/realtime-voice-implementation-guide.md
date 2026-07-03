@@ -73,7 +73,7 @@ The voice inference process owns:
 
 This split is why `sidecar_base_url` remains server-side configuration. The desktop cannot point Hermes at an arbitrary inference host through query params, and public docs/settings should describe sidecars by capability (`sidecar`, `local`, `reference`, `gemma4`, `vllm`, `native_s2s`) rather than by a specific workstation or accelerator name.
 
-### Compatible Streaming STT Bridge
+### Portable STT/TTS Fallback Bridge
 
 The managed reference sidecar can bridge to a portable streaming STT service through:
 
@@ -88,7 +88,9 @@ The downstream service must expose `GET /health` with `{"ok": true, "capabilitie
 
 If `streaming_tts_base_url` is configured, the same reference sidecar probes the bridge for `capabilities.tts: true` and opens `/v1/streaming-tts/session` for assistant speech. It sends `assistant.text.partial` events with `speak: true`, relays `audio.output.chunk` events back to the desktop, and forwards `barge_in` so the TTS bridge can clear pending audio. This keeps low-latency output portable in the same way as streaming STT.
 
-This is intentionally not a Gemma/vLLM shortcut. A vLLM/Gemma chat-completions audio endpoint can improve utterance transcription, but it remains `utterance_stt` until it emits partial/final transcript events while audio is still arriving. Only a verified streaming STT bridge plus TTS, or a native S2S sidecar, can make `conversation_quality.live_like` true.
+This bridge is a fallback and provider-comparison path, not the full KAME control path. In full KAME mode, the reflex handles live floor control, Gemma receives clipped raw audio plus labeled transcript hypotheses, and Hermes's active `/model` remains the oracle. Streaming STT output is optional hypothesis evidence unless Hermes is explicitly running a text-oracle or fallback mode.
+
+This is intentionally not a Gemma/vLLM shortcut. A vLLM/Gemma chat-completions audio endpoint can improve utterance interpretation, but it remains a buffered interpreter path until it emits live reflex decisions while audio is still arriving. Streaming STT plus TTS can make a useful text-oracle fallback, but the target production KAME claim requires a reflex, a raw-audio interpreter, and Hermes oracle authority.
 
 Hermes ships a Deepgram-compatible bridge entrypoint for the first provider-backed streaming STT and streaming TTS path:
 
@@ -148,13 +150,13 @@ Use this ladder when deciding what a profile may claim. The distinction matters 
 | --- | --- | --- |
 | 0. One-shot fallback | Voice works as turn-based dictation and playback. | Existing `/api/audio/transcribe` and `/api/audio/speak` paths work; realtime preflight can fail without stranding the microphone. |
 | 1. Portable realtime shell | The desktop can hold a realtime websocket session. | `/api/voice/realtime/status` is enabled; websocket auth and Host/Origin guards work; microphone frames, session state, barge-in events, playback generations, fallback, and durable transcript boundaries are covered by tests. |
-| 2. Text-oracle sidecar | Hermes can converse with live speech through STT/audio understanding and streaming TTS. | Sidecar `/health` advertises STT or audio-understanding plus `tts: true`; sidecar auth is configured; `hermes doctor --realtime-voice` passes; smoke reports include protocol and TTS evidence. |
-| 3. Live-like text oracle | The experience is close enough for private alpha live conversation. | `conversation_quality.live_like` is true, normally from `streaming_stt: true` plus `tts: true`; `voice.realtime.require_live_like: true` passes; EN/JA audio fixture and TTS smoke reports meet latency targets. |
-| 4. Gemma/frontend LLM path | Gemma 4 E4B-IT or another audio-capable frontend improves speech understanding without replacing Hermes. | The sidecar owns Gemma/vLLM media dependencies and returns sanitized transcript/frontend events; Hermes still calls the configured backend oracle model for tools, memory, files, MCP, approvals, and durable answers. |
-| 5. Native S2S path | A speech-to-speech sidecar handles low-level audio generation directly. | `engine: native_s2s_oracle`; sidecar `/health` advertises `native_s2s: true`; Hermes streams `oracle.hint`, enforces playback generations, and degrades rather than failing when hints are unavailable after session start. |
-| 6. Gemini Live-style production | The product can be compared to always-on commercial live voice APIs. | Multi-run latency distributions, barge-in reliability, remote sidecar degradation, TTS/provider failure behavior, EN/JA acceptance conversations, security review, and operator docs are all collected and reviewed. |
+| 2. Text-oracle fallback sidecar | Hermes can converse through STT/audio understanding and streaming TTS when the KAME stack is unavailable or under comparison. | Sidecar `/health` advertises STT or audio-understanding plus `tts: true`; sidecar auth is configured; `hermes doctor --realtime-voice` passes; smoke reports include protocol and TTS evidence. |
+| 3. Provider-comparison live-like fallback | A provider bridge is good enough for private alpha fallback or baseline comparisons. | `conversation_quality.live_like` is true, normally from `streaming_stt: true` plus `tts: true`; `voice.realtime.require_live_like: true` passes; EN/JA audio fixture and TTS smoke reports meet latency targets. This does not prove full KAME readiness. |
+| 4. KAME interpreter path | Gemma 4 E2B/E4B/12B or another audio-capable interpreter improves speech understanding without replacing Hermes. | The interpreter receives clipped raw audio plus labeled reflex/Moshi/ASR transcript hypotheses; Hermes still calls the configured backend oracle model for tools, memory, files, MCP, approvals, and durable answers. |
+| 5. KAME reflex path | A native S2S or smaller realtime model handles floor control and immediate acknowledgement. | Sidecar/session health advertises reflex capability; barge-in, acknowledgement latency, rough transcript hypotheses, and fallback state are measured; transcript hypotheses remain non-authoritative until interpreter/oracle promotion. |
+| 6. Full KAME production | The product can be compared to always-on commercial live voice APIs while preserving Hermes authority. | Multi-run latency distributions, barge-in reliability, raw-audio interpreter evidence, transcript-hypothesis provenance, remote sidecar degradation, TTS/provider failure behavior, EN/JA acceptance conversations, security review, and operator docs are all collected and reviewed. |
 
-Tier 2 is useful but not enough to claim Gemini Live-style interaction if it is utterance-based. Tier 3 is the first live-like private alpha target. Tier 4 can be reached with a remote model host or provider endpoint, but it is still a text-oracle architecture: Gemma is the speech frontend, not the Hermes authority. Tier 5 can be developed in parallel because it uses the same desktop protocol and Hermes oracle boundary; do not block native S2S work on finishing every text-oracle refinement.
+Tier 2 is useful but not enough to claim full KAME interaction if it is STT-first or utterance-based. Tier 3 is the first live-like fallback/baseline target. Tier 4 can be reached with a remote model host or provider endpoint, but Gemma is the interpreter/evidence lane, not the Hermes authority. Tier 5 is where the system first has a true live reflex. Tier 6 requires the three-tier reflex + interpreter + Hermes `/model` oracle contract with provenance-preserving evidence.
 
 The ladder must stay portable. Documentation, config names, status payloads, doctor checks, and release notes should refer to capabilities such as `local`, `reference`, `sidecar`, `gemma4`, `vllm`, `streaming_stt`, `tts`, and `native_s2s`, not to a particular private workstation, accelerator product, tailnet host, or developer credential.
 
@@ -207,7 +209,7 @@ Client events:
 {"type":"session.closed","session_id":"...","sequence":3,"payload":{"reason":"client_closed"}}
 ```
 
-Client `audio.input.chunk` events may include a `transcript` string for browser or sidecar experiments that produce text before raw-audio STT. Set `end_of_utterance`, `final`, or `is_final` to `false` for partial transcript captions; only final transcript payloads should start the Hermes oracle turn.
+Client `audio.input.chunk` events may include a `transcript` string for browser or sidecar experiments that produce text before raw-audio interpretation. Set `end_of_utterance`, `final`, or `is_final` to `false` for partial transcript captions. Only text-oracle and fallback modes should start a Hermes oracle turn directly from a final transcript payload. In full KAME mode, transcript payloads are hypotheses attached to the clipped raw audio and interpreter evidence bundle.
 
 When Hermes forwards microphone chunks to a text-oracle sidecar, it adds a server-owned `input_generation` to each sidecar-bound `audio.input.chunk`. Sidecars should echo that value on `transcript.partial` and `transcript.final` events. Hermes uses it to ignore stale speech-recognition results after barge-in or after a newer utterance has started. Desktop clients do not set or rely on this field.
 
@@ -301,7 +303,7 @@ When `available` is false, `unavailable_reason` is a stable machine-readable rea
 
 When realtime preflight is unavailable, the desktop should keep the voice conversation alive by switching to the one-shot voice fallback and surface `unavailable_reason` through the same fallback/degraded diagnostics used for runtime sidecar failures. This keeps local-only installs and remote-sidecar installs portable while still telling operators whether the problem is disabled config, missing native S2S, missing STT/TTS, or an unhealthy external sidecar.
 
-When a sidecar is reachable, its `/health` response must include a JSON capability payload. Hermes uses `capabilities` for preflight gating: `native_s2s_oracle` requires `native_s2s: true`; `text_oracle_tts` sidecar mode requires either `utterance_stt` or `streaming_stt`, plus `tts: true`, because the sidecar is responsible for both live speech understanding and streaming speech output on that path. A healthy HTTP sidecar without capability metadata, or without the required capabilities, is reported as `available: false` with an `unavailable_reason`. Websocket session opens are refused with the same reason before the microphone session is accepted, including managed loopback sidecars after Hermes has autostarted them. Language and script arrays in sidecar health are diagnostics only; Hermes sanitizes and forwards them for operator visibility, but they do not grant tool authority or replace explicit voice/STT/TTS configuration.
+When a sidecar is reachable, its `/health` response must include a JSON capability payload. Hermes uses `capabilities` for preflight gating: `native_s2s_oracle` requires `native_s2s: true`; `text_oracle_tts` sidecar mode requires either `utterance_stt` or `streaming_stt`, plus `tts: true`, because the sidecar is responsible for both speech understanding and streaming speech output on that fallback path. Full KAME mode gates on reflex/interpreter capabilities instead of requiring classic streaming STT. A healthy HTTP sidecar without capability metadata, or without the capabilities required for the selected mode, is reported as `available: false` with an `unavailable_reason`. Websocket session opens are refused with the same reason before the microphone session is accepted, including managed loopback sidecars after Hermes has autostarted them. Language and script arrays in sidecar health are diagnostics only; Hermes sanitizes and forwards them for operator visibility, but they do not grant tool authority or replace explicit voice/STT/TTS configuration.
 
 `language_support` is Hermes' product-support contract, not a sidecar capability claim. By default, English and Japanese are the production acceptance languages and Latin/Japanese scripts are the production acceptance scripts. `best_effort_languages: true` means other clean language metadata may pass through captions, prompts, diagnostics, and provider auto-detection when the configured STT/frontend/TTS stack can handle it. The desktop should not hide realtime voice for non-target languages solely because they are outside this production list; it may label them best-effort. Operators can override `production_languages`, `production_scripts`, and `best_effort_languages` in `voice.realtime`.
 
@@ -334,7 +336,39 @@ Use this before treating a profile as live-voice ready. The strict gate requires
 
 `--realtime-voice-barge-in-smoke` sends a spoken assistant chunk, immediately interrupts it with `barge_in`, and requires a `barge_in` acknowledgement within `barge_in_ack_ms`. This is a protocol/interruption smoke, not a full acoustic cancellation benchmark, but it prevents release evidence from omitting the interruption path.
 
-`--realtime-voice-report` writes a JSON array for CI and release gates. The first entry is a sanitized `manifest` row that records the realtime stack context used for the run: engine, frontend provider/model, live-like quality reason, quality targets, language policy, sidecar mode, sidecar health capabilities, bridge capability flags, and current production evidence counters. It does not include sidecar URLs, bearer tokens, env var values, query strings, or arbitrary vendor fields. Alpha validation requires this manifest, requires it to show an available live-like profile, requires a healthy verified sidecar with either `native_s2s: true` or `streaming_stt: true` plus `tts: true`, and requires EN/JA output routing evidence through `output_languages` or `tts_model_languages`. Manifest `quality_targets_ms` and per-smoke `target_ms` values must not be looser than the PRD ceilings: partial transcript <= 300 ms, first text <= 500 ms, first audio <= 900 ms, and barge-in acknowledgement <= 150 ms. The remaining entries record neutral smoke `kind` values (`protocol`, `session_turn`, `audio_fixture`, `audio_session`, `tts`, or `barge_in`), `ok`, event names, latency fields, byte counts, sanitized error text, and smoke-specific metadata such as fixture path, codec, recognized `final_text`, phrase text, language/script metadata, and target milliseconds. Required EN/JA audio fixtures must match the expected transcript text after punctuation, case, width, and whitespace normalization; required EN/JA session-turn smokes must prove the full Hermes transcript -> oracle text -> TTS path emits both assistant text and audio with the expected language metadata. Required EN/JA audio-session smokes must start with real fixture audio bytes and, in one `RealtimeVoiceSession`, emit `transcript.partial`, matching `transcript.final`, `assistant.text.partial`, and `audio.output.chunk`. A sidecar that emits any unrelated `transcript.final` is not enough. The schema is intentionally language-neutral: English and Japanese are the first production acceptance fixtures, but additional best-effort language fixtures can use the same report format without changing Hermes protocol semantics.
+`--realtime-voice-report` writes a JSON array for CI and release gates. The first entry is a sanitized `manifest` row that records the realtime stack context used for the run: engine, frontend provider/model, live-like quality reason, quality targets, language policy, sidecar mode, sidecar health capabilities, bridge capability flags, and current production evidence counters. It does not include sidecar URLs, bearer tokens, env var values, query strings, or arbitrary vendor fields.
+
+For text-oracle and provider-bridge alpha validation, the manifest must show an
+available live-like profile, a healthy verified sidecar with either
+`native_s2s: true` or `streaming_stt: true` plus `tts: true`, and EN/JA output
+routing evidence through `output_languages` or `tts_model_languages`. Manifest
+`quality_targets_ms` and per-smoke `target_ms` values must not be looser than
+the PRD ceilings: partial transcript <= 300 ms, first text <= 500 ms, first
+audio <= 900 ms, and barge-in acknowledgement <= 150 ms. The remaining entries
+record neutral smoke `kind` values (`protocol`, `session_turn`,
+`audio_fixture`, `audio_session`, `tts`, or `barge_in`), `ok`, event names,
+latency fields, byte counts, sanitized error text, and smoke-specific metadata
+such as fixture path, codec, recognized `final_text`, phrase text,
+language/script metadata, and target milliseconds. Required EN/JA audio
+fixtures must match the expected transcript text after punctuation, case,
+width, and whitespace normalization; required EN/JA session-turn smokes for
+text-oracle modes must prove the Hermes transcript -> oracle text -> TTS path
+emits both assistant text and audio with the expected language metadata.
+Required EN/JA audio-session smokes for provider bridges must start with real
+fixture audio bytes and, in one `RealtimeVoiceSession`, emit
+`transcript.partial`, matching `transcript.final`, `assistant.text.partial`,
+and `audio.output.chunk`. A sidecar that emits any unrelated `transcript.final`
+is not enough.
+
+Full KAME production evidence adds a separate requirement: the report must
+prove reflex acknowledgement/floor-control timing, raw-audio interpreter
+evidence, preserved transcript-hypothesis provenance, Hermes `/model` oracle
+routing, and non-authoritative handling of Moshi/S2S or ASR transcript text.
+Classic transcript fixtures can remain fallback/provider evidence, but they do
+not replace the raw-audio interpreter gate. The schema is intentionally
+language-neutral: English and Japanese are the first production acceptance
+fixtures, but additional best-effort language fixtures can use the same report
+format without changing Hermes protocol semantics.
 
 After `python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha-*.json --alpha --min-runs 3` passes, set `voice.realtime.production_evidence_report` to either a verified report file or a directory containing verified report JSON files for the release profile. Production evidence defaults to `production_evidence_min_runs: 3`, so a single alpha report is useful evidence but not enough to claim production readiness. The reports must also share one realtime stack manifest; mixing native S2S, streaming STT/TTS, providers, frontend models, or sidecar capability profiles in one evidence bundle is rejected because it does not prove one deployable profile is evidence-ready. The verifier and `/api/voice/realtime/status` summarize p50, p95, max, and sample count for transcript partial latency, first-audio latency, and barge-in acknowledgement latency across the configured runs. `/api/voice/realtime/status`, `hermes status`, and strict `hermes doctor --realtime-voice` then surface the same evidence-backed `production_readiness` result. Without this path, a profile can still report `conversation_quality.live_like: true`, but `production_readiness.ready` remains false with `missing_evidence_report`.
 

@@ -48,6 +48,12 @@ stable. Gemma 4 E2B/E4B/12B stays on the interpreter/evidence track, consuming
 raw audio plus any reflex/Moshi transcript hypotheses. Gemma 4 26B-A4B is kept
 as a measured comparison oracle.
 
+Evaluation must distinguish low-latency hearing from transcript authority. A
+Moshi/S2S transcript can improve Gemma's interpretation because it captures what
+the reflex believed it heard, but it must be measured as hypothesis evidence
+beside the clipped waveform. Classic ASR is the same class of optional evidence
+unless the system has fallen back to a text-only voice mode.
+
 ## Headless Runner
 
 The repo-side unattended runner is:
@@ -188,11 +194,12 @@ Manual DGX-side setup is intentionally outside the repo runner. The setup should
 be captured as a separate Spark host playbook once the first known-good server
 command is confirmed.
 
-## Track B: Cartesia Cloud Voice Baseline
+## Track B: Cartesia Cloud Voice Fallback / Provider Comparison
 
-Goal: determine whether Hermes + local Gemma 4 feels good when the voice layer
-is a high-quality cloud STT/TTS bridge. This isolates brain quality from local
-audio stack issues.
+Goal: determine whether Hermes plus the selected oracle feels good when the
+voice layer is a high-quality cloud STT/TTS fallback bridge. This isolates
+oracle quality and Discord transport behavior from local audio stack issues,
+but it is not the target full KAME control path.
 
 Headless variables:
 
@@ -250,25 +257,28 @@ Acceptance gates:
 
 Track B is the fastest path to answering: "Is the selected Hermes oracle,
 preferably Nemotron 3 Super on Spark, good enough in a voice session before
-local speech is ready?"
+local reflex, interpreter, and speech services are ready?"
 
-## Track C: Local DGX Speech Bridge
+## Track C: Local DGX KAME Voice Stack
 
-Goal: replace the cloud voice bridge with a local Spark speech pipeline while
-keeping the same Hermes oracle contract and the three-tier KAME split.
+Goal: replace the cloud fallback bridge with a local Spark KAME voice stack
+while keeping the same Hermes oracle contract and the three-tier split.
 
 Expected external service:
 
-- A Hermes-compatible streaming STT/TTS bridge already running on the DGX Spark,
-  or reachable from this machine.
+- A Hermes-compatible local reflex/interpreter/TTS stack already running on the
+  DGX Spark, or reachable from this machine. A streaming STT/TTS bridge may be
+  present as optional transcript evidence or text-oracle fallback.
 - First implementation candidates:
+  - Moshi/PersonaPlex-class S2S or smaller timing/noise-gated model for reflex
+    floor control and rough transcript hypotheses.
+  - Gemma 4 E2B/E4B/12B for raw-audio interpreter evidence.
   - Nemotron Speech streaming ASR + Magpie/Riva-like TTS.
   - Riva/NVIDIA speech stack if installation is stable enough.
   - Pipecat as a reference latency harness, not as the Hermes brain.
-  - Moshi/PersonaPlex-class S2S only if the audio path is stable enough to serve
-    as a reflex and rough transcript source.
 - Hermes profile preset: `nvidia_speech`, which points the local speech lane at
-  the Nemotron Speech ASR proxy and Magpie TTS proxy by default.
+  the Nemotron Speech ASR proxy and Magpie TTS proxy by default when the KAME
+  reflex/interpreter path is unavailable.
 
 For full KAME runs, the local speech bridge must not become the reflex control
 path merely because it can transcribe. Moshi/S2S transcript output and
@@ -276,6 +286,13 @@ streaming ASR output should be recorded as transcript hypotheses. Gemma receives
 those hypotheses beside the clipped raw audio and emits corrected evidence for
 the Hermes oracle. The reflex still owns immediate acknowledgement and
 barge-in/floor-control behavior.
+
+The Track C report should therefore show separate timings for speech end to
+reflex acknowledgement, speech end to raw-audio segment ready, raw-audio segment
+ready to Gemma evidence, transcript-hypothesis arrival, and oracle job
+accepted/started/completed. A passing ASR latency number does not prove KAME
+readiness unless the raw-audio interpreter path and reflex acknowledgement path
+also pass.
 
 Headless variables:
 
@@ -314,25 +331,30 @@ Acceptance gates:
 
 | Metric | Target |
 | --- | --- |
-| Local bridge health | Reports streaming STT and streaming TTS |
+| Local reflex health | Reports reflex/floor-control capability, or explicitly falls back |
+| Gemma interpreter health | Reports raw-audio interpreter capability |
+| Local speech bridge health | Reports streaming STT/TTS only when that optional lane is enabled |
 | Alpha evidence runs | 3/3 pass |
-| Local ASR partial latency | Under 300ms |
-| Final transcript latency | Under 700ms after speech end |
+| Reflex acknowledgement latency | Under 500ms from speech end |
+| Interpreter evidence latency | Under 2000ms from audio segment ready |
+| Local ASR partial latency | Under 300ms when optional ASR evidence is enabled |
+| Final transcript latency | Under 700ms after speech end when text-oracle fallback is enabled |
 | Local TTS first audio | Under 900ms from first assistant text |
 | End-to-end spoken turn | Under 1500ms with the selected oracle warm |
 | Barge-in | Under 150ms stop/cancel |
 | Resource contention | Oracle decode does not collapse while speech bridge is active |
 
-Track C only becomes the preferred path if it beats or gets close to Track B
-while preserving reliability and local-only operation.
+Track C only becomes the preferred path if it beats or gets close to Track B on
+reflex feel and reliability while preserving the KAME authority boundary and
+local-only operation.
 
 ## Evaluation Matrix
 
 | Track | Brain | Voice frontend | Must run headless? | Purpose |
 | --- | --- | --- | --- | --- |
 | A | Nemotron 3 Super via local Spark endpoint | none | Yes | Prove preferred local oracle viability. |
-| B | Nemotron 3 Super via local Spark endpoint | Cartesia bridge | Yes | Establish high-quality voice baseline. |
-| C | Nemotron 3 Super via local Spark endpoint | Local DGX speech bridge | Yes | Test local-only target. |
+| B | Nemotron 3 Super via local Spark endpoint | Cartesia bridge | Yes | Establish high-quality fallback/provider comparison. |
+| C | Nemotron 3 Super via local Spark endpoint | Local DGX KAME stack | Yes | Test local-only target. |
 | D | Gemma 4 26B-A4B via vLLM | best passing voice frontend | Yes | Compare non-NVIDIA local brain quality and latency. |
 
 ## Decision Rules
@@ -340,14 +362,18 @@ while preserving reliability and local-only operation.
 1. If Track A fails, do not evaluate local speech yet. Fix Nemotron 3 Super serving first.
 2. If Track A passes and Track B feels good, Nemotron 3 Super is a plausible
    Hermes brain and local speech becomes an optimization.
-3. If Track B passes but Track C fails, ship/keep Cartesia as the baseline and
-   continue local speech bridge development separately.
+3. If Track B passes but Track C fails, keep Cartesia as a labeled fallback and
+   provider-comparison bridge while continuing local KAME stack development.
 4. If Track C passes within 25% of Track B latency, prefer Track C for local DGX
    operation.
 5. Do not make Moshi/PersonaPlex or Ultravox the durable transcript or tool
    authority. If a Moshi-class model is evaluated, measure it as a reflex:
    acknowledgement latency, barge-in, noise-gate behavior, and transcript
    hypothesis usefulness beside raw audio.
+6. Do not rank a speech stack by transcript speed alone. Rank it by reflex
+   immediacy, barge-in correctness, interpreter evidence quality, oracle
+   routing correctness, and whether transcript hypotheses remain
+   non-authoritative until promotion.
 
 ## Follow-up Implementation Work
 

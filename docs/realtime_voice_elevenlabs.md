@@ -1,7 +1,7 @@
 # Hermes Realtime Voice: ElevenLabs Bridge
 
 Hermes can run live voice through its existing realtime sidecar contract with
-ElevenLabs as the streaming speech provider:
+ElevenLabs as a streaming speech provider fallback or comparison bridge:
 
 ```text
 browser/desktop mic
@@ -13,10 +13,12 @@ browser/desktop mic
   -> browser/desktop playback
 ```
 
-This is a KAME-inspired realtime loop, but it deliberately keeps the Hermes
-oracle/backend/tool layer in the middle. ElevenLabs handles the speech frontend
-and speech output; it does not replace Hermes' configured backend model, tools,
-or data access layer.
+This is useful for bring-up and provider-quality comparison, but it is not the
+target full KAME control path. In full KAME mode, the reflex owns floor control,
+Gemma interprets clipped raw audio plus labeled transcript hypotheses, and
+Hermes' active `/model` remains the oracle. ElevenLabs STT output should enter
+that path only as optional transcript-hypothesis context unless Hermes is
+explicitly running a text-oracle fallback.
 
 ## Provider-Neutral Architecture
 
@@ -31,8 +33,8 @@ Provider bridges sit at the edge of that contract. The current matrix is:
 
 | Provider path | Status | Role |
 | --- | --- | --- |
-| Deepgram bridge | Existing | Streaming STT/TTS evidence baseline |
-| ElevenLabs bridge | Implemented | Streaming STT plus realtime TTS |
+| Deepgram bridge | Existing | Streaming STT/TTS fallback and provider-comparison baseline |
+| ElevenLabs bridge | Implemented | Streaming STT/TTS fallback and provider-comparison path |
 | OpenAI Realtime | Implemented | Native speech-to-speech frontend provider behind the sidecar |
 | Gemini Live | Implemented | Native speech-to-speech frontend provider with KAME-scoped bridge tools |
 | Gemma/audio interpreter | Future | Remote audio-capable interpreter/evidence bridge over clipped audio plus transcript hypotheses |
@@ -263,9 +265,10 @@ python -m hermes_cli.realtime_voice_live_evidence `
   --wait-seconds 15
 ```
 
-## Evidence Checklist
+## ElevenLabs Bridge Evidence Checklist
 
-A production evidence bundle should include live, not mocked, runs that prove:
+An ElevenLabs bridge evidence bundle should include live, not mocked, runs that
+prove:
 
 1. `/health` reports streaming STT and streaming TTS capability.
 2. Known English and Japanese audio fixtures produce final transcripts that
@@ -287,6 +290,12 @@ an earlier partial. The alpha evidence runner records an ElevenLabs-specific
 partial-transcript ceiling in the report manifest and stamps STT entries with
 that provider target. Deepgram keeps the stricter default target.
 
+This evidence proves the ElevenLabs bridge path. It does not, by itself, prove
+full KAME production readiness. Full KAME evidence must also show reflex
+acknowledgement/floor-control timing, raw-audio interpreter evidence, preserved
+transcript-hypothesis provenance, Hermes `/model` oracle routing, and
+non-authoritative handling of ElevenLabs transcripts.
+
 ## Current Limits
 
 - STT sends Hermes audio chunks as ElevenLabs `input_audio_chunk` websocket
@@ -300,3 +309,6 @@ that provider target. Deepgram keeps the stricter default target.
 - Gemma/audio-frontends and native speech-to-speech providers should implement
   the same sidecar bridge contract instead of bypassing Hermes' oracle/backend
   loop.
+- In full KAME mode, ElevenLabs STT output should be attached as optional
+  `classic_asr_hypothesis` evidence beside the raw audio, not promoted directly
+  to durable user text or tool-critical oracle arguments.
