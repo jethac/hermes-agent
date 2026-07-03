@@ -324,13 +324,45 @@ hermes doctor --realtime-voice-tts-smoke "Hello from Hermes." --realtime-voice-t
 hermes doctor --realtime-voice-barge-in-smoke "Hello from Hermes."
 ```
 
-Use this before treating a profile as live-voice ready. The strict gate requires realtime voice to be enabled, preflight-available, live-like according to the same `conversation_quality` payload the desktop uses, and configured with latency targets no looser than the PRD live-conversation targets. It also checks that English and Japanese remain the production acceptance languages, that best-effort language pass-through is enabled unless deliberately disabled, that the configured sidecar is healthy, and that public provider naming stays capability-based rather than tied to a specific workstation or accelerator. Plain `hermes doctor` reports the same section informatively without failing ordinary installs that have not opted into realtime voice.
+Use this before treating a provider-bridge or text-oracle profile as live-voice
+alpha ready. The strict gate requires realtime voice to be enabled,
+preflight-available, live-like according to the same `conversation_quality`
+payload the desktop uses, and configured with latency targets no looser than the
+PRD live-conversation targets. It also checks that English and Japanese remain
+the production acceptance languages, that best-effort language pass-through is
+enabled unless deliberately disabled, that the configured sidecar is healthy,
+and that public provider naming stays capability-based rather than tied to a
+specific workstation or accelerator. Plain `hermes doctor` reports the same
+section informatively without failing ordinary installs that have not opted into
+realtime voice. Full KAME readiness additionally requires reflex floor-control
+timing, raw-audio interpreter evidence, transcript-hypothesis provenance when
+present, and Hermes `/model` oracle routing evidence.
 
-`--realtime-voice-smoke` implies the strict gate, then opens the configured sidecar websocket, sends a transcript-backed `audio.input.chunk`, and waits for `frontend.state` plus `transcript.final`. This is a protocol smoke, not a microphone/acoustic benchmark: it proves sidecar auth, session startup, event streaming, and basic transcript turn latency without requiring a particular GPU or audio device.
+`--realtime-voice-smoke` implies the strict gate, then opens the configured
+sidecar websocket, sends a transcript-backed `audio.input.chunk`, and waits for
+`frontend.state` plus `transcript.final`. This is a provider-bridge/text-oracle
+protocol smoke, not a microphone/acoustic benchmark and not full KAME evidence:
+it proves sidecar auth, session startup, event streaming, and basic transcript
+turn latency without requiring a particular GPU or audio device.
 
-`--realtime-voice-alpha` expands to the documented private-alpha evidence set: protocol smoke, the four required English/Japanese STT audio fixtures, the required English/Japanese full audio-session smokes, the four required English/Japanese TTS phrases, and the required barge-in smoke. Use it with `--realtime-voice-report` for a single release-candidate run, then repeat with separate report filenames until the minimum run count is satisfied.
+`--realtime-voice-alpha` expands to the documented provider-bridge private-alpha
+evidence set: protocol smoke, the four required English/Japanese STT audio
+fixtures, the required English/Japanese full audio-session smokes, the four
+required English/Japanese TTS phrases, and the required barge-in smoke. Use it
+with `--realtime-voice-report` for a single release-candidate run, then repeat
+with separate report filenames until the minimum run count is satisfied. Full
+KAME release evidence should treat those STT fixtures as optional fallback or
+comparison evidence, and must also collect reflex/interpreter/oracle evidence.
 
-`--realtime-voice-audio-fixture` sends real audio bytes through the same websocket path and requires `transcript.partial` within `audio_to_partial_transcript_ms`, followed by `transcript.final` before timeout. Repeat the flag with short English and Japanese fixtures for release validation. This still does not prove end-user room acoustics or TTS quality, but it catches broken STT/audio-frontend deployments that a transcript-only protocol smoke cannot.
+`--realtime-voice-audio-fixture` sends real audio bytes through the same
+websocket path and, for provider-bridge/text-oracle profiles, requires
+`transcript.partial` within `audio_to_partial_transcript_ms`, followed by
+`transcript.final` before timeout. Repeat the flag with short English and
+Japanese fixtures for fallback/provider validation. This still does not prove
+end-user room acoustics or TTS quality, but it catches broken STT/audio-frontend
+deployments that a transcript-only protocol smoke cannot. In full KAME, the
+equivalent release evidence is raw-audio interpreter evidence plus any labeled
+transcript hypotheses, not a required STT transcript.
 
 `--realtime-voice-tts-smoke` sends `assistant.text.partial` with `speak: true` to the configured sidecar and requires the first `audio.output.chunk` within `final_transcript_to_first_audio_ms`. Repeat it with a short English and Japanese phrase when validating a release profile so both TTS provider latency and multilingual voice configuration are covered. Built-in EN/JA alpha phrases carry sanitized `language`, `locale`, and `script` metadata, so provider bridges can exercise language-aware voice/model routing during evidence collection.
 
@@ -370,7 +402,7 @@ language-neutral: English and Japanese are the first production acceptance
 fixtures, but additional best-effort language fixtures can use the same report
 format without changing Hermes protocol semantics.
 
-After `python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha-*.json --alpha --min-runs 3` passes, set `voice.realtime.production_evidence_report` to either a verified report file or a directory containing verified report JSON files for the release profile. Production evidence defaults to `production_evidence_min_runs: 3`, so a single alpha report is useful evidence but not enough to claim production readiness. The reports must also share one realtime stack manifest; mixing native S2S, streaming STT/TTS, providers, frontend models, or sidecar capability profiles in one evidence bundle is rejected because it does not prove one deployable profile is evidence-ready. The verifier and `/api/voice/realtime/status` summarize p50, p95, max, and sample count for transcript partial latency, first-audio latency, and barge-in acknowledgement latency across the configured runs. `/api/voice/realtime/status`, `hermes status`, and strict `hermes doctor --realtime-voice` then surface the same evidence-backed `production_readiness` result. Without this path, a profile can still report `conversation_quality.live_like: true`, but `production_readiness.ready` remains false with `missing_evidence_report`.
+After `python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha-*.json --alpha --min-runs 3` passes, set `voice.realtime.production_evidence_report` to either a verified report file or a directory containing verified report JSON files for the release profile. Production evidence defaults to `production_evidence_min_runs: 3`, so a single alpha report is useful evidence but not enough to claim production readiness. The reports must also share one realtime stack manifest; mixing native S2S, streaming STT/TTS, providers, frontend models, or sidecar capability profiles in one evidence bundle is rejected because it does not prove one deployable profile is evidence-ready. For provider-bridge profiles, the verifier and `/api/voice/realtime/status` summarize p50, p95, max, and sample count for transcript partial latency, first-audio latency, and barge-in acknowledgement latency across the configured runs. Full KAME profiles should pair provider metrics, when present, with reflex acknowledgement latency, raw-audio interpreter evidence latency, transcript-hypothesis provenance, and Hermes `/model` oracle routing evidence. `/api/voice/realtime/status`, `hermes status`, and strict `hermes doctor --realtime-voice` then surface the same evidence-backed `production_readiness` result. Without this path, a profile can still report `conversation_quality.live_like: true`, but `production_readiness.ready` remains false with `missing_evidence_report`.
 
 When the evidence gate passes, `production_readiness.level` becomes `evidence_ready`, not `production_ready`. To make the final production claim, set `voice.realtime.production_review_report` to a JSON file like:
 
@@ -458,7 +490,7 @@ python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-evidence/*
 
 `realtime_voice_fixture_pack` uses Hermes' configured TTS provider to generate the required English/Japanese input utterances and converts them to WebM/Opus with `ffmpeg`. Teams may replace those generated files with hand-recorded fixtures, but the filenames and utterance intent should stay stable so report validation remains comparable across machines and sidecar providers.
 
-The alpha evidence helper preflights the four required audio fixture paths before starting any doctor run or sidecar smoke. The EN/JA hello fixtures are also reused by the full audio-session smoke so the report proves real audio can flow through STT, Hermes session/oracle text, and TTS in one live turn. If a fixture is missing, it fails immediately with the exact path to create, preserving the documented relative fixture identifiers used by report validation.
+The alpha evidence helper preflights the four required audio fixture paths before starting any doctor run or sidecar smoke. For provider-bridge profiles, the EN/JA hello fixtures are also reused by the full audio-session smoke so the report proves real audio can flow through STT, Hermes session/oracle text, and TTS in one live turn. If a fixture is missing, it fails immediately with the exact path to create, preserving the documented relative fixture identifiers used by report validation. Full KAME runs may reuse those fixtures, but the required proof is the raw-audio interpreter path and reflex/oracle provenance rather than STT transcript availability.
 
 For a single debug run, the helper above is equivalent to:
 
@@ -473,7 +505,7 @@ CI shape:
 
 - Keep the normal unit tests in the regular test matrix: `tests/agent/test_realtime_voice.py`, `tests/hermes_cli/test_web_server.py::TestRealtimeVoiceWebSocket`, and the realtime desktop hook tests.
 - Add a separate, opt-in realtime voice smoke workflow or manual job that starts the configured sidecar, runs the command above, verifies the JSON artifact with `python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-alpha.json --alpha`, and uploads `artifacts/realtime-voice-alpha.json`.
-- Treat EN/JA fixture, full audio-session, Hermes session-turn, TTS, and barge-in failures, missing `transcript.partial`, missing `transcript.final`, missing `assistant.text.partial`, missing `audio.output.chunk`, missing `barge_in`, post-barge-in `audio.output.chunk` bytes from the interrupted utterance, and target latency misses as release-blocking for private alpha.
+- Treat EN/JA fixture, full audio-session, Hermes session-turn, TTS, and barge-in failures, missing `transcript.partial`, missing `transcript.final`, missing `assistant.text.partial`, missing `audio.output.chunk`, missing `barge_in`, post-barge-in `audio.output.chunk` bytes from the interrupted utterance, and target latency misses as release-blocking for provider-bridge private alpha. For full KAME alpha, missing STT transcript events are blocking only when that profile explicitly enables transcript-evidence mode; reflex, raw-audio interpreter, TTS, barge-in, and Hermes `/model` oracle evidence remain required.
 - Treat non-target language fixture failures as non-blocking unless they reveal protocol rejection, translation-to-English behavior, metadata leakage, or a crash.
 - Archive only latency metrics, event names, byte counts, sanitized errors, fixture identifiers, and configured smoke phrases. Do not archive raw user audio outside explicit opt-in fixtures.
 

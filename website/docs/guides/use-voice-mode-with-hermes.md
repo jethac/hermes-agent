@@ -110,9 +110,13 @@ Why these matter:
 - `opus` → Discord voice codec support
 - `espeak-ng` → phonemizer backend for NeuTTS
 
-## Step 4: choose STT and TTS providers
+## Step 4: choose classic/fallback STT and TTS providers
 
-Hermes supports both local and cloud speech stacks.
+Hermes supports both local and cloud speech stacks. The provider choices below
+describe classic voice mode, one-shot transcription, and fallback/provider
+comparison paths. Full KAME realtime voice does not require STT before the
+reflex can acknowledge or route a turn; transcript text is optional hypothesis
+evidence beside raw-audio interpreter evidence.
 
 ### Easiest / cheapest setup
 
@@ -375,11 +379,18 @@ In a Discord text channel where the bot is present:
 
 ### What happens when joined
 
+In the classic Discord voice path:
+
 - users speak in the VC
 - Hermes detects speech boundaries
 - transcripts are posted in the associated text channel
 - Hermes responds in text and audio
 - the text channel is the one where `/voice join` was issued
+
+In the realtime/full-KAME path, the reflex handles floor control and immediate
+acknowledgement, the interpreter reviews clipped raw audio plus labeled
+transcript hypotheses when present, and Hermes' active `/model` remains the
+oracle.
 
 ### Best practices for Discord VC use
 
@@ -387,7 +398,7 @@ In a Discord text channel where the bot is present:
 - use a dedicated bot/testing channel at first
 - verify STT and TTS work in ordinary text-chat voice mode before trying VC mode
 
-## Voice quality recommendations
+## Classic/fallback voice quality recommendations
 
 ### Best quality setup
 
@@ -445,9 +456,11 @@ If you want the shortest path to success:
 
 1. get text Hermes working
 2. install `hermes-agent[voice]`
-3. use CLI voice mode with local STT + Edge TTS
+3. use CLI/classic voice mode with local STT + Edge TTS as a fallback baseline
 4. then enable `/voice on` in Telegram or Discord
 5. only after that, try Discord VC mode
+6. then test realtime/full-KAME voice with reflex, raw-audio interpreter,
+   Hermes `/model` oracle routing, and TTS evidence
 
 That progression keeps the debugging surface small.
 
