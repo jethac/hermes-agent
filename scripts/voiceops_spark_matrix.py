@@ -177,7 +177,7 @@ def default_candidates() -> list[Candidate]:
             engine="local NeMo/Riva-style streaming ASR",
             locality="local_spark",
             priority=1,
-            purpose="durable transcript evidence lane for the oracle, not the reflex driver",
+            purpose="auxiliary transcript hypothesis lane for the interpreter/oracle evidence bundle, not durable truth or the reflex driver",
             required_targets=_targets(
                 ("asr_delta_ms", "<=", 120, "ms"),
                 ("final_transcript_ms", "<=", 900, "ms"),

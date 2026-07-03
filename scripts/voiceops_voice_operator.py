@@ -209,7 +209,9 @@ LIVE_EVIDENCE_REQUIRED_SIDECAR_PROVENANCE_BOOLS = (
 )
 
 LIVE_EVIDENCE_REQUIRED_TURN_BOOLS = (
-    "transcript_observed",
+    "audio_segment_ref_observed",
+    "interpreter_evidence_observed",
+    "transcript_hypotheses_labeled",
     "assistant_audio_observed",
     "barge_in_observed",
     "spoken_reply_short",
@@ -629,6 +631,9 @@ def build_live_probe_evidence_template() -> dict[str, Any]:
             "source_artifact": "voice-turn-evidence.json",
             "collector_attestation": dict(collector_template),
             "transcript_observed": False,
+            "audio_segment_ref_observed": False,
+            "interpreter_evidence_observed": False,
+            "transcript_hypotheses_labeled": False,
             "assistant_audio_observed": False,
             "barge_in_observed": False,
             "spoken_reply_short": False,
@@ -708,6 +713,9 @@ def build_live_probe_evidence_example() -> dict[str, Any]:
         {
             "collector_attestation": _example_collector_attestation("live_turn"),
             "transcript_observed": True,
+            "audio_segment_ref_observed": True,
+            "interpreter_evidence_observed": True,
+            "transcript_hypotheses_labeled": True,
             "assistant_audio_observed": True,
             "barge_in_observed": True,
             "spoken_reply_short": True,
@@ -990,7 +998,11 @@ def _looks_like_sidecar_session(payload: Mapping[str, Any]) -> bool:
 
 
 def _looks_like_live_turn(payload: Mapping[str, Any]) -> bool:
-    return any(key in payload for key in LIVE_EVIDENCE_REQUIRED_TURN_BOOLS) or "speech_end_to_first_audio_ms" in payload
+    return (
+        any(key in payload for key in LIVE_EVIDENCE_REQUIRED_TURN_BOOLS)
+        or "transcript_observed" in payload
+        or "speech_end_to_first_audio_ms" in payload
+    )
 
 
 def _discord_probe_section(payload: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -2553,7 +2565,13 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "shutdown_timed_out=false, latency_metrics_ms.session_start_ms, latency_metrics_ms.shutdown_ms, "
                 "source_artifact, and collector_attestation."
             ),
-            "live_turn": "Write live-turn.json with kind=live_turn, transcript_observed, assistant_audio_observed, barge_in_observed, spoken_reply_short, no_voice_denial_observed, speech_end_to_first_audio_ms, barge_in_stop_ms, source_artifact, and collector_attestation.",
+            "live_turn": (
+                "Write live-turn.json with kind=live_turn, audio_segment_ref_observed, "
+                "interpreter_evidence_observed, transcript_hypotheses_labeled, optional transcript_observed, "
+                "assistant_audio_observed, barge_in_observed, spoken_reply_short, no_voice_denial_observed, "
+                "speech_end_to_first_audio_ms, barge_in_stop_ms, source_artifact, and collector_attestation. "
+                "Moshi/S2S or ASR text must be labeled as hypothesis context, not durable user text."
+            ),
             "ingest": report["live_probe_required_for_completion"]["ingest_command"],
         },
         "non_accepted_example_shapes": {
@@ -2608,6 +2626,9 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "source_artifact": "sections/live-turn-source.json",
                 "collector_attestation": _example_collector_attestation("live_turn"),
                 "transcript_observed": True,
+                "audio_segment_ref_observed": True,
+                "interpreter_evidence_observed": True,
+                "transcript_hypotheses_labeled": True,
                 "assistant_audio_observed": True,
                 "barge_in_observed": True,
                 "spoken_reply_short": True,

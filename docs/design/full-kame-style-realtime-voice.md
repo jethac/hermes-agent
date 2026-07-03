@@ -192,7 +192,7 @@ The reflex transcript is a hypothesis. It is useful because it arrives early and
 captures what the live model thought it heard, but it must not become the
 unquestioned transcript of record. Moshi/S2S transcript output belongs in this
 same class: helpful context, not authority. The interpreter and auxiliary
-transcript evidence lanes are not equal authorities: the interpreter may correct
+transcript-hypothesis lanes are not equal authorities: the interpreter may correct
 the reflex hypothesis using auxiliary transcript hypotheses as labeled context
 before the oracle executes tool calls or external actions.
 
@@ -1092,7 +1092,7 @@ Already present:
 - KAME interface/oracle engine in the live session path
 - structured interface-to-oracle request contract
 - local/defer/oracle_direct/reject_or_clarify routing policy
-- auxiliary transcript evidence lane for escalated turns
+- auxiliary transcript-hypothesis lane for escalated turns
 - ephemeral versus durable transcript policy at the session boundary
 - oracle hint streaming back to live interface providers
 - explicit KAME provenance for realtime-reflex, interpreter, and STT-fed fallback turns

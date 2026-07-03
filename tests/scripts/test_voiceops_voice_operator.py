@@ -395,6 +395,9 @@ def _complete_live_evidence() -> dict:
         {
             "collector_attestation": _collector_attestation("live_turn"),
             "transcript_observed": True,
+            "audio_segment_ref_observed": True,
+            "interpreter_evidence_observed": True,
+            "transcript_hypotheses_labeled": True,
             "assistant_audio_observed": True,
             "barge_in_observed": True,
             "spoken_reply_short": True,
@@ -1573,6 +1576,16 @@ def test_live_evidence_rejects_template_source_artifact_placeholders():
     assert "live_turn:template_source_artifact_not_accepted" in live_evidence["issues"]
 
 
+def test_live_turn_accepts_interpreter_evidence_without_transcript_observed_flag():
+    evidence = _complete_live_evidence()
+    evidence["live_turn"].pop("transcript_observed", None)
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert "live_turn:transcript_observed_not_true" not in live_evidence["issues"]
+    assert live_evidence["live_turn"]["ok"] is True
+
+
 def test_voice_operator_loaded_evidence_does_not_resolve_source_artifacts_from_cwd(monkeypatch, tmp_path):
     evidence_dir = tmp_path / "evidence-dir"
     cwd_dir = tmp_path / "cwd"
@@ -1812,6 +1825,9 @@ def test_voice_operator_ingests_realtime_live_evidence_manifest(tmp_path):
         "kind": "live_turn",
         "collector_attestation": _collector_attestation("live_turn"),
         "transcript_observed": True,
+        "audio_segment_ref_observed": True,
+        "interpreter_evidence_observed": True,
+        "transcript_hypotheses_labeled": True,
         "assistant_audio_observed": True,
         "barge_in_observed": True,
         "spoken_reply_short": True,
@@ -1922,6 +1938,9 @@ def test_voice_operator_ingests_repeated_standalone_live_evidence_files(tmp_path
             "kind": "live_turn",
             "source_artifact": turn_path.name,
             "transcript_observed": True,
+            "audio_segment_ref_observed": True,
+            "interpreter_evidence_observed": True,
+            "transcript_hypotheses_labeled": True,
             "assistant_audio_observed": True,
             "barge_in_observed": True,
             "spoken_reply_short": True,
@@ -1991,6 +2010,9 @@ def test_voice_operator_accepts_standalone_section_evidence_type_identity(tmp_pa
                 "evidence_type": "live_turn",
                 "source_artifact": turn_path.name,
                 "transcript_observed": True,
+                "audio_segment_ref_observed": True,
+                "interpreter_evidence_observed": True,
+                "transcript_hypotheses_labeled": True,
                 "assistant_audio_observed": True,
                 "barge_in_observed": True,
                 "spoken_reply_short": True,
@@ -2288,6 +2310,9 @@ def test_live_evidence_rejects_complete_payload_without_schema_and_source_artifa
         {
             "collector_attestation": _collector_attestation("live_turn"),
             "transcript_observed": True,
+            "audio_segment_ref_observed": True,
+            "interpreter_evidence_observed": True,
+            "transcript_hypotheses_labeled": True,
             "assistant_audio_observed": True,
             "barge_in_observed": True,
             "spoken_reply_short": True,
@@ -2321,6 +2346,9 @@ def test_voice_operator_rejects_manifest_with_example_only_referenced_section(tm
     live_turn.update(
         {
             "transcript_observed": True,
+            "audio_segment_ref_observed": True,
+            "interpreter_evidence_observed": True,
+            "transcript_hypotheses_labeled": True,
             "assistant_audio_observed": True,
             "barge_in_observed": True,
             "spoken_reply_short": True,
@@ -2368,6 +2396,9 @@ def test_voice_operator_rejects_manifest_with_missing_or_invalid_schema(tmp_path
     live_turn.update(
         {
             "transcript_observed": True,
+            "audio_segment_ref_observed": True,
+            "interpreter_evidence_observed": True,
+            "transcript_hypotheses_labeled": True,
             "assistant_audio_observed": True,
             "barge_in_observed": True,
             "spoken_reply_short": True,
@@ -2432,6 +2463,9 @@ def test_live_evidence_rejects_nested_example_only_sections():
         {
             "example_only": True,
             "transcript_observed": True,
+            "audio_segment_ref_observed": True,
+            "interpreter_evidence_observed": True,
+            "transcript_hypotheses_labeled": True,
             "assistant_audio_observed": True,
             "barge_in_observed": True,
             "spoken_reply_short": True,

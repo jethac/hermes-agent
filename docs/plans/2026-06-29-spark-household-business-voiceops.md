@@ -61,11 +61,11 @@ Target KAME layout:
   supplied as context in the same interpreter evidence bundle, not
   prerequisites, separate turns, or authority.
 - Oracle/brain: whatever Hermes `/model` selects, with Nemotron 3 Super as the first preferred local NVIDIA candidate to evaluate on DGX Spark.
-- Speech: local transcript evidence and TTS where practical, with Moshi/S2S or
-  classic ASR transcripts used as auxiliary oracle/interpreter evidence rather
-  than reflex input in full KAME mode. The system must not require ASR evidence
-  before acknowledging or submitting work when the raw-audio/reflex path is
-  available.
+- Speech: local transcript hypothesis evidence and TTS where practical, with
+  Moshi/S2S or classic ASR transcripts used as auxiliary interpreter/oracle
+  context rather than reflex input in full KAME mode. The system must not
+  require ASR evidence before acknowledging or submitting work when the
+  raw-audio/reflex path is available.
 - Evidence: a speech cut should preserve raw audio, reflex hypothesis,
   Moshi/S2S hypothesis, optional ASR hypothesis, and interpreter correction as
   distinct provenance-labeled fields. Only interpreter/oracle judgment can
@@ -256,7 +256,7 @@ Target:
 - the fast reflex consumes live audio for floor control and immediate response
 - Gemma interpreter consumes clipped audio plus reflex/Moshi transcript
   hypotheses for multilingual correction and oracle evidence
-- dedicated classic ASR is an optional auxiliary transcript evidence lane and
+- dedicated classic ASR is an optional auxiliary transcript-hypothesis lane and
   fallback, not the reflex driver
 - speculative ASR or S2S transcript capture may run to hide latency, but the
   result stays a labeled hypothesis until interpreter/oracle promotion
