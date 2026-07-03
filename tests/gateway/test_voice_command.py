@@ -1161,6 +1161,50 @@ class TestVoiceChannelCommands:
         )
 
     @pytest.mark.asyncio
+    async def test_voice_jobs_uses_reflex_safe_ordinal_labels(self, runner):
+        mock_adapter = MagicMock()
+        mock_adapter.get_voice_session_status.return_value = {
+            "oracle_jobs": {
+                "enabled": True,
+                "capacity": {"active": 4, "running": 4, "max_concurrent": 4, "queued": 1},
+                "jobs": [
+                    {
+                        "job_id": "voice-oracle-hidden",
+                        "state": "running",
+                        "spoken_status": "Raw job that should not drive references.",
+                        "metadata": {"hidden": "raw evidence"},
+                    }
+                ],
+                "reflex": {
+                    "capacity": {"active": 4, "running": 4, "max_concurrent": 4, "queued": 1},
+                    "jobs": [
+                        {
+                            "job_id": f"voice-oracle-{index:03d}",
+                            "state": "queued" if index == 5 else "running",
+                            "ordinal": index,
+                            "ordinal_label": f"job {name}",
+                            "spoken_status": f"Visible job {index}.",
+                        }
+                        for index, name in enumerate(("one", "two", "three", "four", "five"), start=1)
+                    ],
+                },
+            }
+        }
+        event = self._make_discord_event("/voice jobs")
+        runner.adapters[event.source.platform] = mock_adapter
+
+        result = await runner._handle_voice_command(event)
+
+        assert result == (
+            "Oracle jobs: running=4/4, queued=1\n"
+            "Oracle job: job one (voice-oracle-001) running - Visible job 1.\n"
+            "Oracle job: job two (voice-oracle-002) running - Visible job 2.\n"
+            "Oracle job: job three (voice-oracle-003) running - Visible job 3.\n"
+            "Oracle job: job four (voice-oracle-004) running - Visible job 4.\n"
+            "Oracle job: job five (voice-oracle-005) queued - Visible job 5."
+        )
+
+    @pytest.mark.asyncio
     async def test_voice_jobs_prefers_live_oracle_job_status(self, runner):
         mock_adapter = MagicMock()
         mock_adapter.get_voice_session_status.return_value = {

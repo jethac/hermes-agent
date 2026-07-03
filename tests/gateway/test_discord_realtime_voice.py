@@ -1611,6 +1611,59 @@ def test_voice_status_oracle_job_lines_are_compact():
     ]
 
 
+def test_voice_status_oracle_job_lines_prefer_reflex_safe_ordinals():
+    from gateway.slash_commands import _voice_status_oracle_job_lines
+
+    lines = _voice_status_oracle_job_lines(
+        {
+            "enabled": True,
+            "capacity": {
+                "active": 4,
+                "running": 4,
+                "max_concurrent": 4,
+                "queued": 1,
+            },
+            "jobs": [
+                {
+                    "job_id": "voice-oracle-hidden",
+                    "state": "running",
+                    "spoken_status": "Raw job that should not drive references.",
+                    "metadata": {"hidden": "raw evidence"},
+                },
+            ],
+            "reflex": {
+                "capacity": {
+                    "active": 4,
+                    "running": 4,
+                    "max_concurrent": 4,
+                    "queued": 1,
+                },
+                "jobs": [
+                    {
+                        "job_id": f"voice-oracle-{index:03d}",
+                        "state": "queued" if index == 5 else "running",
+                        "ordinal": index,
+                        "ordinal_label": f"job {name}",
+                        "spoken_status": f"Visible job {index}.",
+                    }
+                    for index, name in enumerate(("one", "two", "three", "four", "five"), start=1)
+                ],
+            },
+        }
+    )
+
+    assert lines == [
+        "Oracle jobs: running=4/4, queued=1",
+        "Oracle job: job one (voice-oracle-001) running - Visible job 1.",
+        "Oracle job: job two (voice-oracle-002) running - Visible job 2.",
+        "Oracle job: job three (voice-oracle-003) running - Visible job 3.",
+        "Oracle job: job four (voice-oracle-004) running - Visible job 4.",
+        "Oracle job: job five (voice-oracle-005) queued - Visible job 5.",
+    ]
+    assert "voice-oracle-hidden" not in "\n".join(lines)
+    assert "raw evidence" not in "\n".join(lines)
+
+
 def test_voice_status_oracle_job_lines_prefer_terminal_outcomes():
     from gateway.slash_commands import _voice_status_oracle_job_lines
 

@@ -200,12 +200,10 @@ def _voice_status_oracle_job_lines(value: Any) -> list[str]:
     if cancel_requested:
         headline = f"{headline}, cancel_requested={cancel_requested}"
     lines = [headline]
-    jobs = value.get("jobs")
-    if not isinstance(jobs, list):
+    jobs = _voice_status_oracle_job_display_jobs(value)
+    if not jobs:
         return lines
-    for job in jobs[-3:]:
-        if not isinstance(job, dict):
-            continue
+    for job in jobs:
         job_id = str(job.get("job_id") or "").strip()
         state = str(job.get("state") or "").strip()
         label = _voice_status_oracle_job_label(job, state)
@@ -215,12 +213,41 @@ def _voice_status_oracle_job_lines(value: Any) -> list[str]:
         latest_update = str(job.get("latest_update") or "").strip()
         if latest_update:
             label = f"{label[:80]} | update: {latest_update[:80]}" if label else f"update: {latest_update[:100]}"
-        parts = [part for part in (job_id, state) if part]
+        job_ref = _voice_status_oracle_job_reference(job, job_id=job_id)
+        parts = [part for part in (job_ref, state) if part]
         if not parts:
             continue
         prefix = " ".join(parts)
         lines.append(f"Oracle job: {prefix}" + (f" - {label[:120]}" if label else ""))
     return lines
+
+
+def _voice_status_oracle_job_display_jobs(value: dict[str, Any]) -> list[dict[str, Any]]:
+    reflex = value.get("reflex") if isinstance(value.get("reflex"), dict) else {}
+    raw_jobs = reflex.get("jobs") if isinstance(reflex, dict) else None
+    if not isinstance(raw_jobs, list):
+        raw_jobs = value.get("jobs")
+    if not isinstance(raw_jobs, list):
+        return []
+    jobs = [dict(job) for job in raw_jobs if isinstance(job, dict)]
+    active_states = {"running", "queued", "waiting_for_approval", "cancel_requested"}
+    active = [
+        job
+        for job in jobs
+        if str(job.get("state") or "").strip().lower() in active_states
+    ]
+    if active:
+        return active[:5]
+    return jobs[-3:]
+
+
+def _voice_status_oracle_job_reference(job: dict[str, Any], *, job_id: str) -> str:
+    ordinal = str(job.get("ordinal_label") or "").strip()
+    if ordinal and job_id:
+        return f"{ordinal} ({job_id})"
+    if ordinal:
+        return ordinal
+    return job_id
 
 
 def _voice_status_oracle_job_label(job: dict[str, Any], state: str) -> str:
