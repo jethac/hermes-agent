@@ -503,6 +503,13 @@ until Gemma or the Hermes oracle promotes them. This lets the demo keep the
 acknowledgement path fast while still using transcript-like output as useful
 context for multilingual correction and business-critical actions.
 
+Current design rule: if a Moshi/OpenClaw/VoiceClaw-style frontend provides both
+raw voice and an STT-like transcript for the same speech cut, pass both to the
+Gemma interpreter in one packet. The transcript is a witness hypothesis about
+what the realtime frontend believed it heard. It is valuable context for Gemma,
+but it is not a required ASR proof, not a separate user turn, and not an action
+authority source until interpreter or oracle promotion.
+
 Provider selection must be role-based:
 
 | Role | Preferred Direction | Notes |

@@ -16,6 +16,14 @@ is the same class of optional evidence. Neither one schedules a second Hermes
 turn, becomes durable user text, or authorizes tools, spend, calls, files,
 memory, or external messages before interpreter/oracle promotion.
 
+Latest operator decision: yes, when a Moshi/OpenClaw/VoiceClaw-style frontend
+can expose both the clipped waveform and an STT-like string for the same speech
+cut, send both to Gemma in one interpreter evidence bundle. The raw waveform is
+primary. The Moshi/STT-like string is `frontend_witness_hypothesis` or a narrower
+hypothesis label when provenance is known. It is context for direct-audio
+interpretation, not a parallel ASR turn, not a scheduler, and not the user's
+durable transcript until interpreter or oracle promotion.
+
 Current pivot: raw voice is the normal evidence path into the interpreter.
 Moshi/open-S2S or classic STT text may accompany that raw voice as labeled
 context, but it must not become the scheduler, the durable transcript, or a
@@ -29,6 +37,12 @@ It is an attachment producer for the interpreter evidence bundle. The session
 may collect transcript text opportunistically, but the unit of work remains one
 speech cut with raw audio as primary evidence, plus whatever labeled hypotheses
 were available before or after the cut.
+
+This also means the runtime should not block reflex acknowledgement waiting for
+Moshi/STT text. If the waveform and reflex route are available, create the
+bundle and let the interpreter start. Transcript hypotheses can attach before
+the cut, with the cut, or later as late evidence, but only the interpreter or
+Hermes oracle can promote them into action text.
 
 2026-07-03 amendment: the design is now explicitly evidence-bundle KAME. The
 fast reflex may be Moshi/open-S2S-like and may produce an STT-looking text

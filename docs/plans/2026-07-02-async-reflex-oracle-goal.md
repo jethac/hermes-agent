@@ -30,6 +30,14 @@ oracle. There is no separate `oracle_model`, no second Hermes turn from Moshi
 text, and no ASR proof requirement before acknowledgement or job creation when
 raw audio is available.
 
+Latest decision: Moshi/OpenClaw/VoiceClaw transcript-looking output should be
+sent to the Gemma interpreter with the raw voice, not routed around it. Treat
+that text as `frontend_witness_hypothesis` unless the adapter can prove a more
+specific source label. It is useful evidence about what the realtime frontend
+believed it heard, especially for clipped starts, names, numbers, and
+code-switching, but it is not the transcript of record and it must not create a
+parallel oracle turn.
+
 The Moshi transcript is useful context, not control. It should help Gemma detect
 clipped prefixes, names, numbers, code-switching, and hallucinated commands,
 but it must remain `reflex_hypothesis` or `auxiliary_hypothesis` until Gemma or
@@ -37,6 +45,12 @@ the active oracle promotes it. Hypothesis-only text may support diagnostics,
 captions, or clarification. It must not become `oracle_text`, durable user
 history, a spend reason, call payload, memory/file content, or a tool argument
 by arriving first.
+
+Reflex acknowledgement should not wait for that witness text. If raw audio and
+a reflex route are available, the session creates one interpreter packet
+immediately. Moshi/open-S2S/classic-ASR text can attach before, with, or after
+the packet as labeled evidence, but any durable wording or high-risk action text
+must come from `interpreter_promoted` or `oracle_promoted` fields.
 
 The next gap is runtime behavior. The reflex and oracle are not yet truly async.
 The user should be able to keep talking to the reflex while one or more oracle
