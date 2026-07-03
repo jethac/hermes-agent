@@ -1488,8 +1488,8 @@ attach_to_interpreter_bundle = true
 schedule_oracle_from_transcript = false
 promote_without_interpreter = false
 
-[voice.realtime.oracle]
-mode = "hermes_active_oracle"
+[voice.realtime.oracle_policy]
+mode = "hermes_active_model"
 timeout_ms = 60000
 max_spoken_sentences = 2
 

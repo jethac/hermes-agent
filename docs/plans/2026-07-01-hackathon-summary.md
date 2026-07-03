@@ -6,7 +6,7 @@ Hermes becomes a Spark/PGX-powered household and business operator that can be s
 
 ## Demo Shape
 
-The demo starts in Discord voice. The user joins a voice channel and talks naturally to Hermes. Hermes listens, acknowledges quickly, reasons with its configured oracle model, and replies by voice in the channel.
+The demo starts in Discord voice. The user joins a voice channel and talks naturally to Hermes. Hermes listens, acknowledges quickly through the reflex, sends raw-audio evidence plus labeled witness hypotheses to the Gemma interpreter, uses the active Hermes `/model` oracle for durable work, and replies by voice in the channel.
 
 The user then gives Hermes a spending budget. Hermes uses Stripe-backed spending controls and skills to provision a service it needs, such as a VoIP provider account or phone-number-capable communications service.
 
@@ -57,7 +57,7 @@ Third, the local model server runs reproducible model containers:
 - **Interpreter/evidence model:** Gemma 4 E2B/E4B/12B-style audio-multimodal
   model for raw-audio review, multilingual correction, entity extraction, and
   oracle request patches.
-- **Primary oracle model:** Nemotron 3 Super or the current Hermes active model
+- **Active Hermes oracle:** Nemotron 3 Super or the current Hermes active model
   selected through the normal `/model` path.
 - **Optional fallback model:** a hosted or smaller local model if Super is
   unavailable or too slow for the demo window.

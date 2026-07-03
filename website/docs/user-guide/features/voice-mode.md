@@ -241,7 +241,7 @@ Voice mode setting is persisted across gateway restarts.
 
 ## Discord Voice Channels
 
-The most immersive voice feature: the bot joins a Discord voice channel, listens to users speaking, transcribes their speech, processes through the agent, and speaks the reply back in the voice channel.
+The most immersive voice feature: the bot joins a Discord voice channel and speaks replies back in the channel. In classic mode, Hermes transcribes speech and sends the text through the agent. In realtime/full-KAME mode, Hermes streams audio into the sidecar so a fast reflex can handle floor control, a Gemma-style interpreter can review clipped raw audio plus labeled hypotheses, and Hermes' active `/model` remains the oracle.
 
 ### Setup
 

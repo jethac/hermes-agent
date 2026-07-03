@@ -230,8 +230,10 @@ Runner behavior:
 - Runs `python -m hermes_cli.realtime_voice_oracle_probe`.
 - Uses `DGX_SPARK_ORACLE_PROVIDER_TARGET` only as the provider probe model id;
   Hermes still uses the active `/model` selection for the oracle. The runner
-  still accepts `DGX_SPARK_ORACLE_MODEL` and `DGX_SPARK_KAME_ORACLE_MODEL` as
-  compatibility aliases.
+  still accepts `DGX_SPARK_ORACLE_MODEL` and `DGX_SPARK_KAME_ORACLE_MODEL` only
+  as deprecated probe-target aliases; they must not be documented as Hermes
+  voice configuration and must not select the runtime oracle. Runtime oracle
+  selection remains Hermes `/model`.
 - Calls `/v1/chat/completions`, accepting either root or `/v1` base URLs.
 - Writes `oracle-probe.json`.
 - Records elapsed milliseconds, completion tokens, approximate tokens/sec, and

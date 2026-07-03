@@ -732,7 +732,6 @@ voice:
     sidecar_base_url: "http://127.0.0.1:8766"
     frontend_provider: "elevenlabs"   # optional
     frontend_model: ""                # optional
-    preferred_local_oracle_model: ""   # optional display/evidence hint only; /model still selects Hermes's oracle
     tts_provider: ""                  # optional
 
 discord:
@@ -745,6 +744,7 @@ discord:
 Notes:
 - The sidecar URL may also be provided with `HERMES_REALTIME_VOICE_SIDECAR_URL`.
 - If a sidecar token is needed, prefer `HERMES_REALTIME_VOICE_SIDECAR_TOKEN` in `.env`; `discord.realtime_voice.sidecar_token` is also accepted for local-only setups.
+- Realtime voice does not select the oracle model here. Register local oracle endpoints through normal Hermes provider/model config, then select them with `hermes model` or `/model`.
 - Realtime voice installs the Discord voice mixer automatically for sidecar audio output, even if `discord.voice_fx.enabled` is false.
 - If the sidecar is unavailable, Hermes logs a warning and still joins the voice channel using the existing non-realtime voice path.
 
