@@ -7,6 +7,15 @@ Preferred local reflex: fastest stable floor-control model, such as Moshi/Person
 Preferred local interpreter: Gemma 4 E2B/E4B/12B audio-multimodal
 Preferred local oracle target: Hermes active `/model`, with Nemotron 3 Super as the first Spark-local NVIDIA target to measure before readiness claims
 
+Canonical current design: three-tier sensor fan-in, not STT-first. The reflex
+is the always-warm live interface; Gemma is the post-cut audio interpreter; the
+Hermes active `/model` is the oracle. Moshi/OpenClaw/VoiceClaw transcript-like
+text is useful precisely because it records what the realtime frontend believed
+it heard, but it is witness context inside the interpreter bundle. Classic ASR
+is the same class of optional evidence. Neither one schedules a second Hermes
+turn, becomes durable user text, or authorizes tools, spend, calls, files,
+memory, or external messages before interpreter/oracle promotion.
+
 Current pivot: raw voice is the normal evidence path into the interpreter.
 Moshi/open-S2S or classic STT text may accompany that raw voice as labeled
 context, but it must not become the scheduler, the durable transcript, or a
@@ -175,6 +184,28 @@ and only after the interpreter emits the promoted fields. A rejected or
 diagnostic witness remains visible in the audit bundle but cannot become
 durable user text, a phone script, a spend reason, a provider choice, a memory
 write, a file write, or a tool argument.
+
+## Current Implementation Target
+
+The next implementation pass should optimize for a fast floor response while
+keeping the evidence boundary strict:
+
+1. The reflex listens continuously through VAD/energy gating, handles barge-in,
+   and speaks a short acknowledgement without waiting for classic ASR.
+2. The speech cut creates exactly one interpreter evidence bundle keyed by
+   `turn_id` and `audio_segment_ref`.
+3. The bundle includes raw audio first, then speaker/channel/VAD timing, then
+   reflex route and acknowledgement, then Moshi/OpenClaw/VoiceClaw/classic-ASR
+   transcript hypotheses with provenance labels.
+4. Gemma interprets that bundle and emits promoted wording, entities,
+   confidence, disagreements, and an oracle request patch.
+5. Hermes sends only promoted wording and labeled evidence to the active
+   `/model` oracle for durable work and external effects.
+
+This keeps a three-tier user experience without creating three competing
+conversations. The user hears the reflex quickly. Gemma gets both the waveform
+and the Moshi/open-S2S witness text. The oracle receives compact, promoted
+business intent rather than raw partials or duplicate STT turns.
 
 ## Purpose
 

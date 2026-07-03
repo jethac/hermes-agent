@@ -150,6 +150,39 @@ driver.
 - STT/audio-understanding prompts must preserve source language and script unless the user explicitly asks for translation.
 - Transcript events may include `language`, `locale`, `script`, and provider confidence metadata when available, but the protocol must also work when a provider cannot identify language.
 
+#### Transcript-Hypothesis Fan-In
+
+Full KAME mode must treat transcript-like text as sensor evidence, not as a
+separate conversation. For every speech cut with raw audio, the backend creates
+one interpreter bundle keyed by `turn_id` and `audio_segment_ref`. The bundle
+must contain raw audio and timing first, reflex route and spoken acknowledgement
+second, and transcript hypotheses third.
+
+Allowed transcript-hypothesis sources include:
+
+- `reflex_transcript_hypothesis`: rough text from the live reflex itself.
+- `s2s_transcript_hypothesis`: text from a Moshi/OpenClaw/VoiceClaw-style
+  speech-to-speech frontend.
+- `frontend_witness_hypothesis`: an umbrella label when the adapter cannot
+  prove whether frontend text came from the reflex model or an adjacent caption
+  component.
+- `classic_asr_hypothesis`: text from a dedicated ASR fallback or diagnostic
+  lane.
+
+Every hypothesis must keep source, timing, partial/final state, confidence when
+available, and `authority = "hypothesis"`. Hypotheses may help Gemma recover
+clipped prefixes, names, numbers, and code-switched phrases, but they must not
+create a second oracle turn, overwrite `oracle_text`, satisfy a high-risk action
+approval, or become durable user history unless the interpreter or oracle emits
+promoted evidence.
+
+Acceptance evidence for a Moshi/open-S2S or classic-ASR path must include at
+least one positive and one adversarial case: one where the witness hypothesis
+helps the interpreter recover wording, and one where the interpreter corrects or
+rejects a stale, hallucinated, wrong-speaker, or energy-inconsistent
+hypothesis. Text-only frontend bridges are compatibility mode and must be
+labeled degraded when raw audio is unavailable.
+
 ### Language and Locale
 
 - English and Japanese are the initial production quality targets. Acceptance testing must cover English and Japanese speech input, one-session raw-audio -> reflex/interpreter evidence -> Hermes oracle -> TTS evidence, assistant captions, barge-in behavior, and spoken output before realtime voice is considered ready for general release. Fallback STT/TTS runs should be tested separately and labeled as fallback evidence.

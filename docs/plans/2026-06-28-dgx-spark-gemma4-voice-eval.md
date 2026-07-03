@@ -87,6 +87,26 @@ This keeps open S2S models, classic ASR, and TTS providers in their correct
 lanes. The metric is not "fastest transcript"; it is whether the component
 improves the KAME voice loop without weakening promoted-evidence authority.
 
+The headless report should also identify which lane each model or provider
+actually served in a run:
+
+- `reflex`: live floor control, barge-in, acknowledgement, and optional witness
+  transcript generation.
+- `interpreter`: raw-audio evidence adjudication and promoted wording.
+- `auxiliary_transcript_evidence`: Moshi/open-S2S/classic-ASR witness text
+  attached to the same raw-audio bundle.
+- `outbound_tts`: audio rendering only.
+- `oracle`: Hermes' active `/model`, selected through normal Hermes model
+  configuration.
+
+A candidate must not be credited for a lane it did not actually perform. For
+example, a Moshi-like frontend that emits text quickly can win reflex or
+auxiliary-evidence points, but it does not win interpreter points unless Gemma
+or another configured interpreter consumed the waveform and adjudicated the
+evidence bundle. Likewise, a classic ASR path can win fallback/evidence points,
+but it cannot satisfy full-KAME readiness without raw audio flowing to the
+interpreter.
+
 ## Headless Runner
 
 The repo-side unattended runner is:

@@ -139,6 +139,25 @@ That wording matters. "Moshi STT drives Hermes" sounds like a voice-message
 bot. "Raw voice plus frontend witness evidence is promoted by Gemma before
 Hermes spends money or places calls" is the safety and architecture story.
 
+The current demo architecture should therefore be described as:
+
+```text
+Discord/phone audio
+  -> fast reflex: VAD, barge-in, acknowledgement, local status narration
+  -> one evidence bundle: raw audio + timing + reflex route + witness text
+  -> Gemma interpreter: accept, correct, or reject witness hypotheses
+  -> Hermes active /model oracle: business action, Stripe, NemoClaw, phone
+```
+
+Moshi, VoiceClaw, OpenClaw, and classic ASR are not competing "hearing layers"
+in the story. They are witness producers. If they emit text, that text helps
+Gemma understand what the live frontend thought it heard, especially when the
+start was clipped or the utterance includes names, numbers, or code-switching.
+The artifact should also show the failure case: a hallucinated or wrong-speaker
+witness is preserved for audit but rejected before it can shape spend,
+provisioning, phone-call payloads, durable history, memory, files, or tool
+arguments.
+
 That means the demo should not present Moshi as "the ASR layer." It should
 present Moshi/open-S2S text as the reflex's hearing hypothesis. The stronger
 story is that Hermes can keep the voice loop fast, preserve what the realtime
