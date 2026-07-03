@@ -3640,7 +3640,7 @@ def _oracle_request_with_queued_interpreter_evidence(
     job: OracleJob,
     request: KameOracleRequest,
 ) -> KameOracleRequest:
-    evidence = _latest_queued_interpreter_evidence(job)
+    evidence = _queued_interpreter_evidence_bundle(job)
     if not evidence:
         return request
 
@@ -3716,14 +3716,45 @@ def _oracle_request_auxiliary_hypotheses_from_evidence(
     return tuple(compact)
 
 
-def _latest_queued_interpreter_evidence(job: OracleJob) -> Mapping[str, Any]:
-    for evidence in reversed(job.interpreter_evidence):
+def _queued_interpreter_evidence_bundle(job: OracleJob) -> Mapping[str, Any]:
+    bundle: dict[str, Any] = {}
+    auxiliary: list[Mapping[str, Any]] = []
+    for evidence in job.interpreter_evidence:
         if not isinstance(evidence, Mapping):
             continue
         if bool(evidence.get("late")):
             continue
-        return evidence
-    return {}
+        corrected = str(evidence.get("corrected_transcript") or "").strip()
+        if corrected:
+            bundle["corrected_transcript"] = corrected
+            source = str(evidence.get("source") or "").strip()
+            if source:
+                bundle["source"] = source
+            if isinstance(evidence.get("confidence"), (int, float)) and not isinstance(
+                evidence.get("confidence"), bool
+            ):
+                bundle["confidence"] = evidence.get("confidence")
+        intent = str(evidence.get("normalized_intent") or "").strip()
+        if intent:
+            bundle["normalized_intent"] = intent
+            source = str(evidence.get("source") or "").strip()
+            if source:
+                bundle["source"] = source
+        audio_segment_ref = str(evidence.get("audio_segment_ref") or "").strip()
+        if audio_segment_ref:
+            bundle["audio_segment_ref"] = audio_segment_ref
+        audio_time_range_ms = evidence.get("audio_time_range_ms")
+        if isinstance(audio_time_range_ms, tuple):
+            bundle["audio_time_range_ms"] = audio_time_range_ms
+        reflex = evidence.get("reflex_transcript_hypothesis")
+        if isinstance(reflex, Mapping):
+            auxiliary.append(reflex)
+        evidence_auxiliary = evidence.get("auxiliary_transcript_hypotheses")
+        if isinstance(evidence_auxiliary, tuple):
+            auxiliary.extend(item for item in evidence_auxiliary if isinstance(item, Mapping))
+    if auxiliary:
+        bundle["auxiliary_transcript_hypotheses"] = tuple(auxiliary)
+    return bundle
 
 
 def _oracle_job_update_texts(job: OracleJob) -> tuple[str, ...]:
