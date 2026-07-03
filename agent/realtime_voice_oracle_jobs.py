@@ -83,6 +83,7 @@ class OracleJob:
     interpreter_entities: tuple[dict[str, str], ...] = field(default_factory=tuple)
     interpreter_disagreements: tuple[str, ...] = field(default_factory=tuple)
     interface_already_said: str = ""
+    interface_tool_call_id: str = ""
     requested_response_style: Mapping[str, Any] = field(default_factory=dict)
     metadata: Mapping[str, Any] = field(default_factory=dict)
     result_summary: str = ""
@@ -110,6 +111,8 @@ class OracleJob:
             status["error"] = self.error
         if self.cancel_reason:
             status["cancel_reason"] = self.cancel_reason
+        if self.interface_tool_call_id:
+            status["interface_tool_call_id"] = self.interface_tool_call_id
         if self.audio_segment_ref:
             status["audio_segment_ref"] = self.audio_segment_ref
         if self.audio_time_range_ms:
@@ -575,6 +578,7 @@ class OracleJobManager:
             oracle_text=request.oracle_text,
             reflex_intent=request.intent,
             interface_already_said=request.interface_already_said,
+            interface_tool_call_id=_compact_evidence_text(request.interface_tool_call_id, limit=160),
             audio_segment_ref=_compact_evidence_text(request.audio_segment_ref, limit=240),
             audio_time_range_ms=_audio_time_range_ms(request.audio_time_range_ms),
             reflex_transcript_hypothesis=_compact_evidence_text(

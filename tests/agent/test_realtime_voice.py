@@ -12588,6 +12588,7 @@ def test_external_kame_ask_brain_bridge_becomes_oracle_request():
     request = kame_external_brain_request_to_oracle_request(
         {
             "tool_name": "ask_brain",
+            "tool_call_id": "call-voiceclaw-1",
             "arguments": {
                 "query": "use my Stripe budget to prepare a VoIP provisioning plan",
                 "intent": "Prepare VoIP provisioning with a Stripe budget.",
@@ -12618,8 +12619,10 @@ def test_external_kame_ask_brain_bridge_becomes_oracle_request():
     assert request.interface_already_said == "I'm preparing the provisioning plan."
     assert request.conversation_summary == "The user is testing Discord voice to phone handoff."
     assert request.interface_input_source == "ask_brain"
+    assert request.interface_tool_call_id == "call-voiceclaw-1"
     assert metadata["voice_architecture"] == "kame_frontend_oracle"
     assert metadata["kame_interface_input_source"] == "ask_brain"
+    assert metadata["kame_interface_tool_call_id"] == "call-voiceclaw-1"
     assert metadata["kame_reflex_transcript_hypothesis"] == "use my Stripe budget to prepare a VoIP provisioning plan"
     assert metadata["kame_reflex_transcript_source"] == "reflex_audio"
     assert "tool_name" not in metadata
@@ -12916,6 +12919,7 @@ def test_sidecar_oracle_hint_bridge_submits_external_kame_job(monkeypatch):
         await asyncio.wait_for(oracle.started.wait(), timeout=1)
         assert oracle.requests[0].source == "gemini_live"
         assert oracle.requests[0].interface_input_source == "ask_hermes_oracle"
+        assert oracle.requests[0].interface_tool_call_id == "call-1"
         assert oracle.requests[0].oracle_text == "prepare the Discord to phone handoff plan"
 
         oracle.release.set()
@@ -12924,6 +12928,7 @@ def test_sidecar_oracle_hint_bridge_submits_external_kame_job(monkeypatch):
             if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
                 break
         completed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_COMPLETED)
+        assert completed.payload["interface_tool_call_id"] == "call-1"
         assert completed.payload["result_summary"] == "I prepared the handoff plan."
         await engine.close()
 
@@ -12985,8 +12990,10 @@ def test_session_client_interface_oracle_request_submits_external_kame_job(monke
         tool_result = next(event for event in seen if event.type == VoiceEventType.TOOL_RESULT)
         assert tool_result.payload["accepted"] is True
         assert tool_result.payload["job_id"] == "voice-oracle-001"
+        assert tool_result.payload["tool_call_id"] == "call-1"
         assert oracle.requests[0].source == "voiceclaw"
         assert oracle.requests[0].interface_input_source == "ask_brain"
+        assert oracle.requests[0].interface_tool_call_id == "call-1"
 
         oracle.release.set()
         async for event in session.events():
@@ -12994,6 +13001,7 @@ def test_session_client_interface_oracle_request_submits_external_kame_job(monke
             if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
                 break
         completed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_COMPLETED)
+        assert completed.payload["interface_tool_call_id"] == "call-1"
         assert completed.payload["result_summary"] == "I prepared the external frontend result."
         await session.close()
 

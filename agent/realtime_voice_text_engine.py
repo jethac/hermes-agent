@@ -718,6 +718,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         response = await self.submit_external_brain_request(
             {
                 "tool_name": tool,
+                "tool_call_id": str(payload.get("tool_call_id") or ""),
                 "arguments": {
                     "query": str(payload.get("text") or payload.get("query") or "").strip(),
                     "intent": str(payload.get("intent") or payload.get("text") or payload.get("query") or "").strip(),
@@ -3431,6 +3432,8 @@ def _oracle_job_payload(job: OracleJob) -> dict[str, Any]:
         )
         if request.user_id:
             payload["user_id"] = request.user_id
+        if request.interface_tool_call_id:
+            payload["interface_tool_call_id"] = request.interface_tool_call_id
         if request.cancellation_token:
             payload["cancellation_token"] = request.cancellation_token
         if request.audio_segment_ref:

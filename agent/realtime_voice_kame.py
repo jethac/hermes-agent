@@ -384,6 +384,7 @@ class KameOracleRequest:
     cancellation_token: str = ""
     reflex_validation_error: str = ""
     interface_input_source: str = ""
+    interface_tool_call_id: str = ""
     interface_audio_input_fallback: bool = False
     reflex_provider: str = ""
 
@@ -471,6 +472,8 @@ class KameOracleRequest:
             metadata["kame_reflex_validation_error"] = self.reflex_validation_error
         if self.interface_input_source:
             metadata["kame_interface_input_source"] = self.interface_input_source
+        if self.interface_tool_call_id:
+            metadata["kame_interface_tool_call_id"] = self.interface_tool_call_id
         if self.interface_audio_input_fallback:
             metadata["kame_interface_audio_input_fallback"] = True
         if self.reflex_provider:
@@ -597,6 +600,9 @@ class KameOracleRequest:
             cancellation_token=_optional_text(payload.get("cancellation_token")) or "",
             reflex_validation_error=_optional_text(payload.get("reflex_validation_error")) or "",
             interface_input_source=_optional_text(payload.get("interface_input_source")) or "",
+            interface_tool_call_id=_correlation_id(
+                payload.get("interface_tool_call_id") or payload.get("external_tool_call_id")
+            ),
             interface_audio_input_fallback=_bool(payload.get("interface_audio_input_fallback"), default=False),
             reflex_provider=_optional_text(payload.get("reflex_provider")) or "",
         )
@@ -623,6 +629,9 @@ def kame_external_brain_request_to_oracle_request(
     bridge_name = _frontend_bridge_name(raw)
     bridge_arguments = _frontend_bridge_arguments(raw) if bridge_name in KAME_FRONTEND_BRAIN_BRIDGE_NAMES else raw
     normalized = dict(bridge_arguments)
+    bridge_call_id = _frontend_bridge_call_id(raw)
+    if bridge_call_id:
+        normalized["interface_tool_call_id"] = bridge_call_id
     if bridge_name:
         normalized["interface_input_source"] = bridge_name
     else:
@@ -920,6 +929,10 @@ def _optional_text(value: Any) -> str:
     return str(value).strip()
 
 
+def _correlation_id(value: Any) -> str:
+    return " ".join(_optional_text(value).split())[:160]
+
+
 def _confidence(value: Any) -> Optional[float]:
     if isinstance(value, bool) or value is None:
         return None
@@ -983,6 +996,20 @@ def _frontend_bridge_arguments(payload: Mapping[str, Any]) -> Mapping[str, Any]:
                 if isinstance(decoded, Mapping):
                     return decoded
     return {}
+
+
+def _frontend_bridge_call_id(payload: Mapping[str, Any]) -> str:
+    for key in ("tool_call_id", "call_id", "id"):
+        text = _correlation_id(payload.get(key))
+        if text:
+            return text
+    function = payload.get("function")
+    if isinstance(function, Mapping):
+        for key in ("tool_call_id", "call_id", "id"):
+            text = _correlation_id(function.get(key))
+            if text:
+                return text
+    return ""
 
 
 def _frontend_already_said(payload: Mapping[str, Any]) -> str:
