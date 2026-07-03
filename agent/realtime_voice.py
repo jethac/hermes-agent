@@ -86,6 +86,7 @@ class VoiceEventType(StrEnum):
     ORACLE_JOB_FAILED = "oracle.job.failed"
     ORACLE_JOB_CANCEL_REQUESTED = "oracle.job.cancel_requested"
     ORACLE_JOB_CANCELLED = "oracle.job.cancelled"
+    ORACLE_JOB_RESULT_SUPPRESSED = "oracle.job.result_suppressed"
     ORACLE_ACCEPTED = "oracle.accepted"
     ORACLE_TOOL_CALL = "oracle.tool_call"
     ORACLE_TOOL_RESULT = "oracle.tool_result"
@@ -151,6 +152,7 @@ SERVER_EVENT_TYPES = frozenset(
         VoiceEventType.ORACLE_JOB_FAILED,
         VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED,
         VoiceEventType.ORACLE_JOB_CANCELLED,
+        VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED,
         VoiceEventType.ORACLE_ACCEPTED,
         VoiceEventType.ORACLE_TOOL_CALL,
         VoiceEventType.ORACLE_TOOL_RESULT,

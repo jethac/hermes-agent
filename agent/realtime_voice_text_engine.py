@@ -1224,6 +1224,13 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 timeout_seconds=_oracle_timeout_seconds(self.config),
             ):
                 if job.state in {OracleJobState.CANCEL_REQUESTED, OracleJobState.CANCELLED}:
+                    await self._emit_oracle_job_voice_event(
+                        VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED,
+                        _oracle_job_runtime_result_suppressed_payload(
+                            job,
+                            reason="cancelled_job_streamed_result",
+                        ),
+                    )
                     raise asyncio.CancelledError
                 if isinstance(item, Mapping):
                     oracle_tool_event_type = _oracle_tool_event_type(item)
@@ -1397,15 +1404,35 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             return
         if not _oracle_job_terminal_speech_enabled(self.config):
             self._oracle_job_context_by_turn_id.pop(turn_id, None)
+            self._schedule_oracle_job_result_suppressed(
+                event,
+                reason="terminal_speech_disabled",
+                playback_generation=playback_generation,
+            )
             return
         if self._closed:
             self._oracle_job_context_by_turn_id.pop(turn_id, None)
+            self._schedule_oracle_job_result_suppressed(
+                event,
+                reason="session_closed",
+                playback_generation=playback_generation,
+            )
             return
         if playback_generation != self._playback_generation:
             self._oracle_job_context_by_turn_id.pop(turn_id, None)
+            self._schedule_oracle_job_result_suppressed(
+                event,
+                reason="stale_playback_generation",
+                playback_generation=playback_generation,
+            )
             return
         if event.type == OracleJobEventType.COMPLETED and not str(payload.get("result_summary") or "").strip():
             self._oracle_job_context_by_turn_id.pop(turn_id, None)
+            self._schedule_oracle_job_result_suppressed(
+                event,
+                reason="empty_result_summary",
+                playback_generation=playback_generation,
+            )
             return
         previous_task = self._active_task if self._active_task and not self._active_task.done() else None
         task = asyncio.create_task(
@@ -1422,6 +1449,25 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if event.type == OracleJobEventType.COMPLETED:
             task.add_done_callback(lambda _task, key=turn_id: self._oracle_job_context_by_turn_id.pop(key, None))
 
+    def _schedule_oracle_job_result_suppressed(
+        self,
+        event: OracleJobEvent,
+        *,
+        reason: str,
+        playback_generation: Optional[int] = None,
+    ) -> None:
+        payload = _oracle_job_result_suppressed_voice_payload(
+            event,
+            reason=reason,
+            playback_generation=playback_generation,
+        )
+        asyncio.create_task(
+            self._emit_oracle_job_voice_event(
+                VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED,
+                payload,
+            )
+        )
+
     async def _speak_oracle_job_terminal_event(
         self,
         event: OracleJobEvent,
@@ -1435,6 +1481,14 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await previous_task
         if self._closed or playback_generation != self._playback_generation:
+            await self._emit_oracle_job_voice_event(
+                VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED,
+                _oracle_job_result_suppressed_voice_payload(
+                    event,
+                    reason="stale_before_speech",
+                    playback_generation=playback_generation,
+                ),
+            )
             return
         payload = dict(event.payload)
         metadata = {
@@ -1449,12 +1503,28 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             outcome = "oracle_job_completed"
         spoken_text = self._planner.clean(strip_leading_reasoning_trace(raw_text))
         if not spoken_text:
+            await self._emit_oracle_job_voice_event(
+                VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED,
+                _oracle_job_result_suppressed_voice_payload(
+                    event,
+                    reason="empty_spoken_text",
+                    playback_generation=playback_generation,
+                ),
+            )
             return
         spoken_text, spoken_truncated = _limit_spoken_text(
             spoken_text,
             max_sentences=_effective_max_spoken_sentences(self.config, oracle_request=oracle_request),
         )
         if not spoken_text:
+            await self._emit_oracle_job_voice_event(
+                VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED,
+                _oracle_job_result_suppressed_voice_payload(
+                    event,
+                    reason="empty_spoken_text_after_limit",
+                    playback_generation=playback_generation,
+                ),
+            )
             return
         metadata = {
             **metadata,
@@ -3150,6 +3220,7 @@ _ORACLE_JOB_EVENT_VOICE_TYPES: Mapping[OracleJobEventType, VoiceEventType] = {
     OracleJobEventType.FAILED: VoiceEventType.ORACLE_JOB_FAILED,
     OracleJobEventType.CANCEL_REQUESTED: VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED,
     OracleJobEventType.CANCELLED: VoiceEventType.ORACLE_JOB_CANCELLED,
+    OracleJobEventType.RESULT_SUPPRESSED: VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED,
 }
 
 
@@ -3187,6 +3258,63 @@ def _oracle_job_payload(job: OracleJob) -> dict[str, Any]:
             payload["user_id"] = request.user_id
         if request.cancellation_token:
             payload["cancellation_token"] = request.cancellation_token
+    return payload
+
+
+def _oracle_job_result_suppressed_voice_payload(
+    event: OracleJobEvent,
+    *,
+    reason: str,
+    playback_generation: Optional[int] = None,
+) -> dict[str, Any]:
+    payload = {
+        key: value
+        for key, value in dict(event.payload).items()
+        if key
+        not in {
+            "delta",
+            "text",
+            "result_summary",
+            "result_text",
+            "tool_event",
+        }
+    }
+    payload.update(
+        {
+            "job_id": event.job_id,
+            "session_id": event.session_id,
+            "state": event.state.value,
+            "timestamp_ms": event.timestamp_ms,
+            "result_suppressed": True,
+            "suppression_reason": str(reason or "result_suppressed")[:120],
+        }
+    )
+    if playback_generation is not None:
+        payload["source_playback_generation"] = playback_generation
+        payload["playback_generation"] = playback_generation
+    if "result_text_chars" in event.payload:
+        payload["suppressed_result_text_chars"] = event.payload["result_text_chars"]
+        payload.pop("result_text_chars", None)
+    payload["suppressed_result_present"] = any(
+        str(event.payload.get(key) or "").strip()
+        for key in ("result_summary", "result_text", "text")
+    ) or bool(event.payload.get("suppressed_result_present"))
+    return payload
+
+
+def _oracle_job_runtime_result_suppressed_payload(
+    job: OracleJob,
+    *,
+    reason: str,
+) -> dict[str, Any]:
+    payload = _oracle_job_payload(job)
+    payload.update(
+        {
+            "result_suppressed": True,
+            "suppression_reason": str(reason or "result_suppressed")[:120],
+            "suppressed_result_present": True,
+        }
+    )
     return payload
 
 

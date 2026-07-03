@@ -44,6 +44,7 @@ class OracleJobEventType(StrEnum):
     FAILED = "oracle.job.failed"
     CANCEL_REQUESTED = "oracle.job.cancel_requested"
     CANCELLED = "oracle.job.cancelled"
+    RESULT_SUPPRESSED = "oracle.job.result_suppressed"
 
 
 TERMINAL_STATES = frozenset(
@@ -512,6 +513,14 @@ class OracleJobManager:
                 if job.state not in TERMINAL_STATES:
                     job.state = OracleJobState.CANCELLED
                     job.updated_at = self._clock()
+                    await self._emit_locked(
+                        OracleJobEventType.RESULT_SUPPRESSED,
+                        job,
+                        payload=_result_suppressed_payload(
+                            job,
+                            reason="cancelled_runner_interrupted",
+                        ),
+                    )
                     await self._emit_locked(OracleJobEventType.CANCELLED, job)
                 self._tasks.pop(job_id, None)
                 self._runners.pop(job_id, None)
@@ -537,6 +546,15 @@ class OracleJobManager:
                 job.result_summary = ""
                 job.result_text = ""
                 job.updated_at = self._clock()
+                await self._emit_locked(
+                    OracleJobEventType.RESULT_SUPPRESSED,
+                    job,
+                    payload=_result_suppressed_payload(
+                        job,
+                        reason="cancelled_job_returned_result",
+                        result=result,
+                    ),
+                )
                 await self._emit_locked(OracleJobEventType.CANCELLED, job)
             elif job.state not in TERMINAL_STATES:
                 job.state = OracleJobState.COMPLETED
@@ -702,6 +720,19 @@ def _completion_payload(job: OracleJob) -> dict[str, Any]:
     if job.result_text:
         payload["result_text"] = job.result_text
         payload["result_text_chars"] = len(job.result_text)
+    return payload
+
+
+def _result_suppressed_payload(
+    job: OracleJob,
+    *,
+    reason: str,
+    result: Any = None,
+) -> dict[str, Any]:
+    payload = job.to_status()
+    payload["suppression_reason"] = str(reason or "result_suppressed")[:120]
+    payload["result_suppressed"] = True
+    payload["suppressed_result_present"] = result is not None
     return payload
 
 

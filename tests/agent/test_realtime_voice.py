@@ -4985,10 +4985,20 @@ def test_kame_engine_speak_terminal_results_false_suppresses_result_speech_but_k
             seen.append(event)
             if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
                 break
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED:
+                break
 
         assert len(oracle.requests) == 1
         completed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_COMPLETED)
+        suppressed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED)
         assert completed.payload["result_summary"] == "The deployment is healthy."
+        assert suppressed.payload["suppression_reason"] == "terminal_speech_disabled"
+        assert suppressed.payload["result_suppressed"] is True
+        assert suppressed.payload["suppressed_result_present"] is True
+        assert "result_summary" not in suppressed.payload
+        assert "result_text" not in suppressed.payload
         assert not any(
             event.type == VoiceEventType.ASSISTANT_COMMIT
             and event.payload.get("oracle_job_result")

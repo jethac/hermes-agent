@@ -36,6 +36,10 @@ def test_oracle_job_protocol_surface_is_wire_serializable():
         VoiceEventType("oracle.job.interpreter_evidence_late")
         == VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_LATE
     )
+    assert (
+        VoiceEventType("oracle.job.result_suppressed")
+        == VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED
+    )
     assert VoiceEventType("interface.oracle.update") == VoiceEventType.INTERFACE_ORACLE_UPDATE
 
     config = RealtimeVoiceSessionConfig(
@@ -1210,9 +1214,16 @@ async def test_cancelling_waiting_for_approval_keeps_capacity_until_worker_stops
         "oracle.job.started",
         "oracle.job.waiting_for_approval",
         "oracle.job.cancel_requested",
+        "oracle.job.result_suppressed",
         "oracle.job.cancelled",
     ]
     assert "oracle.job.completed" not in first_events
+    suppressed = next(row for row in rows if row["event_type"] == "oracle.job.result_suppressed")
+    assert suppressed["payload"]["suppression_reason"] == "cancelled_job_returned_result"
+    assert suppressed["payload"]["result_suppressed"] is True
+    assert suppressed["payload"]["suppressed_result_present"] is True
+    assert "result_summary" not in suppressed["payload"]
+    assert "result_text" not in suppressed["payload"]
     assert "late result" not in str(rows)
     assert "raw-token" not in str(rows)
 

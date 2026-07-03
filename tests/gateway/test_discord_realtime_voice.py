@@ -1865,6 +1865,13 @@ async def test_discord_realtime_cancelled_oracle_late_output_is_not_mixed(monkey
     await asyncio.wait_for(oracle.started.wait(), timeout=1)
 
     await session.cancel_oracle_job("voice-oracle-001", reason="test cancellation")
+    await wait_for(
+        lambda: any(
+            event_type == VoiceEventType.ORACLE_JOB_CANCEL_REQUESTED.value
+            and payload.get("job_id") == "voice-oracle-001"
+            for event_type, payload in observed
+        )
+    )
     oracle.release.set()
     await wait_for(
         lambda: any(
@@ -1883,6 +1890,17 @@ async def test_discord_realtime_cancelled_oracle_late_output_is_not_mixed(monkey
         and payload.get("job_id") == "voice-oracle-001"
         for event_type, payload in observed
     )
+    suppressed = next(
+        payload
+        for event_type, payload in observed
+        if event_type == VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED.value
+        and payload.get("job_id") == "voice-oracle-001"
+    )
+    assert suppressed["suppression_reason"] == "cancelled_runner_interrupted"
+    assert suppressed["result_suppressed"] is True
+    assert suppressed["suppressed_result_present"] is False
+    assert "result_summary" not in suppressed
+    assert "result_text" not in suppressed
     assert not any(
         event_type == VoiceEventType.ASSISTANT_COMMIT.value
         and payload.get("oracle_job_result")
