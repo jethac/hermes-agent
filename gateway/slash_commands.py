@@ -257,6 +257,9 @@ def _voice_status_oracle_job_evidence_label(job: dict[str, Any]) -> str:
     authority = _voice_status_evidence_authority_label(job.get("evidence_authority"))
     if authority:
         parts.append(f"authority={authority}")
+    latest_authority = _voice_status_evidence_authority_label(job.get("latest_interpreter_evidence_authority"))
+    if latest_authority and latest_authority != authority:
+        parts.append(f"latest={latest_authority}")
     return ", ".join(parts)[:80]
 
 

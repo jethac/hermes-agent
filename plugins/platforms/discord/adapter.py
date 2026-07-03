@@ -487,6 +487,11 @@ def _discord_voice_copy_oracle_job_evidence_status(
     evidence_authority = _discord_voice_evidence_authority(source.get("evidence_authority"))
     if evidence_authority:
         target["evidence_authority"] = evidence_authority
+    latest_evidence_authority = _discord_voice_evidence_authority(
+        source.get("latest_interpreter_evidence_authority")
+    )
+    if latest_evidence_authority:
+        target["latest_interpreter_evidence_authority"] = latest_evidence_authority
 
 
 def _discord_voice_evidence_authority(value: Any) -> Dict[str, str]:
