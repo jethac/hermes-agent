@@ -2237,6 +2237,84 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
     releases.setdefault("prepare late witness handoff", asyncio.Event()).set()
     await manager.wait_for_idle()
 
+    partial_blocker = await manager.submit(
+        KameOracleRequest(
+            session_id="voice-smoke-witness-fusion",
+            turn_id="witness-fusion:partial-blocker",
+            source="discord_voice",
+            user_id="42",
+            intent="occupy partial supersession worker",
+            route=KameRoute.DEFER,
+            interface_already_said="Starting another blocking task.",
+        )
+    )
+    await asyncio.sleep(0)
+    partial_case = await manager.submit(
+        KameOracleRequest(
+            session_id="voice-smoke-witness-fusion",
+            turn_id="witness-fusion:partial-final",
+            source="voiceclaw",
+            user_id="42",
+            intent="three to the",
+            route=KameRoute.DEFER,
+            transcript="three to the",
+            transcript_source="reflex_audio",
+            interface_input_source="ask_brain",
+            interface_already_said="Checking the partial witness.",
+            auxiliary_transcript_hypotheses=(
+                {
+                    "source": "moshi",
+                    "kind": "frontend_witness_hypothesis",
+                    "text": "what is three to the",
+                    "authority": "hypothesis",
+                    "partial": True,
+                    "arrival_phase": "partial_before_final",
+                    "confidence": 0.41,
+                },
+            ),
+        )
+    )
+    await manager.add_interpreter_evidence(
+        partial_case.job_id,
+        audio_segment_ref="artifact://voice/witness-partial-final.wav",
+        audio_time_range_ms=(100, 2100),
+        corrected_transcript="what is three to the power of seventeen",
+        normalized_intent="answer a math question",
+        confidence=0.94,
+        auxiliary_transcript_hypotheses=(
+            {
+                "source": "moshi",
+                "kind": "frontend_witness_hypothesis",
+                "text": "what is three to the power of seventeen",
+                "authority": "hypothesis",
+                "partial": False,
+                "arrival_phase": "final_after_partial",
+                "confidence": 0.88,
+            },
+        ),
+        source="gemma_interpreter",
+    )
+    partial_status = await manager.status_view()
+    partial_status_job = next(job for job in partial_status["jobs"] if job["job_id"] == partial_case.job_id)
+    partial_hypotheses = [
+        item
+        for item in partial_status_job.get("transcript_hypotheses", ())
+        if isinstance(item, Mapping) and item.get("source") == "moshi"
+    ]
+    partial_active_hypothesis = partial_hypotheses[0] if partial_hypotheses else {}
+    partial_supersession_observed = (
+        len(partial_hypotheses) == 1
+        and partial_active_hypothesis.get("text") == "what is three to the power of seventeen"
+        and partial_active_hypothesis.get("partial") is False
+        and partial_active_hypothesis.get("superseded_partial_texts") == ("what is three to the",)
+        and partial_active_hypothesis.get("superseded_partial_count") == 1
+        and partial_status_job.get("interpreter_evidence_count") == 1
+    )
+    releases.setdefault("occupy partial supersession worker", asyncio.Event()).set()
+    await asyncio.sleep(0)
+    releases.setdefault("three to the", asyncio.Event()).set()
+    await manager.wait_for_idle()
+
     case_jobs = {
         "early": early.job_id,
         "with": with_raw.job_id,
@@ -2395,6 +2473,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
             and no_duplicate_oracle_jobs
             and merge_key_observed
             and adjudication_outcomes_observed
+            and partial_supersession_observed
         ),
         "witness_fusion_timing_smoke_ok": early_single_bundle
         and early_positive_recovery
@@ -2404,7 +2483,8 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         and late_single_bundle
         and no_duplicate_oracle_jobs
         and merge_key_observed
-        and adjudication_outcomes_observed,
+        and adjudication_outcomes_observed
+        and partial_supersession_observed,
         "witness_fusion_arrival_phases": ["before_raw_audio", "with_raw_audio", "after_interpreter_start"],
         "witness_fusion_case_job_ids": case_jobs,
         "witness_fusion_turn_ids": turn_ids,
@@ -2440,6 +2520,10 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "witness_fusion_adjudications": adjudications,
         "witness_fusion_rejection_reasons": rejection_reasons,
         "witness_fusion_adjudication_outcomes_observed": adjudication_outcomes_observed,
+        "witness_fusion_partial_superseded_by_final": partial_supersession_observed,
+        "witness_fusion_partial_case_job_id": partial_case.job_id,
+        "witness_fusion_partial_blocker_job_id": partial_blocker.job_id,
+        "witness_fusion_partial_active_hypothesis": dict(partial_active_hypothesis),
         "witness_fusion_accepted_counts": accepted_counts,
         "witness_fusion_started_counts": started_counts,
         "witness_fusion_completed_counts": completed_counts,
@@ -4143,6 +4227,18 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "witness_fusion_no_duplicate_oracle_jobs": witness_fusion_timing_smoke[
             "witness_fusion_no_duplicate_oracle_jobs"
+        ],
+        "witness_fusion_partial_superseded_by_final": witness_fusion_timing_smoke[
+            "witness_fusion_partial_superseded_by_final"
+        ],
+        "witness_fusion_partial_case_job_id": witness_fusion_timing_smoke[
+            "witness_fusion_partial_case_job_id"
+        ],
+        "witness_fusion_partial_blocker_job_id": witness_fusion_timing_smoke[
+            "witness_fusion_partial_blocker_job_id"
+        ],
+        "witness_fusion_partial_active_hypothesis": witness_fusion_timing_smoke[
+            "witness_fusion_partial_active_hypothesis"
         ],
         "witness_fusion_adjudications": witness_fusion_timing_smoke[
             "witness_fusion_adjudications"

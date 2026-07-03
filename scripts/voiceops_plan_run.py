@@ -1962,6 +1962,20 @@ async def build_plan_run_async(
                     "witness_fusion_no_duplicate_oracle_jobs": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_no_duplicate_oracle_jobs"
                     ],
+                    "witness_fusion_partial_superseded_by_final": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_fusion_partial_superseded_by_final"],
+                    "witness_fusion_partial_case_job_id": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_fusion_partial_case_job_id"],
+                    "witness_fusion_partial_blocker_job_id": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_fusion_partial_blocker_job_id"],
+                    "witness_fusion_partial_active_hypothesis": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "witness_fusion_partial_active_hypothesis"
+                        ]
+                    ),
                     "witness_fusion_adjudications": dict(
                         voice_operator["proofs"]["async_oracle_jobs"]["witness_fusion_adjudications"]
                     ),

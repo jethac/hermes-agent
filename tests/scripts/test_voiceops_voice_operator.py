@@ -425,6 +425,19 @@ def _async_oracle_smoke_payload() -> dict:
         "witness_fusion_late_final_bundle_id": "kame-evidence-witness-late",
         "witness_fusion_late_single_bundle": True,
         "witness_fusion_no_duplicate_oracle_jobs": True,
+        "witness_fusion_partial_superseded_by_final": True,
+        "witness_fusion_partial_case_job_id": "voice-oracle-007",
+        "witness_fusion_partial_blocker_job_id": "voice-oracle-006",
+        "witness_fusion_partial_active_hypothesis": {
+            "source": "moshi",
+            "kind": "frontend_witness_hypothesis",
+            "text": "what is three to the power of seventeen",
+            "authority": "auxiliary_hypothesis",
+            "confidence": 0.88,
+            "partial": False,
+            "superseded_partial_texts": ("what is three to the",),
+            "superseded_partial_count": 1,
+        },
         "witness_fusion_adjudications": {
             "early": ["corrected_by_audio"],
             "with": ["accepted_as_supporting_evidence"],
@@ -1036,6 +1049,20 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     )
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_late_single_bundle"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_no_duplicate_oracle_jobs"] is True
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_partial_superseded_by_final"] is True
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_partial_active_hypothesis"] == {
+        "source": "moshi",
+        "kind": "frontend_witness_hypothesis",
+        "text": "what is three to the power of seventeen",
+        "authority": "auxiliary_hypothesis",
+        "confidence": 0.88,
+        "partial": False,
+        "superseded_partial_texts": ("what is three to the",),
+        "superseded_partial_count": 1,
+    }
+    assert report["requirements"]["async_oracle_witness_fusion_partial_superseded_by_final"] is True
+    assert report["async_oracle_coverage"]["witness_fusion_partial_superseded_by_final"] is True
+    assert report["async_oracle_acceptance"]["witness_fusion_supersedes_partial_witness"]["ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_adjudications"] == {
         "early": ["corrected_by_audio"],
         "with": ["accepted_as_supporting_evidence"],
@@ -1435,6 +1462,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:job_control_updates_reach_oracle" in issues
     assert "missing_async_oracle_coverage:transcript_hypotheses_remain_unpromoted" in issues
     assert "missing_async_oracle_coverage:witness_fusion_timing_preserves_single_bundle" in issues
+    assert "missing_async_oracle_coverage:witness_fusion_partial_superseded_by_final" in issues
     assert "missing_async_oracle_coverage:runtime_kame_action_gate_enforced" in issues
     assert "missing_async_oracle_coverage:result_handling_bounded_and_durable" in issues
     assert "missing_async_oracle_coverage:discord_session_cleanup_preserves_oracle_state" in issues
@@ -1446,6 +1474,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_acceptance:job_control_updates_reach_oracle" in issues
     assert "missing_async_oracle_acceptance:transcript_hypotheses_stay_non_authoritative" in issues
     assert "missing_async_oracle_acceptance:witness_fusion_timing_preserves_single_bundle" in issues
+    assert "missing_async_oracle_acceptance:witness_fusion_supersedes_partial_witness" in issues
     assert "missing_async_oracle_acceptance:runtime_kame_action_gate_enforces_promoted_evidence" in issues
     assert "missing_async_oracle_acceptance:discord_session_cleanup_preserves_oracle_state" in issues
     assert "missing_async_oracle_acceptance:sidecar_fail_closed_send_failure_cancels_active_job" in issues

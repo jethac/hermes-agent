@@ -178,6 +178,15 @@ must be used for the waveform and the Moshi witness so the interpreter can
 compare them as one speech cut. A Moshi transcript without a matching waveform
 is degraded text-only evidence, not direct-audio KAME evidence.
 
+Partial witness hypotheses are active only until a newer same-source,
+same-kind witness supersedes them. When Moshi, OpenClaw, VoiceClaw, or classic
+ASR emits a partial such as "what is three to the" and later emits the final
+"what is three to the power of seventeen" for the same speech cut, the active
+interpreter bundle should contain the final witness only. The partial text is
+kept as `superseded_partial_texts`/`superseded_partial_count` provenance on
+the retained final hypothesis, not as a second active candidate and not as
+durable user text.
+
 This packet is the only normal merge point. It is valid for the reflex to use a
 witness transcript for local narration, but invalid for that transcript to
 create a second Hermes user turn, patch `oracle_text`, or satisfy any action
@@ -376,7 +385,7 @@ input must keep provenance until a later layer promotes it.
 | --- | --- | --- | --- |
 | `raw_audio` | transport/session cut | interpreter evidence, replay/debug, disagreement checks | primary interpreter input |
 | `reflex_intent` | live reflex | routing, immediate acknowledgement, oracle-job creation | provisional routing |
-| `reflex_transcript_hypothesis` | live reflex | early clue for Gemma/oracle, user-visible rough caption when desired | hypothesis only |
+| `reflex_transcript_hypothesis` | live reflex | early clue for the Gemma interpreter, user-visible rough caption when desired | hypothesis only |
 | `s2s_transcript_hypothesis` | Moshi/VoiceClaw/OpenClaw-style frontend | what the realtime voice model thought it heard | hypothesis only |
 | `frontend_witness_hypothesis` | any S2S/reflex frontend exposing STT-like text | umbrella label for "what the frontend believed it heard" when the exact producer is ambiguous | hypothesis only |
 | `classic_asr_hypothesis` | dedicated ASR fallback/evidence lane | literal wording comparison, captions, diagnostics | optional hypothesis |
@@ -534,8 +543,9 @@ when the signals disagree and must report material disagreements.
 Lifecycle rules:
 
 - partial transcript hypotheses attach to the pending bundle with
-  `partial = true`; a final hypothesis from the same source supersedes the
-  partial for interpreter context while preserving audit timing
+  `partial = true`; a final hypothesis from the same source and kind supersedes
+  the partial for active interpreter context, while preserving the superseded
+  partial only as timing/provenance on the retained final hypothesis
 - acknowledgement and oracle-job creation do not wait for Moshi/open-S2S or
   classic ASR hypotheses when raw audio plus reflex routing is enough
 - late transcript hypotheses attach to the same bundle and can update a queued
@@ -791,10 +801,10 @@ it is not proof that the user said those words.
 
 If the frontend can stream partial Moshi transcripts before the audio cut is
 finalized, Hermes should attach them to the same pending `turn_id` and mark them
-`partial = true`. A later final transcript from the same source replaces or
-supersedes the partial for interpreter context, but the audit ledger should keep
-the timing/provenance needed to debug clipped starts, duplicated words, and
-hallucinated commands.
+`partial = true`. A later final transcript from the same source and kind
+replaces the partial as the only active interpreter hypothesis. The audit ledger
+should keep the superseded partial text and timing/provenance needed to debug
+clipped starts, duplicated words, and hallucinated commands.
 
 Runtime merge algorithm:
 
@@ -1085,8 +1095,8 @@ stay off the acknowledgement critical path.
 
 `speculative` can be enabled if measurements show that waiting until after the
 reflex decision delays oracle requests. Even then, transcript evidence remains
-an interpreter/oracle hypothesis input, not a reflex dependency and not a peer
-conversation path.
+an interpreter hypothesis input plus optional labeled audit context for the
+oracle, not a reflex dependency and not a peer conversation path.
 
 `speculative` is also not a request to make ASR authoritative. It exists only to
 hide optional comparison latency behind the reflex decision. If speculative ASR
@@ -1301,9 +1311,10 @@ This gives the oracle enough state to answer without receiving every partial
 audio event or every backchannel. The request should carry the reflex's
 early hypotheses, the interpreter's corrected evidence when available, and any
 auxiliary transcript hypothesis when enabled. The oracle should prefer
-interpreter evidence for tool arguments, using Moshi/S2S or classic ASR
-transcripts as supporting literal evidence while preserving the reflex route and
-"interface already said" context.
+interpreter-promoted evidence for tool arguments. Moshi/S2S or classic ASR
+transcripts are auxiliary witness context or fallback evidence only; they may
+help explain interpreter provenance, but durable text and tool arguments require
+`interpreter_promoted` or `oracle_promoted` authority.
 
 `oracle_text` may start from a compact reflex intent so the job can be queued
 without waiting. That text remains provisional until interpreter evidence or

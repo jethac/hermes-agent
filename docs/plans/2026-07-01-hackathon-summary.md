@@ -49,11 +49,12 @@ Third, the local model server runs reproducible model containers:
   model for barge-in, immediate acknowledgement, and rough transcript
   hypotheses.
 - **Auxiliary transcript evidence:** Moshi/S2S transcript output or classic ASR
-  output may be passed to Gemma and the oracle as supporting evidence, but does
-  not drive the reflex turn, is not required for voice to work, and must be
-  labeled as hypothesis context when attached to raw audio. This evidence is
-  collected opportunistically; the demo should not wait for ASR before
-  acknowledging the user or creating a raw-audio interpreter request.
+  output may be passed to Gemma as witness context, and to the oracle only as
+  labeled audit context or promoted evidence. It does not drive the reflex turn,
+  is not required for voice to work, and must be labeled as hypothesis context
+  when attached to raw audio. This evidence is collected opportunistically; the
+  demo should not wait for ASR before acknowledging the user or creating a
+  raw-audio interpreter request.
 - **Interpreter/evidence model:** Gemma 4 E2B/E4B/12B-style audio-multimodal
   model for raw-audio review, multilingual correction, entity extraction, and
   oracle request patches.
@@ -74,10 +75,11 @@ made response timing harder to reason about. The demo path is now tiered:
 the reflex acknowledges immediately, Gemma interprets the raw audio plus the
 reflex/Moshi transcript hypotheses without blocking the voice loop, and Hermes'
 active model handles oracle work through the normal Hermes model path. Moshi/S2S
-or ASR transcript output is supporting evidence for Gemma and the oracle, not a
-replacement for raw-audio interpretation. If the Moshi-style frontend emits a
-transcript, it should be attached to the same interpreter request as the clipped
-audio segment so Gemma can compare what the live reflex thought it heard against
+or ASR transcript output is witness context for Gemma and oracle-visible only as
+labeled audit context or promoted evidence, not a replacement for raw-audio
+interpretation. If the Moshi-style frontend emits a transcript, it should be
+attached to the same interpreter request as the clipped audio segment so Gemma
+can compare what the live reflex thought it heard against
 the waveform. The demo must keep those fields separate in logs and prompts: raw
 audio is primary interpreter evidence, Moshi/S2S and ASR text are labeled
 hypotheses, and only interpreter/oracle judgment can promote wording into a
@@ -251,6 +253,8 @@ system heard the user.
 - When a Moshi/OpenClaw/VoiceClaw witness transcript is present, the artifact
   shows it sharing the raw-audio turn's `evidence_bundle_id` rather than
   creating a second Hermes turn. Text-only witness turns are labeled degraded.
+- Partial witness text is superseded by the final same-source/same-kind witness
+  in the active evidence bundle, with the partial retained only as provenance.
 - The interpreter evidence artifact records whether each witness transcript was
   accepted as support, corrected by raw audio, or rejected/diagnostic-only
   before any Stripe/NemoClaw/phone/tool action uses the wording.
@@ -319,11 +323,13 @@ system heard the user.
 7. Implement the external frontend/interpreter evidence adapter so raw audio,
    reflex intent, Moshi/S2S transcript hypotheses, classic ASR hypotheses, and
    correlation ids remain separate through oracle-job creation.
-8. Add measurement for whether Moshi/open-S2S hypotheses helped or hurt Gemma's
+8. Ensure partial transcript hypotheses collapse into a final active witness
+   with provenance, rather than becoming parallel oracle context.
+9. Add measurement for whether Moshi/open-S2S hypotheses helped or hurt Gemma's
    interpreter output, including clipped prefixes, names, numbers, and rejected
    hallucinated commands.
-9. Add role-based provider comparison output so the artifact can say which
+10. Add role-based provider comparison output so the artifact can say which
    component was used for reflex, interpreter, auxiliary transcript evidence,
    outbound TTS, and degraded fallback in the recorded run.
-10. Implement the phone call handoff with context transfer from the Discord session.
-11. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.
+11. Implement the phone call handoff with context transfer from the Discord session.
+12. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.

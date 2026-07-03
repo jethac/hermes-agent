@@ -4020,6 +4020,191 @@ def test_kame_engine_merges_sequential_queued_transcript_hypotheses_before_start
     asyncio.run(run())
 
 
+def test_kame_engine_supersedes_partial_frontend_witness_with_final_before_start(monkeypatch):
+    class BlockingOracle:
+        def __init__(self):
+            self.requests = []
+            self.releases = {}
+            self.request_count_changed = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.request_count_changed.set()
+            event = self.releases.setdefault(request.intent, asyncio.Event())
+            await event.wait()
+            yield f"Finished {request.intent}."
+
+        def release(self, intent):
+            self.releases.setdefault(intent, asyncio.Event()).set()
+
+        async def wait_for_requests(self, count):
+            while len(self.requests) < count:
+                self.request_count_changed.clear()
+                await asyncio.wait_for(self.request_count_changed.wait(), timeout=1)
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            pass
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = BlockingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+                metadata={"transport": "discord_voice"},
+            )
+        )
+        for index in range(1, 3):
+            await engine.receive_event(
+                VoiceEvent(
+                    type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                    session_id="voice-123",
+                    sequence=index,
+                    payload={
+                        "turn_id": f"voice-123:turn-{index}",
+                        "transcript": f"run task {index}",
+                        "intent": f"Run task {index}",
+                        "intent_source": "reflex_audio",
+                        "route": "defer",
+                        "interface_already_said": f"Starting task {index}.",
+                        "end_of_utterance": True,
+                    },
+                )
+            )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            queued_ids = [
+                item.payload["job_id"]
+                for item in seen
+                if item.type == VoiceEventType.ORACLE_JOB_QUEUED
+            ]
+            started_ids = [
+                item.payload["job_id"]
+                for item in seen
+                if item.type == VoiceEventType.ORACLE_JOB_STARTED
+            ]
+            if queued_ids == ["voice-oracle-002"] and started_ids == ["voice-oracle-001"]:
+                break
+        await oracle.wait_for_requests(1)
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_UPDATE,
+                session_id="voice-123",
+                sequence=3,
+                payload={
+                    "job_id": "voice-oracle-002",
+                    "update_type": "interpreter_evidence",
+                    "auxiliary_transcript_hypotheses": [
+                        {
+                            "kind": "frontend_witness_hypothesis",
+                            "source": "moshi",
+                            "text": "what is three to the",
+                            "authority": "hypothesis",
+                            "confidence": 0.41,
+                            "partial": True,
+                        }
+                    ],
+                    "reason": "attach partial frontend witness",
+                    "source": "gemma_interpreter",
+                },
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_UPDATE,
+                session_id="voice-123",
+                sequence=4,
+                payload={
+                    "job_id": "voice-oracle-002",
+                    "update_type": "interpreter_evidence",
+                    "corrected_transcript": "what is three to the power of seventeen",
+                    "normalized_intent": "answer a math question",
+                    "audio_segment_ref": "artifact://redacted/queued-final.wav",
+                    "audio_time_range_ms": [100, 2100],
+                    "confidence": 0.94,
+                    "auxiliary_transcript_hypotheses": [
+                        {
+                            "kind": "frontend_witness_hypothesis",
+                            "source": "moshi",
+                            "text": "what is three to the power of seventeen",
+                            "authority": "hypothesis",
+                            "confidence": 0.88,
+                            "partial": False,
+                        }
+                    ],
+                    "reason": "attach final frontend witness",
+                    "source": "gemma_interpreter",
+                },
+            )
+        )
+        updates_seen = 0
+        for _ in range(12):
+            event = await asyncio.wait_for(engine.events().__anext__(), timeout=1)
+            seen.append(event)
+            if event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE:
+                updates_seen += 1
+                if updates_seen == 2:
+                    break
+        else:
+            assert False, [(event.type.value, event.payload) for event in seen]
+
+        queued_status = await engine.get_oracle_job_status()
+        queued_job = next(job for job in queued_status["jobs"] if job["job_id"] == "voice-oracle-002")
+        assert queued_job["interpreter_evidence_count"] == 2
+        assert queued_job["transcript_hypotheses_count"] == 2
+        assert queued_job["transcript_hypotheses"][0]["text"] == "run task 2"
+        assert queued_job["transcript_hypotheses"][1] == {
+            "kind": "frontend_witness_hypothesis",
+            "source": "moshi",
+            "text": "what is three to the power of seventeen",
+            "authority": "auxiliary_hypothesis",
+            "confidence": 0.88,
+            "partial": False,
+            "superseded_partial_texts": ("what is three to the",),
+            "superseded_partial_count": 1,
+        }
+
+        oracle.release("Run task 1")
+        for _ in range(16):
+            event = await asyncio.wait_for(engine.events().__anext__(), timeout=1)
+            seen.append(event)
+            if (
+                event.type == VoiceEventType.ORACLE_JOB_STARTED
+                and event.payload["job_id"] == "voice-oracle-002"
+            ):
+                break
+        else:
+            assert False, [(event.type.value, event.payload) for event in seen]
+        await oracle.wait_for_requests(2)
+
+        await engine.close()
+
+        assert oracle.requests[1].intent == "answer a math question"
+        assert oracle.requests[1].oracle_text == "what is three to the power of seventeen"
+        assert oracle.requests[1].auxiliary_transcript_hypotheses == (
+            {
+                "source": "moshi",
+                "text": "what is three to the power of seventeen",
+                "authority": "hypothesis",
+                "confidence": 0.88,
+                "kind": "frontend_witness_hypothesis",
+                "partial": False,
+                "superseded_partial_texts": ("what is three to the",),
+                "superseded_partial_count": 1,
+            },
+        )
+
+    asyncio.run(run())
+
+
 def test_kame_engine_attaches_interpreter_evidence_by_turn_and_audio_ref(monkeypatch):
     class BlockingOracle:
         def __init__(self):

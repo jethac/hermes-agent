@@ -1426,6 +1426,17 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_with_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_late_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_no_duplicate_oracle_jobs"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_partial_superseded_by_final"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_partial_active_hypothesis"] == {
+        "source": "moshi",
+        "kind": "frontend_witness_hypothesis",
+        "text": "what is three to the power of seventeen",
+        "authority": "auxiliary_hypothesis",
+        "confidence": 0.88,
+        "partial": False,
+        "superseded_partial_texts": ("what is three to the",),
+        "superseded_partial_count": 1,
+    }
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_adjudications"] == {
         "early": ["corrected_by_audio"],
         "with": ["accepted_as_supporting_evidence"],

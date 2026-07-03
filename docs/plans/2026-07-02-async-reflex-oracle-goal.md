@@ -282,12 +282,14 @@ was already satisfied.
 
 Runtime packet rule: the async scheduler must treat raw audio plus
 Moshi/OpenClaw/VoiceClaw/classic-ASR text as one interpreter evidence packet,
-not competing work. The merge key is `turn_id + audio_segment_ref`; transcript
-entries are append-only hypotheses until a trusted interpreter or oracle source
-promotes them. If a hypothesis arrives before the audio cut, hold it on the
-pending packet. If it arrives after the interpreter request starts, attach it as
-late evidence on the same packet. It must never create a duplicate oracle job,
-durable transcript, or approval-capable action record by itself.
+not competing work. The merge key is `turn_id + audio_segment_ref`. Active
+transcript hypotheses are source/kind scoped: a final same-source/same-kind
+witness supersedes the partial in active interpreter context, while the partial
+remains append-only audit provenance on the retained final hypothesis. If a
+hypothesis arrives before the audio cut, hold it on the pending packet. If it
+arrives after the interpreter request starts, attach it as a late hypothesis on
+the same interpreter bundle and oracle job. It must never create a duplicate
+oracle job, durable transcript, or approval-capable action record by itself.
 
 Tool-pressure rule: the realtime voice oracle path should not keep the broad
 Hermes core tool surface in the active voice context. Headless acceptance should
@@ -370,7 +372,9 @@ When raw audio and a Moshi/open-S2S transcript are both available, the preferred
 interpreter input is both signals together. The transcript tells Gemma what the
 realtime frontend believed it heard; the waveform and timing metadata remain
 the primary evidence. If the transcript arrives late, it is late evidence on
-the same oracle job, not a reason to create or replay another Hermes turn.
+the same interpreter bundle and oracle job, usable for action only through
+promoted interpreter/oracle evidence and not a reason to create or replay
+another Hermes turn.
 If the adapter cannot prove whether the string came from the reflex model or an
 adjacent caption component, store it as `frontend_witness_hypothesis` and keep
 `authority = "hypothesis"`. The name should make the trust boundary obvious:
@@ -986,6 +990,9 @@ Add a local smoke report mode that proves:
 - the raw-audio-plus-Moshi witness fixture exposes one stable
   `evidence_bundle_id`, one interpreter merge path, and no duplicate oracle job
   when the witness transcript arrives before, with, or after the raw audio
+- partial frontend witness text is superseded by a final same-source/same-kind
+  witness in the active interpreter bundle, while the partial survives only as
+  `superseded_partial_texts` provenance on the retained final hypothesis
 - interpreter prompt input ordering is visible in the smoke artifact: raw audio
   first, metadata second, reflex state third, witness hypotheses last
 - the smoke and VoiceOps artifacts expose `interpreter_prompt_input_order` as

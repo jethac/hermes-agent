@@ -286,6 +286,17 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     )
     assert len(set(report["witness_fusion_evidence_merge_keys"].values())) == 3
     assert report["witness_fusion_no_duplicate_oracle_jobs"] is True
+    assert report["witness_fusion_partial_superseded_by_final"] is True
+    assert report["witness_fusion_partial_active_hypothesis"] == {
+        "kind": "frontend_witness_hypothesis",
+        "source": "moshi",
+        "text": "what is three to the power of seventeen",
+        "authority": "auxiliary_hypothesis",
+        "confidence": 0.88,
+        "partial": False,
+        "superseded_partial_texts": ("what is three to the",),
+        "superseded_partial_count": 1,
+    }
     assert report["witness_fusion_adjudications"] == {
         "early": ["corrected_by_audio"],
         "with": ["accepted_as_supporting_evidence"],

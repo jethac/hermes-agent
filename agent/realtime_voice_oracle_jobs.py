@@ -1121,6 +1121,12 @@ def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
         latency_ms = _compact_nonnegative_int(value.get("latency_ms"))
         if latency_ms is not None:
             item["latency_ms"] = latency_ms
+        if isinstance(value.get("partial"), bool):
+            item["partial"] = value["partial"]
+        superseded_partials = _compact_superseded_partial_texts(value.get("superseded_partial_texts"))
+        if superseded_partials:
+            item["superseded_partial_texts"] = superseded_partials
+            item["superseded_partial_count"] = len(superseded_partials)
         adjudication = _compact_transcript_hypothesis_adjudication(value)
         if adjudication:
             item["adjudication"] = adjudication
@@ -1479,6 +1485,7 @@ def _compact_auxiliary_transcript_hypotheses(
     canonical_audio_range = _audio_time_range_ms(audio_time_range_ms)
     compact: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
+    active_by_source_kind: dict[tuple[str, str], dict[str, Any]] = {}
     for value in values[:5]:
         if not isinstance(value, Mapping):
             continue
@@ -1504,6 +1511,12 @@ def _compact_auxiliary_transcript_hypotheses(
         confidence = _compact_confidence(value.get("confidence"))  # type: ignore[arg-type]
         if confidence is not None:
             item["confidence"] = confidence
+        if isinstance(value.get("partial"), bool):
+            item["partial"] = value["partial"]
+        superseded_partials = _compact_superseded_partial_texts(value.get("superseded_partial_texts"))
+        if superseded_partials:
+            item["superseded_partial_texts"] = superseded_partials
+            item["superseded_partial_count"] = len(superseded_partials)
         hypothesis_speaker = _compact_hypothesis_speaker_metadata(value)
         if hypothesis_speaker:
             item["speaker"] = hypothesis_speaker
@@ -1527,8 +1540,54 @@ def _compact_auxiliary_transcript_hypotheses(
             item["rejection_reasons"] = combined_rejection_reasons
         elif adjudication:
             item["adjudication"] = adjudication
+        source_kind_key = (item["source"], str(item.get("kind") or ""))
+        active = active_by_source_kind.get(source_kind_key)
+        if active is not None:
+            if item.get("partial") is False and active.get("partial") is True:
+                _record_superseded_partial_hypothesis(active, item)
+                compact.remove(active)
+                active_by_source_kind[source_kind_key] = item
+                compact.append(item)
+                continue
+            if item.get("partial") is True and active.get("partial") is False:
+                _record_superseded_partial_hypothesis(item, active)
+                continue
+            if item.get("partial") is True and active.get("partial") is True:
+                _record_superseded_partial_hypothesis(active, item)
+                compact.remove(active)
+                active_by_source_kind[source_kind_key] = item
+                compact.append(item)
+                continue
+        active_by_source_kind[source_kind_key] = item
         compact.append(item)
     return tuple(compact)
+
+
+def _compact_superseded_partial_texts(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+    compact: list[str] = []
+    for item in value[:5]:
+        text = _compact_evidence_text(item, limit=500)
+        if text and text not in compact:
+            compact.append(text)
+    return tuple(compact)
+
+
+def _record_superseded_partial_hypothesis(
+    partial: Mapping[str, Any],
+    final: dict[str, Any],
+) -> None:
+    values = list(_compact_superseded_partial_texts(final.get("superseded_partial_texts")))
+    for item in _compact_superseded_partial_texts(partial.get("superseded_partial_texts")):
+        if item not in values:
+            values.append(item)
+    text = _compact_evidence_text(partial.get("text"), limit=500)
+    if text and text not in values:
+        values.append(text)
+    if values:
+        final["superseded_partial_texts"] = tuple(values)
+        final["superseded_partial_count"] = len(values)
 
 
 def _compact_hypothesis_speaker_metadata(value: Mapping[str, Any]) -> dict[str, Any]:
@@ -1757,7 +1816,10 @@ def _promote_interpreter_evidence(job: OracleJob, evidence: Mapping[str, Any]) -
     auxiliary = evidence.get("auxiliary_transcript_hypotheses")
     if isinstance(auxiliary, tuple):
         job.auxiliary_transcript_hypotheses = _compact_auxiliary_transcript_hypotheses(
-            [item for item in auxiliary if isinstance(item, Mapping)]
+            [
+                *[item for item in job.auxiliary_transcript_hypotheses if isinstance(item, Mapping)],
+                *[item for item in auxiliary if isinstance(item, Mapping)],
+            ]
         )
     speaker = evidence.get("speaker")
     if isinstance(speaker, Mapping):

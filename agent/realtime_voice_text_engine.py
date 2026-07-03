@@ -3999,6 +3999,7 @@ def _oracle_request_auxiliary_hypotheses_from_evidence(
         values.extend(item for item in auxiliary if isinstance(item, Mapping))
     compact: list[Mapping[str, Any]] = []
     seen: set[tuple[str, str]] = set()
+    active_by_source_kind: dict[tuple[str, str], dict[str, Any]] = {}
     for item in values:
         source = str(item.get("source") or item.get("provider") or "unknown").strip()[:40]
         text = str(item.get("text") or item.get("transcript") or item.get("hypothesis") or "").strip()[:500]
@@ -4019,9 +4020,64 @@ def _oracle_request_auxiliary_hypotheses_from_evidence(
         kind = str(item.get("kind") or "").strip()[:80]
         if kind:
             hypothesis["kind"] = kind
+        if isinstance(item.get("partial"), bool):
+            hypothesis["partial"] = item["partial"]
+        superseded_partials = item.get("superseded_partial_texts")
+        if isinstance(superseded_partials, (list, tuple)):
+            compact_partials = tuple(
+                text
+                for text in (
+                    str(partial or "").strip()[:500]
+                    for partial in superseded_partials[:5]
+                )
+                if text
+            )
+            if compact_partials:
+                hypothesis["superseded_partial_texts"] = compact_partials
+                hypothesis["superseded_partial_count"] = len(compact_partials)
         _copy_witness_hypothesis_audit_fields(item, hypothesis)
+        source_kind_key = (hypothesis["source"], str(hypothesis.get("kind") or ""))
+        active = active_by_source_kind.get(source_kind_key)
+        if active is not None:
+            if hypothesis.get("partial") is False and active.get("partial") is True:
+                _record_superseded_partial_hypothesis(active, hypothesis)
+                compact.remove(active)
+                active_by_source_kind[source_kind_key] = hypothesis
+                compact.append(hypothesis)
+                continue
+            if hypothesis.get("partial") is True and active.get("partial") is False:
+                _record_superseded_partial_hypothesis(hypothesis, active)
+                continue
+            if hypothesis.get("partial") is True and active.get("partial") is True:
+                _record_superseded_partial_hypothesis(active, hypothesis)
+                compact.remove(active)
+                active_by_source_kind[source_kind_key] = hypothesis
+                compact.append(hypothesis)
+                continue
+        active_by_source_kind[source_kind_key] = hypothesis
         compact.append(hypothesis)
     return tuple(compact)
+
+
+def _record_superseded_partial_hypothesis(
+    partial: Mapping[str, Any],
+    final: dict[str, Any],
+) -> None:
+    previous = final.get("superseded_partial_texts")
+    values = list(previous) if isinstance(previous, tuple) else []
+    prior_partials = partial.get("superseded_partial_texts")
+    if isinstance(prior_partials, tuple):
+        for item in prior_partials:
+            text = str(item or "").strip()[:500]
+            if text and text not in values:
+                values.append(text)
+    text = str(partial.get("text") or "").strip()[:500]
+    if not text:
+        return
+    if text not in values:
+        values.append(text)
+    final["superseded_partial_texts"] = tuple(values)
+    final["superseded_partial_count"] = len(values)
 
 
 def _copy_witness_hypothesis_audit_fields(
