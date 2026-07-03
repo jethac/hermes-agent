@@ -1701,7 +1701,8 @@ def test_goal_doc_lists_voiceops_closure_artifacts():
     assert "source_artifact_sha256` and `collector_attestation.redacted_artifact_sha256`" in text
     assert "`--refresh-source-hashes path/to/evidence.json`" in text
     assert "oracle authority routes include tools/files/memory/project context" in text
-    assert "reflex provider includes `vllm`" in text
+    assert "reflex provider proves the chosen low-latency S2S or timing path" in text
+    assert "interpreter provider proves Gemma raw-audio serving" in text
     assert "`speech_end_to_first_audio_ms <= 1500`" in text
     assert "`barge_in_stop_ms <= 150`" in text
     assert "`local_turn_oracle_calls == 0`" in text
@@ -1771,7 +1772,8 @@ def test_plan_run_propagates_active_and_reflex_model_to_demo_package(tmp_path):
         artifact_root=artifact_root,
         output_dir=output_dir,
         active_model="Nemotron 3 Super via hosted provider",
-        reflex_model="Gemma 4 E4B audio-native",
+        reflex_model="Moshi fast reflex",
+        interpreter_model="Gemma 4 E4B audio-native interpreter",
         env={},
     )
 
@@ -1781,23 +1783,32 @@ def test_plan_run_propagates_active_and_reflex_model_to_demo_package(tmp_path):
 
     assert demo_result["details"]["active_model"] == "Nemotron 3 Super via hosted provider"
     assert demo_result["details"]["active_model_path"] == "hosted_nemotron_3_super_fallback"
-    assert demo_result["details"]["reflex_model"] == "Gemma 4 E4B audio-native"
+    assert demo_result["details"]["reflex_model"] == "Moshi fast reflex"
+    assert demo_result["details"]["interpreter_model"] == "Gemma 4 E4B audio-native interpreter"
     assert "'Nemotron 3 Super via hosted provider'" in demo_result["command"]
-    assert "'Gemma 4 E4B audio-native'" in demo_result["command"]
+    assert "'Moshi fast reflex'" in demo_result["command"]
+    assert "'Gemma 4 E4B audio-native interpreter'" in demo_result["command"]
     assert summary["plan_args"] == {
         "active_model": "Nemotron 3 Super via hosted provider",
-        "reflex_model": "Gemma 4 E4B audio-native",
+        "reflex_model": "Moshi fast reflex",
+        "interpreter_model": "Gemma 4 E4B audio-native interpreter",
     }
     assert "--active-model 'Nemotron 3 Super via hosted provider'" in summary["closure_index"]["operator_handoff"][
         "final_reindex_command"
     ]
-    assert "--reflex-model 'Gemma 4 E4B audio-native'" in summary["closure_index"]["operator_handoff"][
+    assert "--reflex-model 'Moshi fast reflex'" in summary["closure_index"]["operator_handoff"][
+        "final_reindex_command"
+    ]
+    assert "--interpreter-model 'Gemma 4 E4B audio-native interpreter'" in summary["closure_index"][
+        "operator_handoff"
+    ][
         "final_reindex_command"
     ]
     assert "--active-model 'Nemotron 3 Super via hosted provider'" in summary["next_actions"][1]["first_safe_command"]
     assert demo["sponsor_stack"]["hermes_active_model"]["path"] == "hosted_nemotron_3_super_fallback"
     assert demo["spark_stack"]["current_path_local"] is False
-    assert demo["spark_stack"]["reflex"]["model"] == "Gemma 4 E4B audio-native"
+    assert demo["spark_stack"]["reflex"]["model"] == "Moshi fast reflex"
+    assert demo["spark_stack"]["interpreter"]["model"] == "Gemma 4 E4B audio-native interpreter"
 
 
 def test_plan_run_keeps_provisioning_incomplete_without_preflight_evidence(tmp_path):
@@ -1966,7 +1977,9 @@ def test_plan_run_cli_package_audit_accepts_hosted_model_fallback_package(tmp_pa
             "--active-model",
             "Nemotron 3 Super via hosted provider",
             "--reflex-model",
-            "Gemma 4 E4B audio-native",
+            "Moshi fast reflex",
+            "--interpreter-model",
+            "Gemma 4 E4B audio-native interpreter",
             "--package-audit",
         ],
         check=True,
@@ -1988,14 +2001,16 @@ def test_plan_run_cli_package_audit_accepts_hosted_model_fallback_package(tmp_pa
     assert payload["package_audit"]["issues"] == []
     assert plan_run["plan_args"] == {
         "active_model": "Nemotron 3 Super via hosted provider",
-        "reflex_model": "Gemma 4 E4B audio-native",
+        "reflex_model": "Moshi fast reflex",
+        "interpreter_model": "Gemma 4 E4B audio-native interpreter",
     }
     assert "--active-model 'Nemotron 3 Super via hosted provider'" in plan_run["closure_index"]["operator_handoff"][
         "final_reindex_command"
     ]
     assert demo["sponsor_stack"]["hermes_active_model"]["path"] == "hosted_nemotron_3_super_fallback"
     assert demo["spark_stack"]["current_path_local"] is False
-    assert demo["spark_stack"]["reflex"]["model"] == "Gemma 4 E4B audio-native"
+    assert demo["spark_stack"]["reflex"]["model"] == "Moshi fast reflex"
+    assert demo["spark_stack"]["interpreter"]["model"] == "Gemma 4 E4B audio-native interpreter"
     assert "Hosted fallback selected, Spark-local evidence pending" in dashboard
     assert "Spark target selected, live evidence pending" not in dashboard
 
@@ -2135,6 +2150,7 @@ def test_parse_args_defaults_to_plan_artifact_paths():
     assert args.output_dir == Path("artifacts/voiceops-plan/current")
     assert args.active_model is None
     assert args.reflex_model is None
+    assert args.interpreter_model is None
     assert args.voice_live_evidence == []
     assert args.provisioning_preflight_evidence is None
     assert args.timeout_seconds is None

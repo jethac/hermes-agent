@@ -385,6 +385,9 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert payload["spark_stack"]["oracle"]["preferred_local_target"] == "Nemotron 3 Super on DGX Spark"
     assert payload["spark_stack"]["oracle"]["hosted_fallback"].startswith("clearly labeled hosted provider")
     assert payload["spark_stack"]["oracle"]["active_model_path"]["path"] == "spark_local_nemotron_3_super"
+    assert "Gemma" not in payload["spark_stack"]["reflex"]["model"]
+    assert payload["spark_stack"]["interpreter"]["model"].startswith("Gemma 4 E2B")
+    assert payload["spark_stack"]["interpreter"]["authority"].endswith("no direct tool or spend authority")
     assert payload["sponsor_stack"]["stripe_skills"]["skills"] == ["stripe-projects", "stripe-link-cli", "mpp-agent"]
     assert payload["voice_surfaces"][0]["channel"] == "discord"
     assert payload["voice_surfaces"][0]["status"] == "intended-live-front-door-needs-evidence"

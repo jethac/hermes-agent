@@ -34,7 +34,8 @@ DEFAULT_REQUEST = (
 )
 DEFAULT_DEMO_NAME = "Hermes VoiceOps on DGX Spark"
 DEFAULT_ACTIVE_MODEL = "Nemotron 3 Super local on DGX Spark via Hermes /model"
-DEFAULT_REFLEX_MODEL = "Gemma 4 E2B audio-native reflex on Spark"
+DEFAULT_REFLEX_MODEL = "Moshi/PersonaPlex-class low-latency reflex on Spark"
+DEFAULT_INTERPRETER_MODEL = "Gemma 4 E2B audio-native interpreter on Spark"
 SPARK_BENCHMARK_SCAFFOLD_EVIDENCE = (
     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json"
 )
@@ -454,6 +455,7 @@ def _demo_closure_summary() -> dict[str, Any]:
             "status": "needs_evidence",
             "missing": [
                 "reflex:needs_evidence",
+                "interpreter:needs_evidence",
                 "oracle:needs_evidence",
                 "asr:needs_evidence",
                 "tts:needs_evidence",
@@ -509,7 +511,7 @@ def _demo_closure_summary() -> dict[str, Any]:
                 "preferred_local_oracle_candidate_id": "oracle-nemotron3-super-local",
                 "preferred_local_oracle_model": "Nemotron 3 Super",
                 "non_counting_fallback_oracle_models": ["Nemotron 3 Ultra"],
-                "required_stack_components": ["reflex", "oracle", "asr", "tts", "sidecar"],
+                "required_stack_components": ["reflex", "interpreter", "oracle", "asr", "tts", "sidecar"],
                 "source_artifacts_must_exist": True,
                 "source_artifact_resolution": "absolute paths or paths relative to the supplied benchmark evidence file",
                 "source_artifact_readable": True,
@@ -762,7 +764,8 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                 },
                 "required_inputs": [
                     "1x NVIDIA DGX Spark",
-                    "Gemma 4 E2B/E4B-style native-audio reflex evidence",
+                    "Moshi/PersonaPlex-class or equivalent low-latency reflex evidence",
+                    "Gemma 4 E2B/E4B/12B-style interpreter evidence",
                     "Hermes /model-selected oracle evidence, preferably Nemotron 3 Super",
                     "local ASR/TTS evidence",
                     "all-local stack smoke with KAME routing metrics",
@@ -1115,7 +1118,7 @@ def _sponsor_stack(active_model: str) -> dict[str, Any]:
     }
 
 
-def _spark_stack(active_model: str, reflex_model: str) -> dict[str, Any]:
+def _spark_stack(active_model: str, reflex_model: str, interpreter_model: str) -> dict[str, Any]:
     active_path = _active_model_path(active_model)
     return {
         "compute": "1x NVIDIA DGX Spark target; measured evidence pending",
@@ -1126,6 +1129,12 @@ def _spark_stack(active_model: str, reflex_model: str) -> dict[str, Any]:
             "model": reflex_model,
             "role": "low-latency KAME interface model for turn handling, intent triage, and floor control",
             "input": "native audio when available; explicit local STT fallback state otherwise",
+        },
+        "interpreter": {
+            "model": interpreter_model,
+            "role": "audio-understanding evidence model for raw audio plus labeled transcript hypotheses",
+            "input": "clipped raw audio plus reflex/Moshi/S2S/STT hypotheses when available",
+            "authority": "may promote corrected transcript candidates; no direct tool or spend authority",
         },
         "oracle": {
             "model": active_model,
@@ -1520,12 +1529,16 @@ def _operator_state_packet(demo: dict[str, Any], readiness: dict[str, Any]) -> d
             "status": status_by_action.get(action["status"], "planned"),
             "capability": action["command"],
             "external": action["provider"] not in {"hermes-gateway", "hermes-audit-ledger"},
-            "approval_required": bool(action["requires_approval"]),
+            "approval_required": bool(action["requires_approval"] and action["status"] == "queued"),
             "notes": "Dry-run demo action; no live provider mutation or spend has executed.",
             "artifact_ref": "voiceops-demo.json",
-            "approval_ref": f"voiceops-demo-{action['action_id']}" if action["requires_approval"] else None,
+            "approval_ref": f"voiceops-demo-{action['action_id']}" if action["requires_approval"] and action["status"] == "queued" else None,
             "execution_status": "not_executed",
-            "operator_next_step": "Review the linked dry-run artifact and approval contract before any live action.",
+            "operator_next_step": (
+                "Increase the budget cap before creating an approval packet for this blocked action."
+                if action["status"] == "held-budget"
+                else "Review the linked dry-run artifact and approval contract before any live action."
+            ),
         }
         for action in demo["ops_actions"]
         if action["action_id"] in {"provision-voip-provider", "buy-service-credit", "call-user-phone", "draft-status"}
@@ -2013,7 +2026,7 @@ def build_demo(args: argparse.Namespace) -> dict[str, Any]:
     approval_total = sum(action.estimated_cents for action in actions if action.requires_approval and action.status == "queued")
     ready_total = sum(action.estimated_cents for action in actions if action.status in {"queued", "ready"})
     sponsor_stack = _sponsor_stack(args.active_model)
-    spark_stack = _spark_stack(args.active_model, args.reflex_model)
+    spark_stack = _spark_stack(args.active_model, args.reflex_model, args.interpreter_model)
     spark_boundary = _spark_evidence_boundary_from_path(sponsor_stack["hermes_active_model"])
     policy = SpendPolicy(
         name="household-business-daily-ops",
@@ -2057,6 +2070,7 @@ def prepare_voiceops_action_packet(
     approval_required_over_cents: int = 1_000,
     active_model: str = DEFAULT_ACTIVE_MODEL,
     reflex_model: str = DEFAULT_REFLEX_MODEL,
+    interpreter_model: str = DEFAULT_INTERPRETER_MODEL,
     demo_name: str = DEFAULT_DEMO_NAME,
     env: Mapping[str, str] | None = None,
     env_files: Iterable[Path] = (),
@@ -2079,6 +2093,7 @@ def prepare_voiceops_action_packet(
         approval_required_over_cents=approval_required_over_cents,
         active_model=active_model,
         reflex_model=reflex_model,
+        interpreter_model=interpreter_model,
     )
     demo = build_demo(args)
     readiness = build_readiness_report(demo, env={} if env is None else env, env_files=env_files, which=which)
@@ -2182,6 +2197,7 @@ def _markdown(demo: dict[str, Any]) -> str:
         "",
         f"- Compute: {demo['spark_stack']['compute']}",
         f"- Reflex: {demo['spark_stack']['reflex']['model']} for low-latency KAME interface behavior",
+        f"- Interpreter: {demo['spark_stack']['interpreter']['model']} for raw-audio evidence adjudication",
         f"- Oracle: {demo['spark_stack']['oracle']['model']} selected through Hermes' normal active model flow",
         f"- Speech: {demo['spark_stack']['speech']['asr']} plus {demo['spark_stack']['speech']['tts']}",
         "",
@@ -2268,6 +2284,7 @@ def _submission_writeup(demo: dict[str, Any]) -> str:
         "",
         f"- Compute target: {demo['spark_stack']['compute']}",
         f"- Reflex/interface: {demo['spark_stack']['reflex']['model']}",
+        f"- Interpreter/evidence: {demo['spark_stack']['interpreter']['model']}",
         f"- Oracle/brain: {demo['spark_stack']['oracle']['model']}",
         f"- Speech path: {demo['spark_stack']['speech']['asr']} plus {demo['spark_stack']['speech']['tts']}",
         "",
@@ -2858,6 +2875,8 @@ def _dashboard_html(demo: dict[str, Any], readiness: dict[str, Any]) -> str:
         <div class="panel">
           <h2>Model Strategy</h2>
           <ul>
+            <li><span>Reflex</span><strong>{_h(demo['spark_stack']['reflex']['model'])}</strong><small>Fast floor-control, no broad tool authority.</small></li>
+            <li><span>Interpreter</span><strong>{_h(demo['spark_stack']['interpreter']['model'])}</strong><small>Raw-audio evidence adjudication.</small></li>
             <li><span>Active</span><strong>{_h(demo['sponsor_stack']['hermes_active_model']['label'])}</strong><small>Selected through Hermes /model.</small></li>
             <li><span>Preferred local</span><strong>Nemotron 3 Super on DGX Spark</strong><small>Spark-local readiness requires measured local evidence.</small></li>
             <li><span>Hosted fallback</span><strong>Clearly labeled /model fallback</strong><small>Hosted fallback does not count as Spark-local readiness proof.</small></li>
@@ -3084,6 +3103,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Hermes active model selected through /model.",
     )
     parser.add_argument("--reflex-model", default=DEFAULT_REFLEX_MODEL)
+    parser.add_argument("--interpreter-model", default=DEFAULT_INTERPRETER_MODEL)
     parser.add_argument(
         "--hermes-home",
         type=Path,

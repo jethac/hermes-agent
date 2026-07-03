@@ -621,6 +621,11 @@ def _audit_spark_model_claims(
         else {}
     )
     active_model = str(active_path.get("active_model") or "").lower()
+    spark_stack = demo.get("spark_stack") if isinstance(demo.get("spark_stack"), Mapping) else {}
+    reflex = spark_stack.get("reflex") if isinstance(spark_stack.get("reflex"), Mapping) else {}
+    interpreter = spark_stack.get("interpreter") if isinstance(spark_stack.get("interpreter"), Mapping) else {}
+    reflex_model = str(reflex.get("model") or "").lower()
+    interpreter_model = str(interpreter.get("model") or "").lower()
     spark_local = active_path.get("spark_local")
     hosted_marker_present = any(marker in active_model for marker in HOSTED_MODEL_MARKERS)
     local_marker_present = any(marker in active_model for marker in LOCAL_MODEL_MARKERS)
@@ -630,6 +635,10 @@ def _audit_spark_model_claims(
         issues.append("spark_model_claim:spark_local_true_without_local_marker")
     if active_path.get("fallback_used") is True and spark_local is True:
         issues.append("spark_model_claim:fallback_used_but_spark_local_true")
+    if "gemma" in reflex_model:
+        issues.append("spark_model_claim:gemma_model_in_reflex_role")
+    if "gemma" not in interpreter_model:
+        issues.append("spark_model_claim:gemma_interpreter_missing")
     expected_status = (
         "target_selected_needs_benchmark_evidence"
         if spark_local is True
@@ -1063,6 +1072,7 @@ def _audit_plan_model_args(*, demo: Mapping[str, Any], plan_run: Mapping[str, An
         return
     active_model_arg = plan_args.get("active_model")
     reflex_model_arg = plan_args.get("reflex_model")
+    interpreter_model_arg = plan_args.get("interpreter_model")
     sponsor_stack = demo.get("sponsor_stack") if isinstance(demo.get("sponsor_stack"), Mapping) else {}
     active_path = (
         sponsor_stack.get("hermes_active_model")
@@ -1071,10 +1081,13 @@ def _audit_plan_model_args(*, demo: Mapping[str, Any], plan_run: Mapping[str, An
     )
     spark_stack = demo.get("spark_stack") if isinstance(demo.get("spark_stack"), Mapping) else {}
     reflex = spark_stack.get("reflex") if isinstance(spark_stack.get("reflex"), Mapping) else {}
+    interpreter = spark_stack.get("interpreter") if isinstance(spark_stack.get("interpreter"), Mapping) else {}
     if active_model_arg is not None and active_model_arg != active_path.get("active_model"):
         issues.append("plan_run:active_model_arg_mismatch_demo")
     if reflex_model_arg is not None and reflex_model_arg != reflex.get("model"):
         issues.append("plan_run:reflex_model_arg_mismatch_demo")
+    if interpreter_model_arg is not None and interpreter_model_arg != interpreter.get("model"):
+        issues.append("plan_run:interpreter_model_arg_mismatch_demo")
 
 
 def _audit_plan_command_model_args(
@@ -1090,6 +1103,7 @@ def _audit_plan_command_model_args(
     expected = {
         "--active-model": plan_args.get("active_model"),
         "--reflex-model": plan_args.get("reflex_model"),
+        "--interpreter-model": plan_args.get("interpreter_model"),
     }
     if all(value is None for value in expected.values()):
         return

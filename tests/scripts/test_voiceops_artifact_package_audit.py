@@ -415,6 +415,19 @@ def test_package_audit_rejects_spark_readiness_claim_drift(tmp_path):
     assert "spark_model_claim:missing_m4_live_evidence_gap" in report["issues"]
 
 
+def test_package_audit_rejects_gemma_in_reflex_role(tmp_path):
+    artifact_root = _generate_package(
+        tmp_path,
+        reflex_model="Gemma 4 E2B audio-native reflex",
+        interpreter_model="Gemma 4 E2B audio-native interpreter",
+    )
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "spark_model_claim:gemma_model_in_reflex_role" in report["issues"]
+
+
 def test_package_audit_rejects_hosted_fallback_public_copy_overclaim(tmp_path):
     artifact_root = _generate_package(tmp_path)
     demo_path = artifact_root / "hackathon-voiceops-demo" / "current" / "voiceops-demo.json"
@@ -982,12 +995,14 @@ def test_package_audit_rejects_plan_run_model_arg_drift_from_demo(tmp_path):
     artifact_root = _generate_package(
         tmp_path,
         active_model="Nemotron 3 Super via hosted provider",
-        reflex_model="Gemma 4 E4B audio-native",
+        reflex_model="Moshi fast reflex",
+        interpreter_model="Gemma 4 E4B audio-native interpreter",
     )
     plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
     plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
     plan_run["plan_args"]["active_model"] = "Nemotron 3 Ultra via hosted provider"
-    plan_run["plan_args"]["reflex_model"] = "Gemma 4 E2B audio-native"
+    plan_run["plan_args"]["reflex_model"] = "Moshi alternate reflex"
+    plan_run["plan_args"]["interpreter_model"] = "Gemma 4 E2B audio-native interpreter"
     _write_json(plan_run_path, plan_run)
 
     report = audit_package(artifact_root)
@@ -995,13 +1010,15 @@ def test_package_audit_rejects_plan_run_model_arg_drift_from_demo(tmp_path):
     assert report["ok"] is False
     assert "plan_run:active_model_arg_mismatch_demo" in report["issues"]
     assert "plan_run:reflex_model_arg_mismatch_demo" in report["issues"]
+    assert "plan_run:interpreter_model_arg_mismatch_demo" in report["issues"]
 
 
 def test_package_audit_rejects_plan_run_commands_missing_model_args(tmp_path):
     artifact_root = _generate_package(
         tmp_path,
         active_model="Nemotron 3 Super via hosted provider",
-        reflex_model="Gemma 4 E4B audio-native",
+        reflex_model="Moshi fast reflex",
+        interpreter_model="Gemma 4 E4B audio-native interpreter",
     )
     handoff_path = artifact_root / "voiceops-plan" / "current" / "operator-handoff.json"
     handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
@@ -1017,13 +1034,15 @@ def test_package_audit_rejects_plan_run_commands_missing_model_args(tmp_path):
     assert "operator_handoff:mismatch_with_closure" in report["issues"]
     assert "operator_handoff:plan_run_command_missing_active_model_arg" in report["issues"]
     assert "operator_handoff:plan_run_command_missing_reflex_model_arg" in report["issues"]
+    assert "operator_handoff:plan_run_command_missing_interpreter_model_arg" in report["issues"]
 
 
 def test_package_audit_accepts_equals_form_plan_run_model_args(tmp_path):
     artifact_root = _generate_package(
         tmp_path,
         active_model="Nemotron 3 Super via hosted provider",
-        reflex_model="Gemma 4 E4B audio-native",
+        reflex_model="Moshi fast reflex",
+        interpreter_model="Gemma 4 E4B audio-native interpreter",
     )
 
     def rewrite(command: str) -> str:
@@ -1031,8 +1050,11 @@ def test_package_audit_accepts_equals_form_plan_run_model_args(tmp_path):
             "--active-model 'Nemotron 3 Super via hosted provider'",
             "--active-model='Nemotron 3 Super via hosted provider'",
         ).replace(
-            "--reflex-model 'Gemma 4 E4B audio-native'",
-            "--reflex-model='Gemma 4 E4B audio-native'",
+            "--reflex-model 'Moshi fast reflex'",
+            "--reflex-model='Moshi fast reflex'",
+        ).replace(
+            "--interpreter-model 'Gemma 4 E4B audio-native interpreter'",
+            "--interpreter-model='Gemma 4 E4B audio-native interpreter'",
         )
 
     for path in (

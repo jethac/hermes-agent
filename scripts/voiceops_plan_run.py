@@ -570,10 +570,13 @@ def _plan_model_flag_args(plan_args: dict[str, Any] | None) -> list[str]:
     flags: list[str] = []
     active_model = plan_args.get("active_model")
     reflex_model = plan_args.get("reflex_model")
+    interpreter_model = plan_args.get("interpreter_model")
     if active_model:
         flags.extend(["--active-model", str(active_model)])
     if reflex_model:
         flags.extend(["--reflex-model", str(reflex_model)])
+    if interpreter_model:
+        flags.extend(["--interpreter-model", str(interpreter_model)])
     return flags
 
 
@@ -583,7 +586,7 @@ def _append_plan_model_flags(value: Any, model_flags: list[str]) -> Any:
     if isinstance(value, str):
         if "scripts/voiceops_plan_run.py" not in value:
             return value
-        if "--active-model" in value or "--reflex-model" in value:
+        if "--active-model" in value or "--reflex-model" in value or "--interpreter-model" in value:
             return value
         return f"{value} {shlex.join(model_flags)}"
     if isinstance(value, list):
@@ -1274,7 +1277,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "preferred_local_oracle_candidate_id": "oracle-nemotron3-super-local",
                 "preferred_local_oracle_model": "Nemotron 3 Super",
                 "non_counting_fallback_oracle_models": ["Nemotron 3 Ultra"],
-                "required_stack_components": ["reflex", "oracle", "asr", "tts", "sidecar"],
+                "required_stack_components": ["reflex", "interpreter", "oracle", "asr", "tts", "sidecar"],
                 "source_artifacts_must_exist": True,
                 "source_artifact_resolution": "absolute paths or paths relative to the supplied benchmark evidence file",
                 "source_artifact_readable": True,
@@ -1339,6 +1342,7 @@ def build_plan_run(
     budget_cents: int = 20_000,
     active_model: str | None = None,
     reflex_model: str | None = None,
+    interpreter_model: str | None = None,
     evidence_paths: list[Path] | None = None,
     env_files: list[Path] | None = None,
     voice_live_evidence_paths: list[Path] | None = None,
@@ -1358,6 +1362,7 @@ def build_plan_run(
             budget_cents=budget_cents,
             active_model=active_model,
             reflex_model=reflex_model,
+            interpreter_model=interpreter_model,
             evidence_paths=evidence_paths,
             env_files=env_files,
             voice_live_evidence_paths=voice_live_evidence_paths,
@@ -1380,6 +1385,7 @@ async def build_plan_run_async(
     budget_cents: int = 20_000,
     active_model: str | None = None,
     reflex_model: str | None = None,
+    interpreter_model: str | None = None,
     evidence_paths: list[Path] | None = None,
     env_files: list[Path] | None = None,
     voice_live_evidence_paths: list[Path] | None = None,
@@ -1410,6 +1416,8 @@ async def build_plan_run_async(
         demo_argv.extend(["--active-model", active_model])
     if reflex_model:
         demo_argv.extend(["--reflex-model", reflex_model])
+    if interpreter_model:
+        demo_argv.extend(["--interpreter-model", interpreter_model])
     demo_args = parse_demo_args(demo_argv)
     demo = build_demo(demo_args)
     demo_paths = write_demo(demo_dir, demo, readiness_env_files=env_files)
@@ -1425,6 +1433,7 @@ async def build_plan_run_async(
                 "active_model": demo["sponsor_stack"]["hermes_active_model"]["active_model"],
                 "active_model_path": demo["sponsor_stack"]["hermes_active_model"]["path"],
                 "reflex_model": demo["spark_stack"]["reflex"]["model"],
+                "interpreter_model": demo["spark_stack"]["interpreter"]["model"],
                 "budget_cents": demo["spend_policy"]["limit_cents"],
                 "held_budget_cents": demo["totals"]["held_budget_cents"],
                 "ready_or_queued_cents": demo["totals"]["ready_or_queued_cents"],
@@ -1917,6 +1926,7 @@ async def build_plan_run_async(
         "plan_args": {
             "active_model": active_model,
             "reflex_model": reflex_model,
+            "interpreter_model": interpreter_model,
         },
         "ok": not hard_failures,
         "hard_failures": hard_failures,
@@ -2373,6 +2383,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="KAME reflex/interface model label to pass into the generated hackathon demo package.",
     )
+    parser.add_argument(
+        "--interpreter-model",
+        default=None,
+        help="KAME interpreter/evidence model label to pass into the generated hackathon demo package.",
+    )
     parser.add_argument("--evidence", action="append", default=[], type=Path)
     parser.add_argument("--env-file", action="append", default=[], type=Path)
     parser.add_argument("--voice-live-evidence", action="append", default=[], type=Path)
@@ -2481,6 +2496,7 @@ def main(argv: list[str] | None = None) -> int:
                 budget_cents=args.budget_cents,
                 active_model=args.active_model,
                 reflex_model=args.reflex_model,
+                interpreter_model=args.interpreter_model,
                 evidence_paths=args.evidence,
                 env_files=args.env_file,
                 voice_live_evidence_paths=args.voice_live_evidence,
@@ -2543,6 +2559,7 @@ def main(argv: list[str] | None = None) -> int:
         budget_cents=args.budget_cents,
         active_model=args.active_model,
         reflex_model=args.reflex_model,
+        interpreter_model=args.interpreter_model,
         evidence_paths=args.evidence,
         env_files=args.env_file,
         voice_live_evidence_paths=args.voice_live_evidence,

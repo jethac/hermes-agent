@@ -168,6 +168,11 @@ prompt must label it explicitly as a hypothesis, not as ground truth:
 The interpreter may use all of those signals, but its output must identify
 disagreements instead of silently averaging them away.
 
+The presence of a Moshi/S2S transcript must be opportunistic, not blocking. A
+Gemma interpreter request can proceed with only the clipped raw audio and timing
+metadata; any Moshi/S2S or classic ASR hypothesis that arrives later can be
+attached as late evidence before irreversible oracle actions.
+
 It owns:
 
 - turn detection interpretation and speech boundary decisions

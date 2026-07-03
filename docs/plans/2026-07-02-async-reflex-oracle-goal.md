@@ -69,6 +69,12 @@ inside the same evidence bundle as the raw audio. Classic ASR is retained for
 fallback, diagnostics, or literal wording checks, not as the normal reflex
 driver.
 
+Moshi/S2S transcript evidence is the same kind of optional support signal. The
+interpreter should not wait for it before acknowledging the user or starting
+raw-audio interpretation. If it arrives late, the oracle job records it as late
+evidence and may use it only before irreversible tool, spend, memory, or file
+actions.
+
 This means the architecture is three-tier, but not three independent
 conversations. The reflex owns live floor control, the Gemma-style interpreter
 adjudicates the cut waveform and may promote a corrected transcript candidate,
