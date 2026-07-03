@@ -193,6 +193,13 @@ rationale. A reflex/Moshi/OpenClaw/VoiceClaw/classic-ASR hypothesis may support
 the explanation trail, but it cannot by itself become a spend reason, provider
 selection, phone payload, durable user transcript, or tool argument.
 
+Operator approval rule: the same promotion boundary must be present in user
+review surfaces. A pending approval row, dashboard state packet, or GUI action
+card is incomplete unless it carries promoted KAME action evidence and a
+tool-disclosure reference. The UI may display Moshi/OpenClaw/VoiceClaw/reflex
+or classic-ASR hypotheses for auditability, but it must not let those
+hypotheses satisfy the approval contract.
+
 The oracle is the worker. It owns:
 
 - tool execution

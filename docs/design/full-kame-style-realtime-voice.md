@@ -586,6 +586,14 @@ normal KAME path. Waiting for transcript text is allowed only in explicit
 fallback/debug modes or when a high-risk action policy asks for additional
 literal evidence before approval.
 
+Approval and operator surfaces must preserve the same boundary. A pending
+Stripe, provisioning, phone, message, file, or memory action should carry
+promoted interpreter/oracle evidence plus a tool-disclosure reference. The UI
+may show Moshi/OpenClaw/VoiceClaw/reflex/ASR hypotheses as witness context, but
+the approval contract is invalid if those hypotheses are the only evidence for
+the action text, spend reason, provider choice, phone payload, or durable user
+request.
+
 It owns:
 
 - turn detection interpretation and speech boundary decisions

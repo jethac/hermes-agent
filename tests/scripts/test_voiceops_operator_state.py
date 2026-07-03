@@ -12,6 +12,7 @@ from scripts.voiceops_operator_state import (
     validate_operator_state,
     write_operator_state,
 )
+from scripts.voiceops_provisioning_probe import build_kame_action_evidence
 
 
 def _sync_approval_contract(state, approval):
@@ -20,6 +21,8 @@ def _sync_approval_contract(state, approval):
     contract["action_id"] = approval["action_id"]
     contract["approval_artifact"] = approval["approval_artifact"]
     approval["approval_contract"] = contract
+    approval["kame_evidence"] = build_kame_action_evidence(approval["action_id"])
+    approval["tool_disclosure_ref"] = "tool_disclosure"
     state["approval_contracts"][approval["action_id"]] = contract
 
 
@@ -72,6 +75,17 @@ def test_operator_state_contains_required_dashboard_sections_and_boundaries():
         assert approval["command"]
         assert approval["execution_status"] == "not_executed"
         assert approval["operator_next_step"]
+        assert approval["tool_disclosure_ref"] == "tool_disclosure"
+        evidence = approval["kame_evidence"]
+        assert evidence["action_id"] == approval["action_id"]
+        assert evidence["hypotheses_allowed_for_action"] is False
+        assert evidence["transcript_hypotheses_promoted"] is False
+        assert set(evidence["required_promotions"]) == {"interpreter_promoted", "oracle_promoted"}
+        assert evidence["promoted_fields"]
+        assert {
+            item["evidence_label"]
+            for item in evidence["promoted_fields"].values()
+        } <= {"interpreter_promoted", "oracle_promoted"}
         contract = approval["approval_contract"]
         assert contract == state["approval_contracts"][approval["action_id"]]
         assert contract["approval_id"] == approval["approval_id"]
@@ -222,6 +236,24 @@ def test_operator_state_validates_pending_approval_contracts():
     claimed_execution["pending_approvals"][0]["execution_status"] = "executed"
     assert validate_operator_state(claimed_execution) == [
         "approval_execution_claimed:vops-m5-approval-001",
+    ]
+
+    missing_evidence = json.loads(json.dumps(state))
+    missing_evidence["pending_approvals"][0].pop("kame_evidence")
+    assert validate_operator_state(missing_evidence) == ["missing_kame_evidence:vops-m5-approval-001"]
+
+    unpromoted_evidence = json.loads(json.dumps(state))
+    field = next(iter(unpromoted_evidence["pending_approvals"][0]["kame_evidence"]["promoted_fields"].values()))
+    field["evidence_label"] = "auxiliary_hypothesis"
+    assert validate_operator_state(unpromoted_evidence) == [
+        "kame_evidence_invalid_promoted_labels:vops-m5-approval-001:auxiliary_hypothesis",
+        "kame_evidence_rejected_promoted_labels:vops-m5-approval-001:auxiliary_hypothesis",
+    ]
+
+    missing_tool_disclosure = json.loads(json.dumps(state))
+    missing_tool_disclosure["pending_approvals"][0].pop("tool_disclosure_ref")
+    assert validate_operator_state(missing_tool_disclosure) == [
+        "tool_disclosure_ref_missing:vops-m5-approval-001",
     ]
 
 

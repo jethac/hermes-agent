@@ -13,9 +13,15 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.voiceops_provisioning_probe import build_kame_action_evidence
 
 
 DEFAULT_OUTPUT_DIR = Path("artifacts/voiceops-operator-state/current")
@@ -47,6 +53,8 @@ APPROVAL_REQUIRED_SERVICE_PROVIDERS = {"stripe_projects", "twilio_or_vapi", "wha
 ALLOWED_APPROVAL_STATUSES = {"pending", "approved", "denied", "expired"}
 ALLOWED_APPROVAL_DECISIONS = {"hold_for_operator", "deny", "approved_after_operator_review"}
 REQUIRED_APPROVAL_DECISIONS = {"approve_once", "deny", "hold"}
+REQUIRED_KAME_PROMOTIONS = {"interpreter_promoted", "oracle_promoted"}
+REJECTED_KAME_APPROVAL_LABELS = {"reflex_hypothesis", "auxiliary_hypothesis", "diagnostic_only", "hypothesis"}
 ALLOWED_AUDIT_STATUSES = {"recorded", "held", "planned", "blocked", "approved", "denied"}
 ALLOWED_SERVICE_STATUSES = {"planned", "provisioned", "blocked", "approval_required"}
 ALLOWED_EXECUTION_STATUSES = {"not_executed", "local_artifact_written"}
@@ -90,6 +98,8 @@ class PendingApproval:
     approval_artifact: str
     command: str
     approval_contract: dict[str, Any]
+    kame_evidence: dict[str, Any]
+    tool_disclosure_ref: str
     execution_status: str
     operator_next_step: str
 
@@ -229,6 +239,8 @@ def default_pending_approvals() -> list[PendingApproval]:
                 required_preflight_gates=["stripe_cli", "stripe_projects_cli", "mpp_agent"],
                 ttl_minutes=30,
             ),
+            kame_evidence=build_kame_action_evidence("provision-voip-provider"),
+            tool_disclosure_ref="tool_disclosure",
             execution_status="not_executed",
             operator_next_step="Review nemoclaw-action-packet.json, confirm provisioning preflight gates, then approve or hold.",
         ),
@@ -254,6 +266,8 @@ def default_pending_approvals() -> list[PendingApproval]:
                 required_preflight_gates=["stripe_link_cli", "mpp_agent"],
                 ttl_minutes=15,
             ),
+            kame_evidence=build_kame_action_evidence("buy-service-credit"),
+            tool_disclosure_ref="tool_disclosure",
             execution_status="not_executed",
             operator_next_step="Review the Link spend request details and budget impact before approving any spend.",
         ),
@@ -279,6 +293,8 @@ def default_pending_approvals() -> list[PendingApproval]:
                 required_preflight_gates=["channel_policy_review", "operator_confirmation"],
                 ttl_minutes=30,
             ),
+            kame_evidence=build_kame_action_evidence("enable-whatsapp-egress"),
+            tool_disclosure_ref="tool_disclosure",
             execution_status="not_executed",
             operator_next_step="Review channel-policy.json and confirm recipient policy before enabling WhatsApp egress.",
         ),
@@ -484,6 +500,69 @@ def build_operator_state() -> dict[str, Any]:
     }
 
 
+def _evidence_labels(payload: Any) -> list[str]:
+    if not isinstance(payload, dict):
+        return []
+    promoted_fields = payload.get("promoted_fields")
+    if not isinstance(promoted_fields, dict):
+        return []
+    labels: list[str] = []
+    for field in promoted_fields.values():
+        if isinstance(field, dict):
+            label = field.get("evidence_label")
+            if isinstance(label, str):
+                labels.append(label)
+    return labels
+
+
+def _validate_kame_approval_evidence(
+    approval: dict[str, Any],
+    approval_id: str,
+    action_id: str,
+) -> list[str]:
+    issues: list[str] = []
+    evidence = approval.get("kame_evidence")
+    if not isinstance(evidence, dict):
+        issues.append(f"missing_kame_evidence:{approval_id}")
+        return issues
+
+    if evidence.get("schema_version") != "voiceops.kame_action_evidence.v1":
+        issues.append(f"kame_evidence_schema_invalid:{approval_id}")
+    if evidence.get("action_id") != action_id:
+        issues.append(f"kame_evidence_action_mismatch:{approval_id}")
+    if evidence.get("hypotheses_allowed_for_action") is not False:
+        issues.append(f"kame_evidence_hypotheses_allowed:{approval_id}")
+    if evidence.get("transcript_hypotheses_promoted") is not False:
+        issues.append(f"kame_evidence_transcript_hypotheses_promoted:{approval_id}")
+    if not evidence.get("turn_id"):
+        issues.append(f"kame_evidence_missing_turn_id:{approval_id}")
+    if not evidence.get("audio_segment_ref"):
+        issues.append(f"kame_evidence_missing_audio_segment_ref:{approval_id}")
+
+    required_promotions = set(evidence.get("required_promotions") or [])
+    missing_promotions = REQUIRED_KAME_PROMOTIONS - required_promotions
+    if missing_promotions:
+        issues.append(f"kame_evidence_missing_required_promotions:{approval_id}:{','.join(sorted(missing_promotions))}")
+
+    promoted_fields = evidence.get("promoted_fields")
+    if not isinstance(promoted_fields, dict) or not promoted_fields:
+        issues.append(f"kame_evidence_missing_promoted_fields:{approval_id}")
+    else:
+        labels = _evidence_labels(evidence)
+        if not labels:
+            issues.append(f"kame_evidence_missing_promoted_field_labels:{approval_id}")
+        rejected_labels = sorted(set(labels) & REJECTED_KAME_APPROVAL_LABELS)
+        if rejected_labels:
+            issues.append(f"kame_evidence_rejected_promoted_labels:{approval_id}:{','.join(rejected_labels)}")
+        invalid_labels = sorted(set(labels) - REQUIRED_KAME_PROMOTIONS)
+        if invalid_labels:
+            issues.append(f"kame_evidence_invalid_promoted_labels:{approval_id}:{','.join(invalid_labels)}")
+
+    if approval.get("tool_disclosure_ref") != "tool_disclosure":
+        issues.append(f"tool_disclosure_ref_missing:{approval_id}")
+    return issues
+
+
 def validate_operator_state(state: dict[str, Any]) -> list[str]:
     issues: list[str] = []
     if state.get("current_mode") not in ALLOWED_CURRENT_MODES:
@@ -584,6 +663,7 @@ def validate_operator_state(state: dict[str, Any]) -> list[str]:
             issues.append(f"invalid_approval_budget_impact:{approval_id}")
         else:
             pending_budget_total += impact
+        issues.extend(_validate_kame_approval_evidence(approval, approval_id, action_id))
         embedded_contract = approval.get("approval_contract")
         contract = approval_contracts.get(action_id)
         if not isinstance(embedded_contract, dict):
