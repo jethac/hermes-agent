@@ -2518,12 +2518,21 @@ def test_oracle_direct_async_job_completion_after_local_turn_is_lifecycle_only(m
             seen.append(event)
             if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
                 break
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED:
+                break
 
         await engine.close()
         completed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_COMPLETED)
+        suppressed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED)
         assert completed.payload["result_summary"] == "The deployment is healthy."
         assert completed.payload["source_playback_generation"] == 1
         assert completed.payload["playback_generation"] == 2
+        assert suppressed.payload["suppression_reason"] == "stale_playback_generation"
+        assert suppressed.payload["source_playback_generation"] == 1
+        assert suppressed.payload["playback_generation"] == 2
+        assert suppressed.payload["suppressed_result_present"] is True
         assert not any(event.payload.get("oracle_job_result") for event in seen)
         assert spoken == ["Yes, I can hear you."]
 

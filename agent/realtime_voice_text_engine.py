@@ -1604,7 +1604,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             self._schedule_oracle_job_result_suppressed(
                 event,
                 reason="terminal_speech_disabled",
-                playback_generation=playback_generation,
+                source_playback_generation=playback_generation,
+                current_playback_generation=self._playback_generation,
             )
             return
         if self._closed:
@@ -1612,7 +1613,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             self._schedule_oracle_job_result_suppressed(
                 event,
                 reason="session_closed",
-                playback_generation=playback_generation,
+                source_playback_generation=playback_generation,
+                current_playback_generation=self._playback_generation,
             )
             return
         if playback_generation != self._playback_generation:
@@ -1620,7 +1622,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             self._schedule_oracle_job_result_suppressed(
                 event,
                 reason="stale_playback_generation",
-                playback_generation=playback_generation,
+                source_playback_generation=playback_generation,
+                current_playback_generation=self._playback_generation,
             )
             return
         if event.type == OracleJobEventType.COMPLETED and not str(payload.get("result_summary") or "").strip():
@@ -1628,7 +1631,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             self._schedule_oracle_job_result_suppressed(
                 event,
                 reason="empty_result_summary",
-                playback_generation=playback_generation,
+                source_playback_generation=playback_generation,
+                current_playback_generation=self._playback_generation,
             )
             return
         previous_task = self._active_task if self._active_task and not self._active_task.done() else None
@@ -1651,12 +1655,14 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         event: OracleJobEvent,
         *,
         reason: str,
-        playback_generation: Optional[int] = None,
+        source_playback_generation: Optional[int] = None,
+        current_playback_generation: Optional[int] = None,
     ) -> None:
         payload = _oracle_job_result_suppressed_voice_payload(
             event,
             reason=reason,
-            playback_generation=playback_generation,
+            source_playback_generation=source_playback_generation,
+            current_playback_generation=current_playback_generation,
         )
         asyncio.create_task(
             self._emit_oracle_job_voice_event(
@@ -1683,7 +1689,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 _oracle_job_result_suppressed_voice_payload(
                     event,
                     reason="stale_before_speech",
-                    playback_generation=playback_generation,
+                    source_playback_generation=playback_generation,
+                    current_playback_generation=self._playback_generation,
                 ),
             )
             return
@@ -1705,7 +1712,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 _oracle_job_result_suppressed_voice_payload(
                     event,
                     reason="empty_spoken_text",
-                    playback_generation=playback_generation,
+                    source_playback_generation=playback_generation,
+                    current_playback_generation=self._playback_generation,
                 ),
             )
             return
@@ -1719,7 +1727,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 _oracle_job_result_suppressed_voice_payload(
                     event,
                     reason="empty_spoken_text_after_limit",
-                    playback_generation=playback_generation,
+                    source_playback_generation=playback_generation,
+                    current_playback_generation=self._playback_generation,
                 ),
             )
             return
@@ -3562,7 +3571,8 @@ def _oracle_job_result_suppressed_voice_payload(
     event: OracleJobEvent,
     *,
     reason: str,
-    playback_generation: Optional[int] = None,
+    source_playback_generation: Optional[int] = None,
+    current_playback_generation: Optional[int] = None,
 ) -> dict[str, Any]:
     payload = {
         key: value
@@ -3586,9 +3596,10 @@ def _oracle_job_result_suppressed_voice_payload(
             "suppression_reason": str(reason or "result_suppressed")[:120],
         }
     )
-    if playback_generation is not None:
-        payload["source_playback_generation"] = playback_generation
-        payload["playback_generation"] = playback_generation
+    if source_playback_generation is not None:
+        payload["source_playback_generation"] = source_playback_generation
+    if current_playback_generation is not None:
+        payload["playback_generation"] = current_playback_generation
     if "result_text_chars" in event.payload:
         payload["suppressed_result_text_chars"] = event.payload["result_text_chars"]
         payload.pop("result_text_chars", None)
