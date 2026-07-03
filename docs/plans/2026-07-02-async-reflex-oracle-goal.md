@@ -1014,6 +1014,10 @@ Add a local smoke report mode that proves:
 - live-evidence validation rejects transcript-only witness turns that lack raw
   audio segment evidence and interpreter evidence, even when the transcript text
   is correctly labeled as a hypothesis
+- live-evidence artifacts expose `raw_audio_interpreter_evidence_observed` and
+  `transcript_only_witness_rejected_for_full_kame` so transcript-only Moshi,
+  VoiceClaw, OpenClaw, or ASR text cannot accidentally satisfy the full KAME
+  live gate
 - queued oracle job updates are visible in the reflex/status event stream
 - one job can be cancelled while others complete
 - queued oracle jobs can be cancelled before worker execution

@@ -872,6 +872,17 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     ]
     assert "schema_version" in gates["live_discord_voice_operator"]["required_evidence_fields"]
     assert "transcript_observed" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert "audio_segment_ref_observed" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert "interpreter_evidence_observed" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert "transcript_hypotheses_labeled" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert (
+        "raw_audio_interpreter_evidence_observed"
+        in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    )
+    assert (
+        "transcript_only_witness_rejected_for_full_kame"
+        in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    )
     assert "sidecar_mode" in gates["live_discord_voice_operator"]["required_evidence_fields"]
     assert "healthcheck_observed" in gates["live_discord_voice_operator"]["required_evidence_fields"]
     assert "provider_transport_observed" in gates["live_discord_voice_operator"]["required_evidence_fields"]

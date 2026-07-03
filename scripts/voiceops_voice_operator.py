@@ -1335,6 +1335,19 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
     for key in LIVE_EVIDENCE_REQUIRED_TURN_BOOLS:
         if live_turn.get(key) is not True:
             issues.append(f"live_turn:{key}_not_true")
+    transcript_hypotheses_observed = (
+        live_turn.get("transcript_hypotheses_labeled") is True
+        or live_turn.get("transcript_observed") is True
+    )
+    raw_audio_interpreter_evidence_observed = (
+        live_turn.get("audio_segment_ref_observed") is True
+        and live_turn.get("interpreter_evidence_observed") is True
+    )
+    transcript_only_witness_rejected_for_full_kame = (
+        transcript_hypotheses_observed and not raw_audio_interpreter_evidence_observed
+    )
+    if transcript_only_witness_rejected_for_full_kame:
+        issues.append("live_turn:transcript_only_witness_without_raw_audio_interpreter_evidence")
     first_audio_ms = _non_negative_number(live_turn.get("speech_end_to_first_audio_ms"))
     if first_audio_ms is None:
         issues.append("live_turn:missing_speech_end_to_first_audio_ms")
@@ -1389,6 +1402,9 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
             and first_audio_ms <= 3000
             and barge_in_ms is not None
             and barge_in_ms <= 150,
+            "raw_audio_interpreter_evidence_observed": raw_audio_interpreter_evidence_observed,
+            "transcript_hypotheses_observed": transcript_hypotheses_observed,
+            "transcript_only_witness_rejected_for_full_kame": transcript_only_witness_rejected_for_full_kame,
             "speech_end_to_first_audio_ms": first_audio_ms,
             "barge_in_stop_ms": barge_in_ms,
         },
@@ -3481,7 +3497,9 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "interpreter_evidence_observed, transcript_hypotheses_labeled, optional transcript_observed, "
                 "assistant_audio_observed, barge_in_observed, spoken_reply_short, no_voice_denial_observed, "
                 "speech_end_to_first_audio_ms, barge_in_stop_ms, source_artifact, and collector_attestation. "
-                "Moshi/S2S or ASR text must be labeled as hypothesis context, not durable user text."
+                "Moshi/S2S or ASR text must be labeled as hypothesis context, not durable user text, and "
+                "transcript-only witness evidence is rejected for the full KAME live gate until raw audio "
+                "and interpreter evidence are observed."
             ),
             "ingest": report["live_probe_required_for_completion"]["ingest_command"],
         },

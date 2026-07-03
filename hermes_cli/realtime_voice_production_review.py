@@ -57,6 +57,14 @@ KAME_DGX_REQUIRED_BENCHMARK_COVERAGE = frozenset(
         "cloud_fallback_smoke",
         "capability_honesty_smoke",
         "barge_in_interruption_smoke",
+        "async_oracle_witness_fusion_single_bundle",
+        "async_oracle_interpreter_prompt_input_order_visible",
+        "async_oracle_interpreter_prompt_policy_visible",
+        "async_oracle_transcript_hypotheses_unpromoted",
+        "async_oracle_unpromoted_hypothesis_action_sinks_clean",
+        "async_oracle_runtime_kame_action_gate_enforced",
+        "async_oracle_unflagged_high_risk_tool_event_fails_closed",
+        "async_oracle_kame_ack_latency_metrics_visible",
     }
 )
 

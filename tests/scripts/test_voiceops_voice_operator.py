@@ -2012,7 +2012,32 @@ def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing
     assert report["live_evidence"]["overall_status"] == "live_evidence_supplied_not_readiness_claim"
     assert report["live_probe_required_for_completion"]["missing_gates"] == []
     assert report["proofs"]["live_evidence"]["ok"] is True
+    assert live_evidence["live_turn"]["raw_audio_interpreter_evidence_observed"] is True
+    assert live_evidence["live_turn"]["transcript_hypotheses_observed"] is True
+    assert live_evidence["live_turn"]["transcript_only_witness_rejected_for_full_kame"] is False
     assert not any("collector_attestation" in issue for issue in live_evidence["issues"])
+
+
+def test_live_evidence_rejects_transcript_only_witness_for_full_kame():
+    evidence = _complete_live_evidence()
+    evidence["live_turn"]["audio_segment_ref_observed"] = False
+    evidence["live_turn"]["interpreter_evidence_observed"] = False
+    evidence["live_turn"]["transcript_hypotheses_labeled"] = True
+    evidence["live_turn"]["transcript_observed"] = True
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert live_evidence["overall_status"] == "partial_live_evidence"
+    assert "live_turn:audio_segment_ref_observed_not_true" in live_evidence["issues"]
+    assert "live_turn:interpreter_evidence_observed_not_true" in live_evidence["issues"]
+    assert (
+        "live_turn:transcript_only_witness_without_raw_audio_interpreter_evidence"
+        in live_evidence["issues"]
+    )
+    assert live_evidence["live_turn"]["raw_audio_interpreter_evidence_observed"] is False
+    assert live_evidence["live_turn"]["transcript_hypotheses_observed"] is True
+    assert live_evidence["live_turn"]["transcript_only_witness_rejected_for_full_kame"] is True
+    assert live_evidence["live_turn"]["ok"] is False
 
 
 def test_live_evidence_rejects_stale_source_artifact_attestation_hash(tmp_path):

@@ -1103,6 +1103,10 @@ Acceptance gates:
 - transcript-only witness evidence must fail the full KAME live-evidence gate;
   it can be preserved for audit, captions, clarification, or degraded fallback,
   but it does not prove that Hermes heard raw voice or that Gemma interpreted it
+- live-evidence readiness artifacts must expose
+  `raw_audio_interpreter_evidence_observed` and
+  `transcript_only_witness_rejected_for_full_kame` so this failure is explicit,
+  not inferred from generic missing fields
 - interpreter prompts must include raw audio whenever an audio segment is
   available, even when Moshi or ASR produced a complete-looking transcript
 - interpreter prompts explicitly identify witness transcripts as non-authority
@@ -1813,11 +1817,16 @@ voice production review is not enough for this branch. Required KAME gates are:
 - all-local DGX Spark smoke with oracle, reflex, raw-audio interpreter, TTS,
   and sidecar together; auxiliary transcript evidence is optional comparison or
   fallback evidence when enabled
+- async KAME VoiceOps proof coverage for single-bundle witness fusion,
+  interpreter prompt ordering/policy, unpromoted hypothesis action-sink
+  rejection, runtime KAME action gates, unflagged high-risk tool fail-closed
+  handling, and KAME first-audio latency metrics
 - live Discord smoke for the full KAME path under production credentials
 
 The `kame_dgx_benchmark_evidence` production-review check must reference a
 local JSON artifact from the DGX Spark benchmark validator with `ok=true` and
-passing coverage for the required KAME matrix rows.
+passing coverage for the required KAME matrix rows and async KAME VoiceOps proof
+keys.
 
 ## Acceptance Criteria
 

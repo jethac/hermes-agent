@@ -315,6 +315,37 @@ def test_production_review_rejects_failed_kame_benchmark_validator_json(tmp_path
     assert "validator_not_ok" in error
 
 
+def test_production_review_requires_async_kame_voiceops_coverage_in_benchmark_artifact(tmp_path, capsys):
+    report_path = tmp_path / "review.json"
+    artifact = _write_dgx_benchmark_validation_artifact(tmp_path)
+    payload = json.loads(artifact.read_text(encoding="utf-8"))
+    payload["benchmark_evidence"]["coverage"]["async_oracle_witness_fusion_single_bundle"] = False
+    artifact.write_text(json.dumps(payload), encoding="utf-8")
+    evidence = _review_evidence(dgx_artifact=artifact)
+    report_path.write_text(
+        json.dumps(
+            {
+                "kind": "realtime_voice_production_review",
+                "reviewer": "qa@example.test",
+                "reviewed_at": "2026-06-08T00:00:00Z",
+                "checks": {key: True for key in REALTIME_VOICE_PRODUCTION_REVIEW_CHECKS},
+                "evidence": evidence,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = realtime_voice_production_review.main([str(report_path)])
+
+    assert result == 1
+    error = capsys.readouterr().err
+    assert "review_evidence_invalid:kame_dgx_benchmark_evidence" in error
+    assert "validator_not_ok" in error
+    assert "async_oracle_witness_fusion_single_bundle" in KAME_DGX_REQUIRED_BENCHMARK_COVERAGE
+    assert "async_oracle_runtime_kame_action_gate_enforced" in KAME_DGX_REQUIRED_BENCHMARK_COVERAGE
+    assert "async_oracle_unpromoted_hypothesis_action_sinks_clean" in KAME_DGX_REQUIRED_BENCHMARK_COVERAGE
+
+
 def test_production_review_resolves_kame_benchmark_artifact_relative_to_report(tmp_path, monkeypatch, capsys):
     report_dir = tmp_path / "review"
     report_dir.mkdir()
