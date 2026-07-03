@@ -1145,7 +1145,7 @@ def _spark_stack(active_model: str, reflex_model: str, interpreter_model: str) -
             "hosted_fallback": "clearly labeled hosted provider through Hermes /model",
         },
         "speech": {
-            "asr": "Nemotron Speech or equivalent local streaming ASR for durable transcript evidence",
+            "asr": "Nemotron Speech or equivalent local streaming ASR only as optional auxiliary transcript-hypothesis evidence",
             "tts": "local Magpie/Riva-style TTS target with Cartesia cloud fallback for the demo",
         },
         "guardrails": [
@@ -2198,7 +2198,7 @@ def _markdown(demo: dict[str, Any]) -> str:
         f"- Reflex: {demo['spark_stack']['reflex']['model']} for low-latency KAME interface behavior",
         f"- Interpreter: {demo['spark_stack']['interpreter']['model']} for raw-audio evidence adjudication",
         f"- Oracle: {demo['spark_stack']['oracle']['model']} selected through Hermes' normal active model flow",
-        f"- Speech: {demo['spark_stack']['speech']['asr']} plus {demo['spark_stack']['speech']['tts']}",
+        f"- Speech: {demo['spark_stack']['speech']['asr']}; {demo['spark_stack']['speech']['tts']}",
         "",
         "## Voice surfaces",
         "",
@@ -2285,7 +2285,7 @@ def _submission_writeup(demo: dict[str, Any]) -> str:
         f"- Reflex/interface: {demo['spark_stack']['reflex']['model']}",
         f"- Interpreter/evidence: {demo['spark_stack']['interpreter']['model']}",
         f"- Oracle/brain: {demo['spark_stack']['oracle']['model']}",
-        f"- Speech path: {demo['spark_stack']['speech']['asr']} plus {demo['spark_stack']['speech']['tts']}",
+        f"- Speech path: {demo['spark_stack']['speech']['asr']}; {demo['spark_stack']['speech']['tts']}",
         "",
         "## Safety Story",
         "",
