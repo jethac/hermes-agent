@@ -29,6 +29,30 @@ Full KAME-style means:
 
 The goal is a voice system that feels immediate while preserving Hermes's existing agent capabilities.
 
+## Three-Tier Voice Contract
+
+The intended runtime is three-tier, not STT-first and not a single direct-audio
+model pretending to own every job:
+
+1. **Reflex:** the always-warm realtime interface. It listens to live audio,
+   controls the floor, handles barge-in, speaks immediate acknowledgements, and
+   emits rough transcript hypotheses when the chosen S2S/reflex model can do
+   so. Moshi/PersonaPlex-class models belong here when their audio path is
+   stable enough.
+2. **Interpreter:** the audio evidence adjudicator. Gemma 4 E2B/E4B/12B-style
+   multimodal models belong here: they receive the clipped raw audio segment
+   plus any labeled Moshi/reflex/STT transcript hypotheses, then produce
+   corrected multilingual evidence and oracle request patches. Raw audio is the
+   primary signal; transcripts are context, not authority.
+3. **Oracle:** Hermes' active model, selected through the normal `/model`
+   interface. It owns tools, memory, approvals, files, spend, provisioning,
+   phone calls, and durable business logic. Voice config must not introduce a
+   separate `oracle_model` setting.
+
+This split is what makes the system KAME-style. A direct Gemma audio request can
+help the interpreter, and a cloud STT/TTS bridge can prove transport behavior,
+but neither is the full reflex/oracle architecture by itself.
+
 ## Model Assumptions To Validate
 
 This design relies on the following external model and serving assumptions:
@@ -125,10 +149,12 @@ same class: helpful context, not authority. The interpreter and auxiliary
 transcript evidence lanes may correct it before the oracle executes tool calls
 or external actions.
 
-If the reflex is a Moshi-style S2S model that emits a transcript, Hermes should
-pass that transcript to the interpreter beside the raw audio segment. The
-interpreter prompt should label it explicitly as a hypothesis, not as ground
-truth:
+If the reflex is a Moshi-style S2S model that emits a transcript or STT-like
+side channel, Hermes should pass that text to the interpreter beside the raw
+audio segment. This is useful even when the transcript is imperfect because it
+captures what the realtime model believed it heard, including timing,
+code-switching, dropped prefixes, and possible hallucinations. The interpreter
+prompt must label it explicitly as a hypothesis, not as ground truth:
 
 - `raw_audio`: the clipped utterance and timing metadata
 - `reflex_transcript_hypothesis`: what the live reflex thought it heard
@@ -191,6 +217,14 @@ Gemma 4 E2B's audio path should be treated as a buffered segment encoder, not as
 Mid-speech backchannels require rolling windows and should be deferred until the cut-segment path is stable.
 
 STT should not feed the reflex in normal full KAME mode. A second interpretation stream in front of the reflex creates disagreement risk between "what the reflex heard" and "what STT transcribed." The reflex's live audio path is the primary truth for floor control, but not for durable transcript or tool arguments.
+
+Moshi-class transcript output is different from classic STT operationally but
+must be treated the same way semantically: it is a hypothesis attached to the
+interpreter request. The interpreter may use it to recover prefixes, names,
+numbers, or code-switched phrases, but it must be able to reject it when the raw
+audio contradicts it. If a Moshi transcript contains words the user did not say,
+the disagreement must be visible in interpreter evidence and must not be written
+as durable user text.
 
 The interpreter receives:
 

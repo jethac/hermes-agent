@@ -35,7 +35,7 @@ Provider bridges sit at the edge of that contract. The current matrix is:
 | ElevenLabs bridge | Implemented | Streaming STT plus realtime TTS |
 | OpenAI Realtime | Implemented | Native speech-to-speech frontend provider behind the sidecar |
 | Gemini Live | Implemented | Native speech-to-speech frontend provider with KAME-scoped bridge tools |
-| Gemma/audio frontend | Future | Remote audio-capable frontend bridge |
+| Gemma/audio interpreter | Future | Remote audio-capable interpreter/evidence bridge over clipped audio plus transcript hypotheses |
 | Native speech-to-speech | Future | Another provider path, not required for first production readiness |
 
 The design decisions are:
@@ -44,6 +44,9 @@ The design decisions are:
 - Keep the Hermes oracle in the middle.
 - Keep native-provider tool calls scoped to bridge tools such as
   `ask_hermes_oracle`; provider frontends do not execute arbitrary Hermes tools.
+- Keep Gemma-style audio models on the interpreter/evidence lane unless a
+  separate low-latency reflex implementation proves it can handle live floor
+  control.
 - Keep desktop/UI and speech inference split so the UI machine does not need to
   run the speech provider or model.
 - Avoid English-only protocol assumptions. Production evidence currently targets

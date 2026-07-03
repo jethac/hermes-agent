@@ -99,11 +99,12 @@ Runner behavior:
 - Generates `compose.yaml`, `.env.example`, `launch-local-stack.sh`,
   `preflight-local-stack.sh`, `benchmark-matrix.json`, and benchmark evidence
   templates.
-- Uses a Moshi/PersonaPlex-class or smaller S2S/timing model as the default
-  reflex target, Gemma 4 E2B/E4B/12B as the interpreter/evidence target, and
-  Nemotron 3 Super as the preferred local oracle provider target unless
-  environment variables override the generated endpoint/preflight target. Hermes
-  still selects the active oracle through its normal `/model` path.
+- Generates a three-tier KAME layout: a Moshi/PersonaPlex-class or smaller
+  S2S/timing model as the reflex target, Gemma 4 E2B/E4B/12B as the
+  interpreter/evidence target, and Nemotron 3 Super as the preferred local
+  oracle provider target unless environment variables override generated
+  endpoint/preflight targets. Hermes still selects the active oracle through
+  its normal `/model` path.
 - Runs endpoint preflight only when `DGX_SPARK_KAME_CHECK=1` is set, so artifact
   generation remains headless before services are online.
 - Validates filled benchmark evidence with the generated stack-pack validator
@@ -115,9 +116,11 @@ Runner behavior:
 Useful variables:
 
 ```bash
-export DGX_SPARK_INTERFACE_BASE_URL=http://spark.local:8000/v1
-export DGX_SPARK_INTERFACE_MODEL=gemma-4-E2B-it
-export DGX_SPARK_INTERFACE_MAX_AUDIO_SECONDS=30
+export DGX_SPARK_REFLEX_BASE_URL=http://spark.local:7999/v1
+export DGX_SPARK_REFLEX_MODEL=moshi-reflex-or-small-timing-model
+export DGX_SPARK_INTERPRETER_BASE_URL=http://spark.local:8000/v1
+export DGX_SPARK_INTERPRETER_MODEL=gemma-4-E2B-it
+export DGX_SPARK_INTERPRETER_MAX_AUDIO_SECONDS=30
 export DGX_SPARK_ORACLE_BASE_URL=http://spark.local:8001/v1
 export DGX_SPARK_ORACLE_MODEL=nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4  # provider target, not a Hermes /model override
 export DGX_SPARK_SIDECAR_BASE_URL=http://spark.local:8765
@@ -132,10 +135,11 @@ Acceptance gates:
 | Artifact/check | Target |
 | --- | --- |
 | KAME launch pack generation | Required |
-| Interface model | Defaults to Gemma 4 E2B native audio |
+| Reflex model | Defaults to a Moshi/PersonaPlex-class or smaller timing model when available |
+| Interpreter model | Defaults to Gemma 4 E2B native audio |
 | Local oracle provider target | Defaults to Nemotron 3 Super; Hermes still selects the active oracle through `/model` |
 | Preflight | Required only when `DGX_SPARK_KAME_CHECK=1` |
-| Benchmark matrix | Includes direct-audio vs STT-fallback reflex comparison |
+| Benchmark matrix | Includes reflex timing, Gemma direct-audio interpreter evidence, Moshi/S2S transcript-hypothesis usefulness, and STT fallback comparison |
 | Evidence validation | Required when `DGX_SPARK_KAME_BENCHMARK_EVIDENCE` is set |
 | Recommendation report | Emits Track A/B/C decision and missing-evidence reasons |
 
@@ -251,7 +255,7 @@ local speech is ready?"
 ## Track C: Local DGX Speech Bridge
 
 Goal: replace the cloud voice bridge with a local Spark speech pipeline while
-keeping the same Hermes oracle contract.
+keeping the same Hermes oracle contract and the three-tier KAME split.
 
 Expected external service:
 
@@ -265,6 +269,13 @@ Expected external service:
     as a reflex and rough transcript source.
 - Hermes profile preset: `nvidia_speech`, which points the local speech lane at
   the Nemotron Speech ASR proxy and Magpie TTS proxy by default.
+
+For full KAME runs, the local speech bridge must not become the reflex control
+path merely because it can transcribe. Moshi/S2S transcript output and
+streaming ASR output should be recorded as transcript hypotheses. Gemma receives
+those hypotheses beside the clipped raw audio and emits corrected evidence for
+the Hermes oracle. The reflex still owns immediate acknowledgement and
+barge-in/floor-control behavior.
 
 Headless variables:
 

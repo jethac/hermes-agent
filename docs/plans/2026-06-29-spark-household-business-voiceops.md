@@ -50,12 +50,14 @@ Target KAME layout:
 
 - Reflex/interface: a very fast always-warm voice model or classifier path,
   such as Moshi/PersonaPlex-class S2S, optimized for turn-taking, barge-in,
-  immediate acknowledgement, and rough transcript hypotheses.
+  immediate acknowledgement, and rough transcript hypotheses. This model owns
+  live floor control, not tool execution or durable transcript truth.
 - Interpreter/evidence: Gemma 4 E2B/E4B/12B-style audio-multimodal model,
   run in parallel after each speech cut to adjudicate raw audio plus
   reflex/Moshi transcript hypotheses into corrected transcript, multilingual
   intent, entities, confidence, and oracle request patches. Raw audio is the
-  primary signal; transcripts are labeled hypotheses and fallback evidence.
+  primary signal; Moshi/S2S and classic ASR transcripts are labeled hypotheses
+  supplied as context, not prerequisites or authority.
 - Oracle/brain: whatever Hermes `/model` selects, with Nemotron 3 Super as the first preferred local NVIDIA candidate to evaluate on DGX Spark.
 - Speech: local transcript evidence and TTS where practical, with Moshi/S2S or
   classic ASR transcripts used as auxiliary oracle/interpreter evidence rather
@@ -159,6 +161,11 @@ useful because it captures the realtime model's hearing of the turn, including
 timing and code-switching context, but it must be labeled as a hypothesis so
 Gemma can contradict it when the waveform says otherwise.
 
+The reflex path must remain usable without a transcript. If a Moshi-style model
+emits only audio or produces a hallucinated transcript, the system should still
+make floor-control decisions from live audio/VAD and let the interpreter decide
+what evidence is safe to pass to the oracle.
+
 ### Interpreter
 
 The interpreter is the audio-understanding evidence lane. Gemma 4 is the
@@ -184,6 +191,12 @@ Target outputs:
 - disagreement flags between audio, reflex transcript, Moshi/S2S transcript,
   and classic ASR
 - oracle request patch or clarification recommendation
+
+The Moshi/S2S transcript is most valuable as evidence of what the live interface
+model thought it heard. It should be passed to Gemma in the same interpreter
+request as the raw voice clip, never committed directly as durable user text,
+and never allowed to trigger spend, provisioning, credential, call, or messaging
+actions without interpreter/oracle confirmation.
 
 The interpreter may attach evidence to an oracle job before it starts, or submit
 a patch/update if the oracle job is already running. It must not stall the

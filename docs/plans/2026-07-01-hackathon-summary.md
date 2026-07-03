@@ -36,7 +36,11 @@ The current local deployment has three layers.
 
 First, Discord handles live voice I/O. The Hermes gateway joins a voice channel, receives Discord audio frames, forwards them to the realtime voice sidecar, posts live transcript messages, and plays synthesized replies back into the channel.
 
-Second, the voice sidecar and streaming speech bridge handle speech conversion and playback. Today this path uses the local realtime voice sidecar plus the Cartesia bridge for streaming STT/TTS.
+Second, the voice sidecar and streaming speech bridge handle speech conversion,
+playback, and bring-up fallbacks. Cartesia remains useful as a cloud STT/TTS
+baseline, but the intended KAME path is not Cartesia-driven: the reflex owns
+live floor control, Gemma interprets clipped raw audio with labeled transcript
+hypotheses, and Hermes' active oracle owns durable work.
 
 Third, the local model server runs reproducible model containers:
 
@@ -45,7 +49,8 @@ Third, the local model server runs reproducible model containers:
   hypotheses.
 - **Auxiliary transcript evidence:** Moshi/S2S transcript output or classic ASR
   output may be passed to Gemma and the oracle as supporting evidence, but does
-  not drive the reflex turn and is not required for voice to work.
+  not drive the reflex turn, is not required for voice to work, and must be
+  labeled as hypothesis context when attached to raw audio.
 - **Interpreter/evidence model:** Gemma 4 E2B/E4B/12B-style audio-multimodal
   model for raw-audio review, multilingual correction, entity extraction, and
   oracle request patches.
