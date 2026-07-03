@@ -78,6 +78,8 @@ class VoiceEventType(StrEnum):
     ORACLE_JOB_ACCEPTED = "oracle.job.accepted"
     ORACLE_JOB_QUEUED = "oracle.job.queued"
     ORACLE_JOB_STARTED = "oracle.job.started"
+    ORACLE_JOB_INTERPRETER_EVIDENCE_ATTACHED = "oracle.job.interpreter_evidence_attached"
+    ORACLE_JOB_INTERPRETER_EVIDENCE_LATE = "oracle.job.interpreter_evidence_late"
     ORACLE_JOB_PROGRESS = "oracle.job.progress"
     ORACLE_JOB_WAITING_FOR_APPROVAL = "oracle.job.waiting_for_approval"
     ORACLE_JOB_COMPLETED = "oracle.job.completed"
@@ -141,6 +143,8 @@ SERVER_EVENT_TYPES = frozenset(
         VoiceEventType.ORACLE_JOB_ACCEPTED,
         VoiceEventType.ORACLE_JOB_QUEUED,
         VoiceEventType.ORACLE_JOB_STARTED,
+        VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_ATTACHED,
+        VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_LATE,
         VoiceEventType.ORACLE_JOB_PROGRESS,
         VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL,
         VoiceEventType.ORACLE_JOB_COMPLETED,

@@ -11,6 +11,7 @@ from agent.realtime_voice_oracle_jobs import (
     OracleJobReprioritizationRequiredError,
     OracleJobState,
 )
+from agent.realtime_voice_text_engine import _oracle_request_for_job
 
 
 def _request(text: str, *, route: KameRoute = KameRoute.ORACLE_DIRECT) -> KameOracleRequest:
@@ -27,6 +28,14 @@ def _request(text: str, *, route: KameRoute = KameRoute.ORACLE_DIRECT) -> KameOr
 
 def test_oracle_job_protocol_surface_is_wire_serializable():
     assert VoiceEventType("oracle.job.accepted") == VoiceEventType.ORACLE_JOB_ACCEPTED
+    assert (
+        VoiceEventType("oracle.job.interpreter_evidence_attached")
+        == VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_ATTACHED
+    )
+    assert (
+        VoiceEventType("oracle.job.interpreter_evidence_late")
+        == VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_LATE
+    )
     assert VoiceEventType("interface.oracle.update") == VoiceEventType.INTERFACE_ORACLE_UPDATE
 
     config = RealtimeVoiceSessionConfig(
@@ -358,6 +367,161 @@ async def test_add_update_redacts_secret_like_text_from_status_and_events():
     assert "Bearer ***" in queued_status["latest_update"]
     assert "sk_tes" in queued_status["latest_update"]
     assert progress["payload"]["latest_update"] == queued_status["latest_update"]
+    assert "raw-token" not in combined
+    assert "sk_test_abcdefghijklmnopqrstuvwxyz" not in combined
+
+    await manager.cancel(running.job_id)
+    release.set()
+    await manager.wait_for_idle()
+
+
+@pytest.mark.asyncio
+async def test_interpreter_evidence_updates_queued_job_before_execution():
+    events = []
+    release = asyncio.Event()
+
+    async def runner(job):
+        await release.wait()
+        return "done"
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
+
+    running = await manager.submit(_request("running"))
+    queued = await manager.submit(_request("power question"))
+    await asyncio.sleep(0)
+
+    updated = await manager.add_interpreter_evidence(
+        queued.job_id,
+        corrected_transcript="what is three to the power of seventeen",
+        normalized_intent="answer a math question",
+        entities=[{"type": "math_expression", "value": "3^17"}],
+        confidence=0.94,
+        disagreements=["reflex transcript omitted request prefix"],
+        source="gemma_interpreter",
+    )
+    status = await manager.status_view()
+    attached = next(
+        event
+        for event in events
+        if event["type"] == "oracle.job.interpreter_evidence_attached"
+        and event["job_id"] == queued.job_id
+    )
+    queued_status = next(job for job in status["jobs"] if job["job_id"] == queued.job_id)
+    oracle_request = _oracle_request_for_job(updated, updated.request)
+
+    assert updated.interpreter_evidence[0]["corrected_transcript"] == "what is three to the power of seventeen"
+    assert updated.interpreter_evidence[0]["late"] is False
+    assert queued_status["interpreter_evidence_count"] == 1
+    assert queued_status["interpreter_evidence_late"] is False
+    assert "transcript=what is three to the power of seventeen" in queued_status["latest_interpreter_evidence"]
+    assert attached["payload"]["operation"] == "interpreter_evidence"
+    assert attached["payload"]["interpreter_evidence_late"] is False
+    assert any(
+        "entities=math_expression=3^17" in update
+        for update in oracle_request.job_updates
+    )
+
+    await manager.cancel(running.job_id)
+    release.set()
+    await manager.wait_for_idle()
+
+
+@pytest.mark.asyncio
+async def test_interpreter_evidence_late_for_running_job_is_status_visible():
+    events = []
+    release = asyncio.Event()
+
+    async def runner(job):
+        await release.wait()
+        return "done"
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
+
+    running = await manager.submit(_request("running"))
+    await asyncio.sleep(0)
+
+    updated = await manager.add_interpreter_evidence(
+        running.job_id,
+        corrected_transcript="check the current deployment logs",
+        normalized_intent="inspect deployment logs",
+        confidence=0.81,
+        source="gemma_interpreter",
+    )
+    status = await manager.status_view()
+    late = next(
+        event
+        for event in events
+        if event["type"] == "oracle.job.interpreter_evidence_late"
+        and event["job_id"] == running.job_id
+    )
+    running_status = next(job for job in status["jobs"] if job["job_id"] == running.job_id)
+    oracle_request = _oracle_request_for_job(updated, updated.request)
+
+    assert updated.interpreter_evidence[0]["late"] is True
+    assert running_status["interpreter_evidence_late"] is True
+    assert late["payload"]["interpreter_evidence_late"] is True
+    assert any("intent=inspect deployment logs" in update for update in oracle_request.job_updates)
+
+    release.set()
+    await manager.wait_for_idle()
+
+
+@pytest.mark.asyncio
+async def test_interpreter_evidence_redacts_secret_like_text_from_status_events_and_request_updates():
+    events = []
+    release = asyncio.Event()
+
+    async def runner(job):
+        await release.wait()
+        return "done"
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
+
+    running = await manager.submit(_request("running"))
+    queued = await manager.submit(_request("queued"))
+    await asyncio.sleep(0)
+
+    updated = await manager.add_interpreter_evidence(
+        queued.job_id,
+        corrected_transcript=(
+            "use Authorization: Bearer raw-token and "
+            "sk_test_abcdefghijklmnopqrstuvwxyz before answering"
+        ),
+        normalized_intent="check a credential-bearing request",
+        confidence=0.9,
+    )
+    status = await manager.status_view()
+    attached = next(
+        event
+        for event in events
+        if event["type"] == "oracle.job.interpreter_evidence_attached"
+        and event["job_id"] == queued.job_id
+    )
+    oracle_request = _oracle_request_for_job(updated, updated.request)
+    combined = json.dumps(
+        {
+            "stored": updated.interpreter_evidence,
+            "status": status,
+            "event": attached,
+            "request_updates": oracle_request.job_updates,
+        },
+        sort_keys=True,
+    )
+    queued_status = next(job for job in status["jobs"] if job["job_id"] == queued.job_id)
+
+    assert "Bearer ***" in queued_status["latest_interpreter_evidence"]
     assert "raw-token" not in combined
     assert "sk_test_abcdefghijklmnopqrstuvwxyz" not in combined
 

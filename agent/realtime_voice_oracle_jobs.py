@@ -36,6 +36,8 @@ class OracleJobEventType(StrEnum):
     ACCEPTED = "oracle.job.accepted"
     QUEUED = "oracle.job.queued"
     STARTED = "oracle.job.started"
+    INTERPRETER_EVIDENCE_ATTACHED = "oracle.job.interpreter_evidence_attached"
+    INTERPRETER_EVIDENCE_LATE = "oracle.job.interpreter_evidence_late"
     PROGRESS = "oracle.job.progress"
     WAITING_FOR_APPROVAL = "oracle.job.waiting_for_approval"
     COMPLETED = "oracle.job.completed"
@@ -77,6 +79,7 @@ class OracleJob:
     error: str = ""
     cancel_reason: str = ""
     updates: list[dict[str, Any]] = field(default_factory=list)
+    interpreter_evidence: list[dict[str, Any]] = field(default_factory=list)
     request: Optional[KameOracleRequest] = field(default=None, repr=False, compare=False)
 
     def to_status(self) -> dict[str, Any]:
@@ -99,6 +102,12 @@ class OracleJob:
         if self.updates:
             status["update_count"] = len(self.updates)
             status["latest_update"] = str(self.updates[-1].get("text") or "")[:240]
+        if self.interpreter_evidence:
+            latest_evidence = self.interpreter_evidence[-1]
+            status["interpreter_evidence_count"] = len(self.interpreter_evidence)
+            status["latest_interpreter_evidence"] = str(latest_evidence.get("summary") or "")[:240]
+            status["latest_interpreter_evidence_source"] = str(latest_evidence.get("source") or "")[:40]
+            status["interpreter_evidence_late"] = bool(latest_evidence.get("late"))
         if self.request is not None:
             status["turn_id"] = self.request.turn_id
         return status
@@ -314,6 +323,57 @@ class OracleJobManager:
                     "operation": "update",
                     "latest_update": update_text,
                     "update_count": len(job.updates),
+                },
+            )
+            return job
+
+    async def add_interpreter_evidence(
+        self,
+        job_id: str,
+        *,
+        corrected_transcript: str = "",
+        normalized_intent: str = "",
+        entities: Optional[list[Mapping[str, Any]]] = None,
+        confidence: Optional[float] = None,
+        disagreements: Optional[list[str]] = None,
+        source: str = "gemma_interpreter",
+    ) -> OracleJob:
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                raise OracleJobNotFoundError(job_id)
+            if job.state in TERMINAL_STATES:
+                return job
+
+            evidence = _compact_interpreter_evidence(
+                corrected_transcript=corrected_transcript,
+                normalized_intent=normalized_intent,
+                entities=entities,
+                confidence=confidence,
+                disagreements=disagreements,
+                source=source,
+                created_at=self._clock(),
+                late=job.state != OracleJobState.QUEUED,
+            )
+            if not evidence:
+                return job
+
+            job.interpreter_evidence.append(evidence)
+            job.updated_at = self._clock()
+            event_type = (
+                OracleJobEventType.INTERPRETER_EVIDENCE_LATE
+                if evidence.get("late")
+                else OracleJobEventType.INTERPRETER_EVIDENCE_ATTACHED
+            )
+            await self._emit_locked(
+                event_type,
+                job,
+                payload={
+                    **job.to_status(),
+                    "operation": "interpreter_evidence",
+                    "interpreter_evidence_count": len(job.interpreter_evidence),
+                    "latest_interpreter_evidence": evidence["summary"],
+                    "interpreter_evidence_late": bool(evidence.get("late")),
                 },
             )
             return job
@@ -692,6 +752,117 @@ def _priority_rank(priority: object) -> int:
 
 def _compact_update_text(value: object) -> str:
     return " ".join(redact_sensitive_text(str(value or ""), force=True).split())[:500]
+
+
+def _compact_interpreter_evidence(
+    *,
+    corrected_transcript: object,
+    normalized_intent: object,
+    entities: Optional[list[Mapping[str, Any]]],
+    confidence: Optional[float],
+    disagreements: Optional[list[str]],
+    source: object,
+    created_at: float,
+    late: bool,
+) -> dict[str, Any]:
+    evidence: dict[str, Any] = {
+        "source": _compact_evidence_text(source, limit=40) or "gemma_interpreter",
+        "created_at": created_at,
+        "late": bool(late),
+    }
+    transcript = _compact_evidence_text(corrected_transcript, limit=500)
+    intent = _compact_evidence_text(normalized_intent, limit=300)
+    compact_entities = _compact_interpreter_entities(entities or [])
+    compact_disagreements = tuple(
+        text
+        for text in (
+            _compact_evidence_text(disagreement, limit=180)
+            for disagreement in (disagreements or [])
+        )
+        if text
+    )[:6]
+
+    if transcript:
+        evidence["corrected_transcript"] = transcript
+    if intent:
+        evidence["normalized_intent"] = intent
+    if compact_entities:
+        evidence["entities"] = compact_entities
+    parsed_confidence = _compact_confidence(confidence)
+    if parsed_confidence is not None:
+        evidence["confidence"] = parsed_confidence
+    if compact_disagreements:
+        evidence["disagreements"] = compact_disagreements
+
+    summary = _interpreter_evidence_summary(evidence)
+    if not summary:
+        return {}
+    evidence["summary"] = summary
+    return evidence
+
+
+def _compact_evidence_text(value: object, *, limit: int) -> str:
+    return " ".join(redact_sensitive_text(str(value or ""), force=True).split())[:limit]
+
+
+def _compact_confidence(value: Optional[float]) -> Optional[float]:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed < 0:
+        return 0.0
+    if parsed > 1:
+        return 1.0
+    return round(parsed, 4)
+
+
+def _compact_interpreter_entities(values: list[Mapping[str, Any]]) -> tuple[dict[str, str], ...]:
+    allowed = ("type", "value", "name", "role", "source")
+    compact: list[dict[str, str]] = []
+    for value in values[:12]:
+        item: dict[str, str] = {}
+        for key in allowed:
+            if key not in value:
+                continue
+            text = _compact_evidence_text(value.get(key), limit=160)
+            if text:
+                item[key] = text
+        if item:
+            compact.append(item)
+    return tuple(compact)
+
+
+def _interpreter_evidence_summary(evidence: Mapping[str, Any]) -> str:
+    parts: list[str] = []
+    transcript = str(evidence.get("corrected_transcript") or "").strip()
+    intent = str(evidence.get("normalized_intent") or "").strip()
+    if transcript:
+        parts.append(f"transcript={transcript}")
+    if intent:
+        parts.append(f"intent={intent}")
+    entities = evidence.get("entities")
+    if isinstance(entities, tuple) and entities:
+        rendered_entities = []
+        for entity in entities[:4]:
+            if not isinstance(entity, Mapping):
+                continue
+            entity_type = str(entity.get("type") or "entity").strip()
+            entity_value = str(entity.get("value") or entity.get("name") or "").strip()
+            if entity_value:
+                rendered_entities.append(f"{entity_type}={entity_value}")
+        if rendered_entities:
+            parts.append(f"entities={', '.join(rendered_entities)}")
+    if evidence.get("confidence") is not None:
+        parts.append(f"confidence={evidence['confidence']}")
+    disagreements = evidence.get("disagreements")
+    if isinstance(disagreements, tuple) and disagreements:
+        parts.append(f"disagreements={'; '.join(str(item) for item in disagreements[:3])}")
+    if not parts:
+        return ""
+    return "interpreter evidence: " + "; ".join(parts)[:500]
 
 
 def _compact_approval_payload(value: Mapping[str, Any]) -> dict[str, Any]:

@@ -125,8 +125,13 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
     "control_updates": [
         "tests/agent/test_realtime_voice.py::test_kame_engine_can_reprioritize_queued_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_update_to_queued_async_oracle_job",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_update_to_running_async_oracle_job",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_interpreter_evidence_to_running_async_oracle_job",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_add_update_redacts_secret_like_text_from_status_and_events",
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_interpreter_evidence_updates_queued_job_before_execution",
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_interpreter_evidence_late_for_running_job_is_status_visible",
+        "tests/agent/test_realtime_voice_oracle_jobs.py::test_interpreter_evidence_redacts_secret_like_text_from_status_events_and_request_updates",
         "tests/agent/test_realtime_voice.py::test_kame_engine_spoken_priority_control_reprioritizes_queued_job",
         "tests/agent/test_realtime_voice.py::test_kame_engine_spoken_update_attaches_to_latest_async_oracle_job",
         "tests/gateway/test_discord_realtime_voice.py::test_discord_realtime_event_tracks_oracle_job_status",

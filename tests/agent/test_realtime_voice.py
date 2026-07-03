@@ -3118,6 +3118,140 @@ def test_kame_engine_attaches_update_to_queued_async_oracle_job(monkeypatch):
     asyncio.run(run())
 
 
+def test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job(monkeypatch):
+    class BlockingOracle:
+        def __init__(self):
+            self.requests = []
+            self.releases = {}
+            self.request_count_changed = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.request_count_changed.set()
+            event = self.releases.setdefault(request.intent, asyncio.Event())
+            await event.wait()
+            yield f"Finished {request.intent}."
+
+        def release(self, intent):
+            self.releases.setdefault(intent, asyncio.Event()).set()
+
+        async def wait_for_requests(self, count):
+            while len(self.requests) < count:
+                self.request_count_changed.clear()
+                await asyncio.wait_for(self.request_count_changed.wait(), timeout=1)
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            pass
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = BlockingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+                metadata={"transport": "discord_voice"},
+            )
+        )
+        for index in range(1, 3):
+            await engine.receive_event(
+                VoiceEvent(
+                    type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                    session_id="voice-123",
+                    sequence=index,
+                    payload={
+                        "transcript": f"run task {index}",
+                        "intent": f"Run task {index}",
+                        "intent_source": "reflex_audio",
+                        "route": "defer",
+                        "interface_already_said": f"Starting task {index}.",
+                        "end_of_utterance": True,
+                    },
+                )
+            )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            queued_ids = [
+                item.payload["job_id"]
+                for item in seen
+                if item.type == VoiceEventType.ORACLE_JOB_QUEUED
+            ]
+            started_ids = [
+                item.payload["job_id"]
+                for item in seen
+                if item.type == VoiceEventType.ORACLE_JOB_STARTED
+            ]
+            if queued_ids == ["voice-oracle-002"] and started_ids == ["voice-oracle-001"]:
+                break
+        await oracle.wait_for_requests(1)
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_UPDATE,
+                session_id="voice-123",
+                sequence=3,
+                payload={
+                    "job_id": "voice-oracle-002",
+                    "update_type": "interpreter_evidence",
+                    "corrected_transcript": "what is three to the power of seventeen",
+                    "normalized_intent": "answer a math question",
+                    "entities": [{"type": "math_expression", "value": "3^17"}],
+                    "confidence": 0.94,
+                    "disagreements": ["reflex transcript omitted request prefix"],
+                    "reason": "attach interpreter evidence",
+                    "source": "gemma_interpreter",
+                },
+            )
+        )
+        for _ in range(8):
+            event = await asyncio.wait_for(engine.events().__anext__(), timeout=1)
+            seen.append(event)
+            if event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE:
+                break
+        else:
+            assert False, [(event.type.value, event.payload) for event in seen]
+
+        oracle.release("Run task 1")
+        for _ in range(16):
+            event = await asyncio.wait_for(engine.events().__anext__(), timeout=1)
+            seen.append(event)
+            if (
+                event.type == VoiceEventType.ORACLE_JOB_STARTED
+                and event.payload["job_id"] == "voice-oracle-002"
+            ):
+                break
+        else:
+            assert False, [(event.type.value, event.payload) for event in seen]
+        await oracle.wait_for_requests(2)
+
+        await engine.close()
+        evidence = next(
+            event
+            for event in seen
+            if event.type == VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_ATTACHED
+        )
+        update = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE)
+        assert evidence.payload["job_id"] == "voice-oracle-002"
+        assert evidence.payload["interpreter_evidence_late"] is False
+        assert update.payload["job_id"] == "voice-oracle-002"
+        assert update.payload["state"] == "queued"
+        assert update.payload["interpreter_evidence_count"] == 1
+        assert update.payload["interpreter_evidence_late"] is False
+        assert "transcript=what is three to the power of seventeen" in update.payload[
+            "latest_interpreter_evidence"
+        ]
+        assert oracle.requests[1].intent == "Run task 2"
+        assert any("entities=math_expression=3^17" in update for update in oracle.requests[1].job_updates)
+
+    asyncio.run(run())
+
+
 def test_kame_engine_attaches_update_to_running_async_oracle_job(monkeypatch):
     class RunningUpdateOracle:
         def __init__(self):
@@ -3221,6 +3355,112 @@ def test_kame_engine_attaches_update_to_running_async_oracle_job(monkeypatch):
             "latest_update": "also check the Stripe receipt before answering",
         }
         assert "Starting task one." in spoken
+
+    asyncio.run(run())
+
+
+def test_kame_engine_attaches_interpreter_evidence_to_running_async_oracle_job(monkeypatch):
+    class RunningEvidenceOracle:
+        def __init__(self):
+            self.requests = []
+            self.updates = []
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+            self.update_seen = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.started.set()
+            await self.release.wait()
+            yield f"Finished {request.intent}."
+
+        async def update_request(self, request, update_text, metadata):
+            self.updates.append((request, update_text, metadata))
+            self.update_seen.set()
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            pass
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = RunningEvidenceOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+                metadata={"transport": "discord_voice"},
+            )
+        )
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "transcript": "run task one",
+                    "intent": "Run task one",
+                    "intent_source": "reflex_audio",
+                    "route": "defer",
+                    "interface_already_said": "Starting task one.",
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        seen = []
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_STARTED:
+                break
+        await asyncio.wait_for(oracle.started.wait(), timeout=1)
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_UPDATE,
+                session_id="voice-123",
+                sequence=2,
+                payload={
+                    "job_id": "voice-oracle-001",
+                    "update_type": "interpreter_evidence",
+                    "corrected_transcript": "check the current deployment logs",
+                    "normalized_intent": "inspect deployment logs",
+                    "confidence": 0.81,
+                    "reason": "attach late interpreter evidence",
+                    "source": "gemma_interpreter",
+                },
+            )
+        )
+        await asyncio.wait_for(oracle.update_seen.wait(), timeout=1)
+        async for event in engine.events():
+            seen.append(event)
+            if event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE:
+                break
+
+        oracle.release.set()
+        await engine.close()
+
+        evidence = next(
+            event
+            for event in seen
+            if event.type == VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_LATE
+        )
+        update = next(event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE)
+        assert evidence.payload["job_id"] == "voice-oracle-001"
+        assert evidence.payload["interpreter_evidence_late"] is True
+        assert update.payload["state"] == "running"
+        assert update.payload["interpreter_evidence_late"] is True
+
+        updated_request, update_text, metadata = oracle.updates[0]
+        assert updated_request.intent == "Run task one"
+        assert any("intent=inspect deployment logs" in update for update in updated_request.job_updates)
+        assert "transcript=check the current deployment logs" in update_text
+        assert metadata["latest_interpreter_evidence"] == update_text
+        assert metadata["interpreter_evidence_count"] == 1
+        assert metadata["interpreter_evidence_late"] is True
 
     asyncio.run(run())
 

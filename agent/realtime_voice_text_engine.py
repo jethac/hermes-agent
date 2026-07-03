@@ -656,7 +656,8 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 },
             )
             return
-        if not job_id or (not priority and not update_text):
+        has_interpreter_evidence = _payload_has_interpreter_evidence(event.payload)
+        if not job_id or (not priority and not update_text and not has_interpreter_evidence):
             await self._emit(
                 VoiceEventType.FRONTEND_STATE,
                 {
@@ -672,7 +673,13 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 job = await manager.update_priority(job_id, priority=priority)
             else:
                 job = await manager.get(job_id)
-            if update_text:
+            if has_interpreter_evidence:
+                evidence = _interpreter_evidence_from_payload(event.payload, fallback_text=update_text)
+                job = await manager.add_interpreter_evidence(job_id, **evidence)
+                summary = str(job.to_status().get("latest_interpreter_evidence") or "").strip()
+                if summary:
+                    await self._notify_running_oracle_job_update(job, update_text=summary, reason=reason)
+            elif update_text:
                 job = await manager.add_update(
                     job_id,
                     text=update_text,
@@ -1296,9 +1303,15 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             "reason": reason,
             "update_count": len(job.updates),
         }
-        latest_update = str(job.to_status().get("latest_update") or "").strip()
+        status = job.to_status()
+        latest_update = str(status.get("latest_update") or "").strip()
         if latest_update:
             metadata["latest_update"] = latest_update
+        latest_evidence = str(status.get("latest_interpreter_evidence") or "").strip()
+        if latest_evidence:
+            metadata["latest_interpreter_evidence"] = latest_evidence
+            metadata["interpreter_evidence_count"] = status.get("interpreter_evidence_count", 0)
+            metadata["interpreter_evidence_late"] = status.get("interpreter_evidence_late", False)
         try:
             result = updater(updated_request, update_text, metadata)
             if hasattr(result, "__await__"):
@@ -3129,6 +3142,8 @@ _ORACLE_JOB_EVENT_VOICE_TYPES: Mapping[OracleJobEventType, VoiceEventType] = {
     OracleJobEventType.ACCEPTED: VoiceEventType.ORACLE_JOB_ACCEPTED,
     OracleJobEventType.QUEUED: VoiceEventType.ORACLE_JOB_QUEUED,
     OracleJobEventType.STARTED: VoiceEventType.ORACLE_JOB_STARTED,
+    OracleJobEventType.INTERPRETER_EVIDENCE_ATTACHED: VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_ATTACHED,
+    OracleJobEventType.INTERPRETER_EVIDENCE_LATE: VoiceEventType.ORACLE_JOB_INTERPRETER_EVIDENCE_LATE,
     OracleJobEventType.PROGRESS: VoiceEventType.ORACLE_JOB_PROGRESS,
     OracleJobEventType.WAITING_FOR_APPROVAL: VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL,
     OracleJobEventType.COMPLETED: VoiceEventType.ORACLE_JOB_COMPLETED,
@@ -3187,6 +3202,11 @@ def _oracle_job_update_event_payload(job: OracleJob, *, reason: str) -> dict[str
     latest_update = str(status.get("latest_update") or "").strip()
     if latest_update:
         payload["latest_update"] = latest_update
+    latest_evidence = str(status.get("latest_interpreter_evidence") or "").strip()
+    if latest_evidence:
+        payload["latest_interpreter_evidence"] = latest_evidence
+        payload["interpreter_evidence_count"] = status.get("interpreter_evidence_count", 0)
+        payload["interpreter_evidence_late"] = status.get("interpreter_evidence_late", False)
     return payload
 
 
@@ -3255,6 +3275,7 @@ def _oracle_request_for_job(job: OracleJob, request: KameOracleRequest) -> KameO
                     if str(update or "").strip()
                 ),
                 *_oracle_job_update_texts(job),
+                *_oracle_job_interpreter_evidence_texts(job),
             )
         )
     )
@@ -3273,6 +3294,85 @@ def _oracle_job_update_texts(job: OracleJob) -> tuple[str, ...]:
         for update in job.updates
         if str(update.get("text") or "").strip()
     )
+
+
+def _oracle_job_interpreter_evidence_texts(job: OracleJob) -> tuple[str, ...]:
+    return tuple(
+        str(evidence.get("summary") or "").strip()
+        for evidence in job.interpreter_evidence
+        if str(evidence.get("summary") or "").strip()
+    )
+
+
+def _payload_has_interpreter_evidence(payload: Mapping[str, Any]) -> bool:
+    update_type = str(payload.get("update_type") or "").strip().lower()
+    if update_type in {"interpreter_evidence", "interpreter-evidence", "interpreter"}:
+        return True
+    return any(
+        key in payload
+        for key in (
+            "corrected_transcript",
+            "interpreter_corrected_transcript",
+            "normalized_intent",
+            "interpreter_normalized_intent",
+            "interpreter_entities",
+            "interpreter_confidence",
+            "interpreter_disagreements",
+        )
+    )
+
+
+def _interpreter_evidence_from_payload(payload: Mapping[str, Any], *, fallback_text: str) -> dict[str, Any]:
+    corrected_transcript = (
+        str(payload.get("corrected_transcript") or "").strip()
+        or str(payload.get("interpreter_corrected_transcript") or "").strip()
+        or str(payload.get("transcript") or "").strip()
+        or str(fallback_text or "").strip()
+    )
+    normalized_intent = (
+        str(payload.get("normalized_intent") or "").strip()
+        or str(payload.get("interpreter_normalized_intent") or "").strip()
+        or str(payload.get("intent") or "").strip()
+    )
+    return {
+        "corrected_transcript": corrected_transcript,
+        "normalized_intent": normalized_intent,
+        "entities": _interpreter_entities_from_payload(
+            payload.get("entities", payload.get("interpreter_entities"))
+        ),
+        "confidence": _interpreter_confidence_from_payload(
+            payload.get("confidence", payload.get("interpreter_confidence"))
+        ),
+        "disagreements": _interpreter_disagreements_from_payload(
+            payload.get("disagreements", payload.get("interpreter_disagreements"))
+        ),
+        "source": str(payload.get("source") or payload.get("provider") or "gemma_interpreter"),
+    }
+
+
+def _interpreter_entities_from_payload(value: Any) -> list[Mapping[str, Any]]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, Mapping)]
+    if isinstance(value, Mapping):
+        return [value]
+    return []
+
+
+def _interpreter_disagreements_from_payload(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    return []
+
+
+def _interpreter_confidence_from_payload(value: Any) -> Optional[float]:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _kame_interface_payload_with_metrics(

@@ -986,7 +986,15 @@ def test_voice_operator_validation_accepts_current_async_acceptance_test_refs():
         report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"][
             "test_ref_count"
         ]
-        == 4
+        == len(
+            report["async_oracle_acceptance"]["status_reports_running_and_queued_without_oracle_call"][
+                "test_refs"
+            ]
+        )
+    )
+    assert (
+        "tests/agent/test_realtime_voice.py::test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job"
+        in report["async_oracle_acceptance"]["job_control_updates_reach_oracle"]["test_refs"]
     )
     assert (
         "tests/gateway/test_voice_command.py::TestDiscordVoiceChannelMethods::test_leave_voice_channel_cleans_up"
