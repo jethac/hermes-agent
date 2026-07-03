@@ -16,7 +16,7 @@ from typing import Any, Awaitable, Callable, Deque, Mapping, Optional, Sequence
 
 from agent.redact import redact_sensitive_text
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
-from agent.realtime_voice_kame import KameOracleRequest, kame_evidence_bundle_id
+from agent.realtime_voice_kame import KameOracleRequest, kame_evidence_bundle_id, kame_evidence_merge_key
 from agent.think_scrubber import StreamingThinkScrubber, strip_leading_reasoning_trace
 
 
@@ -171,6 +171,7 @@ class OracleJob:
         if evidence_bundle:
             status["evidence_bundle"] = evidence_bundle
             status["evidence_bundle_id"] = evidence_bundle["bundle_id"]
+            status["evidence_merge_key"] = evidence_bundle["merge_key"]
         if self.reflex_transcript_hypothesis:
             status["reflex_transcript_hypothesis"] = self.reflex_transcript_hypothesis
             status["reflex_transcript_source"] = self.reflex_transcript_source or "reflex_audio"
@@ -970,6 +971,9 @@ def _reflex_job_status(job: Mapping[str, Any], *, ordinal_index: int) -> dict[st
     bundle_id = _compact_evidence_text(job.get("evidence_bundle_id"), limit=80)
     if bundle_id:
         safe_job["evidence_bundle_id"] = bundle_id
+    merge_key = _compact_evidence_text(job.get("evidence_merge_key"), limit=80)
+    if merge_key:
+        safe_job["evidence_merge_key"] = merge_key
     degraded_reason = _compact_evidence_text(job.get("degraded_reason"), limit=120)
     if degraded_reason:
         safe_job["degraded_reason"] = degraded_reason
@@ -1037,6 +1041,11 @@ def _job_evidence_bundle(
             turn_id=turn_id,
             audio_segment_ref=job.audio_segment_ref,
             evidence_bundle_status=status,
+        ),
+        "merge_key": kame_evidence_merge_key(
+            session_id=job.session_id,
+            turn_id=turn_id,
+            audio_segment_ref=job.audio_segment_ref,
         ),
         "status": status,
         "turn_id": turn_id,

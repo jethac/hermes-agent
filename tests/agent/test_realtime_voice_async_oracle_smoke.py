@@ -157,6 +157,8 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_evidence_bundle_propagated"] is True
     assert report["external_frontend_evidence_bundle_id"].startswith("kame-evidence-")
     assert report["external_frontend_evidence_bundle_id_stable"] is True
+    assert report["external_frontend_evidence_merge_key"].startswith("kame-merge-")
+    assert report["external_frontend_evidence_merge_key_propagated"] is True
     assert report["external_frontend_evidence_bundle_single_turn"] is True
     assert report["external_frontend_evidence_bundle_status"] == "primary_audio"
     assert report["external_frontend_evidence_bundle_transcript_hypotheses_count"] == 2
@@ -203,6 +205,11 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["witness_fusion_late_initial_bundle_id"].startswith("kame-evidence-")
     assert report["witness_fusion_late_initial_bundle_id"] == report["witness_fusion_late_final_bundle_id"]
     assert report["witness_fusion_late_single_bundle"] is True
+    assert all(
+        value.startswith("kame-merge-")
+        for value in report["witness_fusion_evidence_merge_keys"].values()
+    )
+    assert len(set(report["witness_fusion_evidence_merge_keys"].values())) == 3
     assert report["witness_fusion_no_duplicate_oracle_jobs"] is True
     assert report["witness_fusion_adjudications"] == {
         "early": ["corrected_by_audio"],

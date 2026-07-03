@@ -108,6 +108,7 @@ export interface RealtimeVoiceOracleJobCapacity {
 export interface RealtimeVoiceOracleJobReflexItem {
   approval_reason?: string
   evidence_bundle_id?: string
+  evidence_merge_key?: string
   evidence_bundle_status?: string
   degraded_reason?: string
   job_id?: string

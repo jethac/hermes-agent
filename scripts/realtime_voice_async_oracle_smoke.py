@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from agent.realtime_voice import RealtimeVoiceEngineKind, RealtimeVoiceSessionConfig, VoiceEvent, VoiceEventType
-from agent.realtime_voice_kame import KameOracleRequest, KameRoute
+from agent.realtime_voice_kame import KameOracleRequest, KameRoute, kame_evidence_merge_key
 from agent.realtime_voice_oracle_jobs import OracleJobManager
 from agent.realtime_voice_session import RealtimeVoiceSession
 from agent.realtime_voice_text_engine import KameInterfaceOracleEngine
@@ -1457,17 +1457,27 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and getattr(request, "auxiliary_transcript_hypotheses", ())[0].get("authority") == "hypothesis"
     )
     request_bundle_id = str(getattr(request, "evidence_bundle_id", "") or "") if request is not None else ""
+    request_merge_key = str(getattr(request, "evidence_merge_key", "") or "") if request is not None else ""
     metadata_bundle_id = str(metadata.get("kame_evidence_bundle_id") or "")
+    metadata_merge_key = str(metadata.get("kame_evidence_merge_key") or "")
     status_bundle = status_job.get("evidence_bundle") if isinstance(status_job.get("evidence_bundle"), dict) else {}
     status_bundle_id = str(status_job.get("evidence_bundle_id") or "")
+    status_merge_key = str(status_job.get("evidence_merge_key") or "")
     evidence_bundle_id_stable = (
         bool(request_bundle_id)
         and request_bundle_id == metadata_bundle_id
         and request_bundle_id == status_bundle_id
         and request_bundle_id == str(status_bundle.get("bundle_id") or "")
     )
+    evidence_merge_key_propagated = (
+        bool(request_merge_key)
+        and request_merge_key == metadata_merge_key
+        and request_merge_key == status_merge_key
+        and request_merge_key == str(status_bundle.get("merge_key") or "")
+    )
     evidence_bundle_single_turn = (
         evidence_bundle_id_stable
+        and evidence_merge_key_propagated
         and status_bundle.get("status") == "primary_audio"
         and status_bundle.get("turn_id") == "voice-smoke-external-frontend:voiceclaw:1"
         and status_bundle.get("raw_audio_available") is True
@@ -1539,6 +1549,8 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         "external_frontend_evidence_bundle_propagated": evidence_bundle_propagated,
         "external_frontend_evidence_bundle_id": request_bundle_id,
         "external_frontend_evidence_bundle_id_stable": evidence_bundle_id_stable,
+        "external_frontend_evidence_merge_key": request_merge_key,
+        "external_frontend_evidence_merge_key_propagated": evidence_merge_key_propagated,
         "external_frontend_evidence_bundle_single_turn": evidence_bundle_single_turn,
         "external_frontend_evidence_bundle_status": str(status_bundle.get("status") or ""),
         "external_frontend_evidence_bundle_transcript_hypotheses_count": int(
@@ -1977,6 +1989,28 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "with": str(with_status_job.get("audio_segment_ref") or ""),
         "late": str(late_status_job.get("audio_segment_ref") or ""),
     }
+    evidence_merge_keys = {
+        "early": str(early_status_job.get("evidence_merge_key") or ""),
+        "with": str(with_status_job.get("evidence_merge_key") or ""),
+        "late": str(late_status_job.get("evidence_merge_key") or ""),
+    }
+    expected_merge_keys = {
+        "early": kame_evidence_merge_key(
+            session_id="voice-smoke-witness-fusion",
+            turn_id="witness-fusion:early",
+            audio_segment_ref="artifact://voice/witness-early.wav",
+        ),
+        "with": kame_evidence_merge_key(
+            session_id="voice-smoke-witness-fusion",
+            turn_id="witness-fusion:with",
+            audio_segment_ref="artifact://voice/witness-with.wav",
+        ),
+        "late": kame_evidence_merge_key(
+            session_id="voice-smoke-witness-fusion",
+            turn_id="witness-fusion:late",
+            audio_segment_ref="artifact://voice/witness-late.wav",
+        ),
+    }
     merge_key_observed = turn_ids == {
         "early": "witness-fusion:early",
         "with": "witness-fusion:with",
@@ -1985,7 +2019,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "early": "artifact://voice/witness-early.wav",
         "with": "artifact://voice/witness-with.wav",
         "late": "artifact://voice/witness-late.wav",
-    }
+    } and evidence_merge_keys == expected_merge_keys
     early_single_bundle = (
         early_initial_bundle_id == early_final_bundle_id
         and early_status_job.get("evidence_bundle", {}).get("status") == "primary_audio"
@@ -2038,6 +2072,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "witness_fusion_case_job_ids": case_jobs,
         "witness_fusion_turn_ids": turn_ids,
         "witness_fusion_audio_segment_refs": audio_segment_refs,
+        "witness_fusion_evidence_merge_keys": evidence_merge_keys,
         "witness_fusion_merge_key_observed": merge_key_observed,
         "witness_fusion_early_initial_bundle_id": early_initial_bundle_id,
         "witness_fusion_early_final_bundle_id": early_final_bundle_id,
@@ -3484,6 +3519,12 @@ async def run_smoke() -> dict[str, Any]:
         "external_frontend_evidence_bundle_id_stable": external_frontend_bridge_smoke[
             "external_frontend_evidence_bundle_id_stable"
         ],
+        "external_frontend_evidence_merge_key": external_frontend_bridge_smoke[
+            "external_frontend_evidence_merge_key"
+        ],
+        "external_frontend_evidence_merge_key_propagated": external_frontend_bridge_smoke[
+            "external_frontend_evidence_merge_key_propagated"
+        ],
         "external_frontend_evidence_bundle_single_turn": external_frontend_bridge_smoke[
             "external_frontend_evidence_bundle_single_turn"
         ],
@@ -3573,6 +3614,9 @@ async def run_smoke() -> dict[str, Any]:
         "witness_fusion_turn_ids": witness_fusion_timing_smoke["witness_fusion_turn_ids"],
         "witness_fusion_audio_segment_refs": witness_fusion_timing_smoke[
             "witness_fusion_audio_segment_refs"
+        ],
+        "witness_fusion_evidence_merge_keys": witness_fusion_timing_smoke[
+            "witness_fusion_evidence_merge_keys"
         ],
         "witness_fusion_merge_key_observed": witness_fusion_timing_smoke[
             "witness_fusion_merge_key_observed"

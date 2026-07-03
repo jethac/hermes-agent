@@ -3,7 +3,12 @@ import json
 
 import pytest
 
-from agent.realtime_voice_kame import KameOracleRequest, KameRoute, kame_evidence_bundle_id
+from agent.realtime_voice_kame import (
+    KameOracleRequest,
+    KameRoute,
+    kame_evidence_bundle_id,
+    kame_evidence_merge_key,
+)
 from agent.realtime_voice import RealtimeVoiceSessionConfig, VoiceEventType
 from agent.realtime_voice_oracle_jobs import (
     OracleJobManager,
@@ -41,6 +46,32 @@ def test_kame_evidence_bundle_id_is_stable_across_audio_availability_changes():
 
     assert degraded == primary
     assert degraded.startswith("kame-evidence-")
+
+
+def test_kame_evidence_merge_key_includes_audio_ref_without_changing_bundle_id():
+    bundle_without_audio = kame_evidence_bundle_id(
+        session_id="voice-session-1",
+        turn_id="turn:late-audio",
+    )
+    bundle_with_audio = kame_evidence_bundle_id(
+        session_id="voice-session-1",
+        turn_id="turn:late-audio",
+        audio_segment_ref="artifact://voice/late-audio.wav",
+        evidence_bundle_status="primary_audio",
+    )
+    merge_without_audio = kame_evidence_merge_key(
+        session_id="voice-session-1",
+        turn_id="turn:late-audio",
+    )
+    merge_with_audio = kame_evidence_merge_key(
+        session_id="voice-session-1",
+        turn_id="turn:late-audio",
+        audio_segment_ref="artifact://voice/late-audio.wav",
+    )
+
+    assert bundle_without_audio == bundle_with_audio
+    assert merge_without_audio != merge_with_audio
+    assert merge_with_audio.startswith("kame-merge-")
 
 
 def test_oracle_job_protocol_surface_is_wire_serializable():
@@ -172,8 +203,10 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
     assert job_status["raw_audio_available"] is True
     assert job_status["evidence_bundle_status"] == "primary_audio"
     assert job_status["evidence_bundle_id"] == request.evidence_bundle_id
+    assert job_status["evidence_merge_key"] == request.evidence_merge_key
     assert job_status["evidence_bundle"] == {
         "bundle_id": request.evidence_bundle_id,
+        "merge_key": request.evidence_merge_key,
         "status": "primary_audio",
         "turn_id": "turn-voice-1",
         "raw_audio_available": True,
@@ -703,7 +736,13 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
     assert queued_status["audio_segment_ref"] == "artifact://redacted/oracle-002.wav"
     assert queued_status["audio_time_range_ms"] == (120, 2120)
     assert queued_status["evidence_bundle_id"] == expected_bundle_id
+    assert queued_status["evidence_merge_key"] == kame_evidence_merge_key(
+        session_id="voice-session-1",
+        turn_id="turn:power question",
+        audio_segment_ref="artifact://redacted/oracle-002.wav",
+    )
     assert queued_status["evidence_bundle"]["bundle_id"] == expected_bundle_id
+    assert queued_status["evidence_bundle"]["merge_key"] == queued_status["evidence_merge_key"]
     assert queued_status["evidence_bundle"]["turn_id"] == "turn:power question"
     assert queued_status["evidence_bundle"]["raw_audio_available"] is True
     assert queued_status["evidence_bundle"]["status"] == "primary_audio"
@@ -745,6 +784,7 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
     assert oracle_request.audio_segment_ref == "artifact://redacted/oracle-002.wav"
     assert oracle_request.evidence_bundle_id == expected_bundle_id
     assert oracle_request.to_metadata()["kame_evidence_bundle_id"] == expected_bundle_id
+    assert oracle_request.to_metadata()["kame_evidence_merge_key"] == oracle_request.evidence_merge_key
     assert oracle_request.audio_time_range_ms == (120, 2120)
     assert oracle_request.speaker_metadata == queued_status["speaker"]
     assert oracle_request.channel_metadata == queued_status["channel"]
@@ -1044,6 +1084,7 @@ async def test_hypothesis_only_interpreter_evidence_does_not_promote_oracle_text
     assert running_status["evidence_bundle"]["transcript_hypotheses_count"] == 2
     assert running_status["evidence_bundle"]["interpreter_evidence_count"] == 1
     assert reflex_status["evidence_bundle_id"] == running_status["evidence_bundle_id"]
+    assert reflex_status["evidence_merge_key"] == running_status["evidence_merge_key"]
     assert "transcript_hypotheses" not in reflex_status
     assert "evidence_bundle" not in reflex_status
     assert late["payload"]["latest_interpreter_evidence_authority"] == updated.interpreter_evidence[0]["evidence_authority"]

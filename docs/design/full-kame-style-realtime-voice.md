@@ -91,6 +91,10 @@ caption, or high-risk literal-evidence support only. When raw audio is available
 the interpreter request should include the waveform first and every transcript
 string only as a provenance-labeled hypothesis.
 
+Implementation note: `evidence_bundle_id` is stable for the speech cut even when
+raw audio arrives late. The audio-aware join proof is `evidence_merge_key`, a
+separate hash over the session, turn, and `audio_segment_ref`.
+
 2026-07-03 witness-context amendment: Moshi/OpenClaw/VoiceClaw transcript text
 is best understood as witness testimony from the realtime frontend. It should
 be sent to Gemma beside the clipped waveform, not hidden and not promoted. The
@@ -414,6 +418,9 @@ between Discord, VoiceClaw/OpenClaw-style frontends, Moshi/open-S2S frontends,
 classic ASR fallbacks, the Gemma interpreter, and the Hermes oracle job manager.
 The bundle is keyed by `turn_id` and the raw-audio reference; every transcript
 string is attached to that same bundle instead of becoming its own conversation.
+Runtime status exposes both a stable `evidence_bundle_id` and an audio-aware
+`evidence_merge_key` so late witness/audio attachment can be audited without
+turning raw artifact paths or transcripts into durable identifiers.
 
 Canonical shape:
 

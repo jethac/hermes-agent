@@ -462,6 +462,16 @@ class KameOracleRequest:
         )
 
     @property
+    def evidence_merge_key(self) -> str:
+        """Return the redacted-safe key for joining raw audio and witness evidence."""
+
+        return kame_evidence_merge_key(
+            session_id=self.session_id,
+            turn_id=self.turn_id,
+            audio_segment_ref=self.audio_segment_ref,
+        )
+
+    @property
     def oracle_text(self) -> str:
         """Return promoted text for the user's oracle-facing message."""
 
@@ -603,6 +613,7 @@ class KameOracleRequest:
             "kame_raw_audio_available": self.raw_audio_available,
             "kame_evidence_bundle_status": self.evidence_bundle_status,
             "kame_evidence_bundle_id": self.evidence_bundle_id,
+            "kame_evidence_merge_key": self.evidence_merge_key,
             "kame_evidence_authority": dict(self.evidence_authority),
             "max_spoken_sentences": self.max_spoken_sentences,
             "voice_response_policy": response_style.get("policy") or "sentence_cap",
@@ -849,6 +860,23 @@ def kame_evidence_bundle_id(
     )
     digest = hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:20]
     return f"kame-evidence-{digest}"
+
+
+def kame_evidence_merge_key(
+    *,
+    session_id: str,
+    turn_id: str,
+    audio_segment_ref: str = "",
+) -> str:
+    """Build a compact key for merging one speech cut with its raw-audio ref."""
+
+    parts = (
+        _optional_text(session_id),
+        _optional_text(turn_id),
+        _optional_text(audio_segment_ref),
+    )
+    digest = hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:20]
+    return f"kame-merge-{digest}"
 
 
 def kame_external_brain_request_to_oracle_request(

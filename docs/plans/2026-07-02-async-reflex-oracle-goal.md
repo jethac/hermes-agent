@@ -202,6 +202,11 @@ Those observations merge by `turn_id` and `audio_segment_ref` before oracle
 authority. The interpreter, not the first transcript to arrive, decides what
 wording can become durable or tool-critical.
 
+Runtime identity rule: keep two ids. `evidence_bundle_id` is stable across late
+audio attachment for the same speech cut, while `evidence_merge_key` is the
+audio-aware hash over session, turn, and `audio_segment_ref` used to prove the
+actual raw-audio/witness join.
+
 Current operating rule: collect ASR-like evidence opportunistically, but do not
 require it. A transcript-looking string from Moshi, OpenClaw, VoiceClaw, or a
 dedicated ASR provider is useful only as context for the direct-audio
