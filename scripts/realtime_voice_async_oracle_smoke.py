@@ -1838,19 +1838,20 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         turn_id="witness-fusion:early",
         source="voiceclaw",
         user_id="42",
-        intent="prepare early witness handoff",
+        intent="three to the power of seventeen",
         route=KameRoute.DEFER,
-        transcript="prepare early witness handoff",
+        transcript="three to the power of seventeen",
         transcript_source="reflex_audio",
         interface_input_source="ask_brain",
-        interface_already_said="Preparing the early witness handoff.",
+        interface_already_said="Checking the power question.",
         auxiliary_transcript_hypotheses=(
             {
                 "source": "moshi",
-                "text": "prepare early witness handoff",
+                "text": "what is three to the power of seventeen",
                 "authority": "hypothesis",
                 "arrival_phase": "before_raw_audio",
                 "adjudication": "corrected_by_audio",
+                "confidence": 0.74,
             },
         ),
     )
@@ -1860,13 +1861,19 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         early.job_id,
         audio_segment_ref="artifact://voice/witness-early.wav",
         audio_time_range_ms=(100, 1400),
+        corrected_transcript="what is three to the power of seventeen",
+        normalized_intent="answer a math question",
+        entities=({"type": "math_expression", "value": "3^17"},),
+        confidence=0.92,
+        disagreements=("reflex/front-end audio omitted request prefix",),
         auxiliary_transcript_hypotheses=(
             {
                 "source": "moshi",
-                "text": "prepare early witness handoff",
+                "text": "what is three to the power of seventeen",
                 "authority": "hypothesis",
                 "arrival_phase": "before_raw_audio",
                 "adjudication": "corrected_by_audio",
+                "confidence": 0.74,
             },
         ),
         source="gemma_interpreter",
@@ -1876,7 +1883,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
     early_final_bundle_id = str(early_status_job.get("evidence_bundle_id") or "")
     releases.setdefault("occupy oracle worker", asyncio.Event()).set()
     await asyncio.sleep(0)
-    releases.setdefault("prepare early witness handoff", asyncio.Event()).set()
+    releases.setdefault("three to the power of seventeen", asyncio.Event()).set()
     await manager.wait_for_idle()
 
     with_raw = await manager.submit(
@@ -2047,6 +2054,24 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         and early_status_job.get("evidence_bundle", {}).get("transcript_hypotheses_count") == 2
         and early_status_job.get("evidence_bundle", {}).get("raw_audio_available") is True
     )
+    early_authority = (
+        early_status_job.get("evidence_authority")
+        if isinstance(early_status_job.get("evidence_authority"), Mapping)
+        else {}
+    )
+    early_positive_recovery = (
+        early_status_job.get("interpreter_corrected_transcript") == "what is three to the power of seventeen"
+        and early_status_job.get("interpreter_normalized_intent") == "answer a math question"
+        and early_authority.get("interpreter_corrected_transcript") == "interpreter_promoted"
+        and early_authority.get("interpreter_normalized_intent") == "interpreter_promoted"
+        and "what is" not in str(early_request.transcript or "").lower()
+        and "what is" in str(early_status_job.get("interpreter_corrected_transcript") or "").lower()
+        and any(
+            entity.get("type") == "math_expression" and entity.get("value") == "3^17"
+            for entity in early_status_job.get("interpreter_entities", ())
+            if isinstance(entity, Mapping)
+        )
+    )
     with_single_bundle = (
         with_raw.request.evidence_bundle_id == str(with_status_job.get("evidence_bundle_id") or "")
         and with_status_job.get("evidence_bundle", {}).get("status") == "primary_audio"
@@ -2082,6 +2107,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
     return {
         "ok": (
             early_single_bundle
+            and early_positive_recovery
             and with_single_bundle
             and late_single_bundle
             and no_duplicate_oracle_jobs
@@ -2089,6 +2115,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
             and adjudication_outcomes_observed
         ),
         "witness_fusion_timing_smoke_ok": early_single_bundle
+        and early_positive_recovery
         and with_single_bundle
         and late_single_bundle
         and no_duplicate_oracle_jobs
@@ -2103,6 +2130,16 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "witness_fusion_early_initial_bundle_id": early_initial_bundle_id,
         "witness_fusion_early_final_bundle_id": early_final_bundle_id,
         "witness_fusion_early_single_bundle": early_single_bundle,
+        "witness_fusion_early_positive_recovery": early_positive_recovery,
+        "witness_fusion_early_reflex_transcript": early_request.transcript,
+        "witness_fusion_early_witness_text": "what is three to the power of seventeen",
+        "witness_fusion_early_promoted_transcript": early_status_job.get("interpreter_corrected_transcript", ""),
+        "witness_fusion_early_promoted_intent": early_status_job.get("interpreter_normalized_intent", ""),
+        "witness_fusion_early_promoted_authority": {
+            key: early_authority.get(key)
+            for key in ("interpreter_corrected_transcript", "interpreter_normalized_intent")
+        },
+        "witness_fusion_early_entities": early_status_job.get("interpreter_entities", ()),
         "witness_fusion_with_bundle_id": with_raw.request.evidence_bundle_id,
         "witness_fusion_with_single_bundle": with_single_bundle,
         "witness_fusion_late_initial_bundle_id": late_initial_bundle_id,
@@ -3681,6 +3718,27 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "witness_fusion_early_single_bundle": witness_fusion_timing_smoke[
             "witness_fusion_early_single_bundle"
+        ],
+        "witness_fusion_early_positive_recovery": witness_fusion_timing_smoke[
+            "witness_fusion_early_positive_recovery"
+        ],
+        "witness_fusion_early_reflex_transcript": witness_fusion_timing_smoke[
+            "witness_fusion_early_reflex_transcript"
+        ],
+        "witness_fusion_early_witness_text": witness_fusion_timing_smoke[
+            "witness_fusion_early_witness_text"
+        ],
+        "witness_fusion_early_promoted_transcript": witness_fusion_timing_smoke[
+            "witness_fusion_early_promoted_transcript"
+        ],
+        "witness_fusion_early_promoted_intent": witness_fusion_timing_smoke[
+            "witness_fusion_early_promoted_intent"
+        ],
+        "witness_fusion_early_promoted_authority": witness_fusion_timing_smoke[
+            "witness_fusion_early_promoted_authority"
+        ],
+        "witness_fusion_early_entities": witness_fusion_timing_smoke[
+            "witness_fusion_early_entities"
         ],
         "witness_fusion_with_bundle_id": witness_fusion_timing_smoke[
             "witness_fusion_with_bundle_id"

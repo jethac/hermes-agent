@@ -213,6 +213,13 @@ dedicated ASR provider is useful only as context for the direct-audio
 interpreter. It must attach to the same raw-audio turn and must never create a
 parallel user turn, delay the reflex acknowledgement, or patch queued oracle text
 unless a trusted interpreter source or later oracle judgment promotes it.
+The headless positive fixture must prove this promotion boundary, not just name
+it: a clipped reflex transcript like "three to the power of seventeen" and an
+early frontend witness like "what is three to the power of seventeen" should
+share one `evidence_bundle_id` and one `evidence_merge_key`; only the Gemma
+interpreter's `interpreter_corrected_transcript`,
+`interpreter_normalized_intent`, and entities can carry
+`interpreter_promoted` authority into the oracle request.
 
 2026-07-04 naming rule: ambiguous STT-like text from Moshi, OpenClaw,
 VoiceClaw, or another open-S2S frontend should be stored as

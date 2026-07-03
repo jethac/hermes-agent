@@ -200,6 +200,16 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["witness_fusion_early_initial_bundle_id"].startswith("kame-evidence-")
     assert report["witness_fusion_early_initial_bundle_id"] == report["witness_fusion_early_final_bundle_id"]
     assert report["witness_fusion_early_single_bundle"] is True
+    assert report["witness_fusion_early_positive_recovery"] is True
+    assert report["witness_fusion_early_reflex_transcript"] == "three to the power of seventeen"
+    assert report["witness_fusion_early_witness_text"] == "what is three to the power of seventeen"
+    assert report["witness_fusion_early_promoted_transcript"] == "what is three to the power of seventeen"
+    assert report["witness_fusion_early_promoted_intent"] == "answer a math question"
+    assert report["witness_fusion_early_promoted_authority"] == {
+        "interpreter_corrected_transcript": "interpreter_promoted",
+        "interpreter_normalized_intent": "interpreter_promoted",
+    }
+    assert {"type": "math_expression", "value": "3^17"} in report["witness_fusion_early_entities"]
     assert report["witness_fusion_with_bundle_id"].startswith("kame-evidence-")
     assert report["witness_fusion_with_single_bundle"] is True
     assert report["witness_fusion_late_initial_bundle_id"].startswith("kame-evidence-")

@@ -1735,10 +1735,18 @@ async def test_status_view_reports_capacity_and_redacts_raw_metadata():
         turn_id="turn:inspect deployment",
         evidence_bundle_status="degraded_no_raw_audio",
     )
+    expected_first_merge_key = kame_evidence_merge_key(
+        session_id="voice-session-1",
+        turn_id="turn:inspect deployment",
+    )
     expected_second_bundle_id = kame_evidence_bundle_id(
         session_id="voice-session-1",
         turn_id="turn:check stripe",
         evidence_bundle_status="degraded_no_raw_audio",
+    )
+    expected_second_merge_key = kame_evidence_merge_key(
+        session_id="voice-session-1",
+        turn_id="turn:check stripe",
     )
     assert status["reflex"]["jobs"][0] == {
         "job_id": "voice-oracle-001",
@@ -1748,6 +1756,7 @@ async def test_status_view_reports_capacity_and_redacts_raw_metadata():
         "priority": "normal",
         "spoken_status": "I'm handling inspect deployment.",
         "evidence_bundle_id": expected_first_bundle_id,
+        "evidence_merge_key": expected_first_merge_key,
         "evidence_bundle_status": "degraded_no_raw_audio",
         "degraded_reason": "degraded_no_raw_audio",
     }
@@ -1759,6 +1768,7 @@ async def test_status_view_reports_capacity_and_redacts_raw_metadata():
         "priority": "normal",
         "spoken_status": "I'm handling check stripe.",
         "evidence_bundle_id": expected_second_bundle_id,
+        "evidence_merge_key": expected_second_merge_key,
         "evidence_bundle_status": "degraded_no_raw_audio",
         "degraded_reason": "degraded_no_raw_audio",
     }

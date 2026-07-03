@@ -210,6 +210,12 @@ and only after the interpreter emits the promoted fields. A rejected or
 diagnostic witness remains visible in the audit bundle but cannot become
 durable user text, a phone script, a spend reason, a provider choice, a memory
 write, a file write, or a tool argument.
+The positive acceptance proof must be concrete: if the reflex heard only "three
+to the power of seventeen" and an early frontend witness heard "what is three to
+the power of seventeen," the durable wording still comes from Gemma's promoted
+`interpreter_corrected_transcript`, not from the witness. The same bundle should
+also preserve `interpreter_normalized_intent`, entities such as `3^17`, and the
+fact that the witness remains hypothesis authority.
 Rejected frontend witnesses should also carry typed `rejection_reasons` such as
 `wrong_speaker`, `wrong_channel`, or `stale_witness` when speaker/channel/timing
 metadata proves the conflict. These reasons are audit evidence, not prompts for

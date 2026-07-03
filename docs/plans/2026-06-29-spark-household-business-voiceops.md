@@ -197,7 +197,13 @@ Target KAME layout:
   or external-message action gates on hypothesis text alone.
   Headless acceptance requires `witness_fusion_timing_preserves_single_bundle`
   to pass for early, inline, and late witness arrival, with the same bundle id
-  surviving degraded-to-primary audio updates.
+  surviving degraded-to-primary audio updates. It must also prove the positive
+  path: a clipped reflex transcript such as "three to the power of seventeen"
+  plus an early Moshi/OpenClaw/VoiceClaw witness such as "what is three to the
+  power of seventeen" can become durable only after Gemma promotes
+  `interpreter_corrected_transcript`, `interpreter_normalized_intent`, and any
+  entities such as `3^17`. The witness text remains hypothesis authority even
+  when it helped; the promoted interpreter fields are the durable evidence.
 - Live-evidence gate rule: transcript-only witness evidence must not close the
   full KAME live voice gate. A Moshi/OpenClaw/VoiceClaw/STT string without raw
   audio segment evidence and interpreter evidence is useful for audit,
