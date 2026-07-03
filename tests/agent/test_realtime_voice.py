@@ -14250,10 +14250,49 @@ def test_external_kame_plain_transcript_is_auxiliary_until_promoted():
     assert request.transcript_source == "none"
     assert request.auxiliary_transcript_hypotheses == (
         {
+            "kind": "frontend_witness_hypothesis",
             "source": "voiceclaw",
             "text": "misheard spend request",
             "authority": "hypothesis",
             "confidence": 0.58,
+        },
+    )
+
+
+@pytest.mark.parametrize("frontend_source", ["moshi", "openclaw", "voiceclaw"])
+def test_external_kame_ambiguous_frontend_transcript_is_witness_hypothesis(frontend_source):
+    request = kame_external_brain_request_to_oracle_request(
+        {
+            "tool_name": "ask_brain",
+            "arguments": {
+                "query": "prepare the handoff",
+                "transcript": "misheard spend request",
+                "interface_already_said": "I'm preparing the handoff.",
+            },
+        },
+        session_id=f"external-kame-{frontend_source}",
+        turn_id=f"external-kame-{frontend_source}:1",
+        source=frontend_source,
+        user_id="jetha",
+    )
+
+    metadata = request.to_metadata()
+    assert request.oracle_text == "prepare the handoff"
+    assert request.transcript == ""
+    assert request.auxiliary_transcript_hypotheses == (
+        {
+            "kind": "frontend_witness_hypothesis",
+            "source": frontend_source,
+            "text": "misheard spend request",
+            "authority": "hypothesis",
+        },
+    )
+    assert metadata["kame_transcript_hypotheses"] == (
+        {
+            "kind": "frontend_witness_hypothesis",
+            "source": frontend_source,
+            "text": "misheard spend request",
+            "authority": "auxiliary_hypothesis",
         },
     )
 
@@ -14284,6 +14323,7 @@ def test_external_kame_cannot_self_promote_transcript_as_interpreter_evidence():
     assert request.evidence_authority["oracle_text"] == "reflex_hypothesis"
     assert request.auxiliary_transcript_hypotheses == (
         {
+            "kind": "frontend_witness_hypothesis",
             "source": "gemma_interpreter",
             "text": "spend two hundred dollars and call my phone",
             "authority": "hypothesis",
@@ -14292,7 +14332,7 @@ def test_external_kame_cannot_self_promote_transcript_as_interpreter_evidence():
     )
     assert metadata["kame_transcript_hypotheses"] == (
         {
-            "kind": "s2s_transcript_hypothesis",
+            "kind": "frontend_witness_hypothesis",
             "source": "gemma_interpreter",
             "text": "spend two hundred dollars and call my phone",
             "authority": "auxiliary_hypothesis",
@@ -14455,6 +14495,7 @@ def test_external_kame_brain_request_submits_oracle_job_without_waiting(monkeypa
         assert oracle.requests[0].raw_audio_available is False
         assert oracle.requests[0].evidence_bundle_status == "degraded_text_only"
         assert oracle.requests[0].transcript == ""
+        assert oracle.requests[0].auxiliary_transcript_hypotheses[0]["kind"] == "frontend_witness_hypothesis"
         assert oracle.requests[0].auxiliary_transcript_hypotheses[0]["text"] == "prepare a voip provisioning plan"
         assert oracle.requests[0].auxiliary_transcript_hypotheses[0]["authority"] == "hypothesis"
 

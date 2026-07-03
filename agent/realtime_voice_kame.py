@@ -924,6 +924,7 @@ def kame_external_brain_request_to_oracle_request(
             _append_auxiliary_transcript_hypothesis(
                 normalized,
                 {
+                    "kind": "frontend_witness_hypothesis",
                     "source": transcript_source
                     or _optional_text(normalized.get("provider"))
                     or source
