@@ -167,6 +167,11 @@ system heard the user.
   raw audio, reflex hypothesis, optional Moshi/ASR hypotheses, and Gemma
   correction were preserved separately before any Stripe/NemoClaw/phone action
   became eligible for approval.
+- External S2S/frontends should be judged by the same evidence rule. If a
+  VoiceClaw/OpenClaw/Moshi-style bridge can provide raw-audio references and
+  timing, Hermes passes them to Gemma with transcript hypotheses attached. If it
+  can provide only text, the path is useful compatibility evidence, but not proof
+  of the full raw-audio KAME interpreter loop.
 - The sidecar and gateway must run from the same worktree/version to avoid realtime voice protocol mismatches.
 
 ## Immediate Build Priorities
@@ -179,5 +184,8 @@ system heard the user.
 5. Wire the Stripe spending/provisioning flow into a demo-safe budgeted path.
 6. Add a NemoClaw packet boundary for spending, provisioning, credential, and
    outbound-call actions.
-7. Implement the phone call handoff with context transfer from the Discord session.
-8. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.
+7. Implement the external frontend/interpreter evidence adapter so raw audio,
+   reflex intent, Moshi/S2S transcript hypotheses, classic ASR hypotheses, and
+   correlation ids remain separate through oracle-job creation.
+8. Implement the phone call handoff with context transfer from the Discord session.
+9. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.

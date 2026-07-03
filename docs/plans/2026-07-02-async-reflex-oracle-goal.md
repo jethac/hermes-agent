@@ -400,8 +400,12 @@ Durable Hermes history should not record:
 - cancelled drafts
 - stale late oracle output
 - every status poll
-- reflex transcript hypotheses unless promoted by interpreter/oracle evidence
-- Moshi/S2S transcript hypotheses unless promoted by interpreter/oracle evidence
+- reflex transcript hypotheses as raw durable user text; durable wording should
+  be an interpreter/oracle-corrected transcript that may cite the hypothesis as
+  supporting evidence
+- Moshi/S2S transcript hypotheses as raw durable user text; durable wording
+  should be an interpreter/oracle-corrected transcript that may cite the
+  hypothesis as supporting evidence
 
 The voice-session task log should still retain enough event detail to reconstruct
 what happened without bloating the oracle context: normalized frontend events,
@@ -533,6 +537,10 @@ Responsibilities:
 
 - accept compact user intent, optional transcript evidence, frontend session id,
   and the text already spoken by the reflex
+- preserve nested evidence bundles from external S2S frontends, including
+  `audio_segment_ref`, `audio_time_range_ms`, `reflex_transcript_hypothesis`,
+  `auxiliary_transcript_hypotheses`, and correlation ids, instead of flattening
+  them into a single transcript string
 - create a normal oracle job with a Hermes session id and audit id
 - return an immediate accepted/queued/status placeholder to the frontend
 - stream job progress, failure, cancellation, and terminal result events back
@@ -643,6 +651,12 @@ Add KAME frontend compatibility tests:
 
 - VoiceClaw-style `ask_brain` request creates an oracle job, not a direct tool
   call
+- VoiceClaw/OpenClaw-style requests with nested `arguments` preserve raw-audio
+  references, timing, reflex intent, and transcript hypotheses in the oracle job
+  evidence bundle
+- Moshi/S2S or classic ASR transcript strings in external frontend payloads are
+  stored as hypothesis evidence and do not overwrite `oracle_text` or durable
+  user transcript fields by themselves
 - accepted/queued placeholder returns before the oracle completes
 - completed result streams back as a terminal job event and can be summarized
   for speech

@@ -76,6 +76,11 @@ Target KAME layout:
   supplied as context beside the waveform, not as a replacement for the waveform
   and not as a second oracle prompt. Classic ASR uses the same path only when
   enabled for fallback, diagnostics, or literal-evidence checks.
+- External frontend packet shape: VoiceClaw/OpenClaw/Moshi-style bridges should
+  send raw-audio references and timing when available, plus any transcript-like
+  strings as labeled hypotheses. A text-only `ask_brain` bridge is useful for
+  compatibility, but it is degraded evidence and does not prove the full KAME
+  raw-audio interpreter path.
 - Promotion rule: no Moshi/S2S, VoiceClaw/OpenClaw, or classic ASR transcript
   can become durable user text, `oracle_text`, a tool argument, a spend reason,
   or a call/message payload without interpreter or oracle judgment. The

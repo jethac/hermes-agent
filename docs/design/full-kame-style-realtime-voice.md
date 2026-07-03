@@ -221,6 +221,28 @@ along with raw voice?" question: yes, that is exactly the desired packet shape.
 The raw voice clip and timing metadata are the primary interpreter evidence;
 Moshi/open-S2S text is a labeled clue that Gemma may accept, correct, or reject.
 
+External frontend adapters must preserve that shape instead of flattening it into
+one text turn. A VoiceClaw/OpenClaw/Moshi-style bridge may send an `ask_brain`
+request early, but the Hermes adapter should treat it as an interpreter/oracle
+job envelope with explicit evidence fields:
+
+- `audio_segment_ref` and `audio_time_range_ms` when the frontend can expose the
+  clipped waveform or a replayable artifact
+- `reflex_intent` and `interface_already_said` for what the live interface chose
+  and already spoke
+- `reflex_transcript_hypothesis` for the reflex model's own hearing
+- `auxiliary_transcript_hypotheses[]` for Moshi/open-S2S captions, classic ASR,
+  or other transcript-like side channels, each with source, timing/confidence
+  when available, and `authority = "hypothesis"`
+- `frontend_session_id`, `frontend_turn_id`, and `tool_call_id` for correlation,
+  cancellation, and terminal result delivery
+
+If an external frontend can provide only text and no replayable audio reference,
+Hermes may still run it through the compatibility path, but that turn is degraded
+evidence. It must not satisfy the full KAME raw-audio interpreter gate, and it
+must not promote the transcript into durable user text without interpreter or
+oracle judgment.
+
 ## Responsibilities
 
 ### Reflex / Interface Model
@@ -423,7 +445,9 @@ oracle job creation when the raw audio and reflex route are sufficient.
 Modes:
 
 - `disabled`: no separate transcript evidence is run; the oracle receives
-  reflex intent and, optionally, the audio segment reference.
+  reflex intent and, optionally, the audio segment reference. This disables only
+  the auxiliary transcript lane; it does not disable raw-audio interpretation
+  when an interpreter is configured and an audio segment is available.
 - `from_reflex`: only transcript hypotheses emitted by the reflex/S2S model are
   forwarded as evidence.
 - `on_escalation`: dedicated ASR runs only after the reflex chooses `defer` or
@@ -484,6 +508,12 @@ Auxiliary transcript/fallback evidence events:
 - `transcript.partial`
 - `transcript.final`
 - `reflex.transcript.hypothesis`
+
+Those names are legacy-compatible event names. In KAME mode each transcript event
+must carry explicit provenance: source, authority, turn id, audio segment id when
+available, timing, confidence when available, and whether the evidence arrived
+before or after the interpreter/oracle job. `transcript.final` means final for
+that provider stream only; it does not mean verified user text.
 
 Interpreter evidence events:
 
@@ -550,7 +580,9 @@ results, cancellations, approvals, and external-action outcomes should enter
 durable Hermes conversation state. Oracle job lifecycle detail belongs in the
 voice-session task log/audit ledger. Partial transcripts, backchannels,
 cancelled utterances, status polls, progress fragments, and interrupted audio
-should stay ephemeral unless debugging is enabled.
+should stay ephemeral unless debugging is enabled. Debugging may persist these
+items only to an audit/debug ledger, never directly to durable Hermes
+conversation history or a verified user transcript.
 
 ## Routing Policy
 
@@ -590,7 +622,7 @@ The interface should submit a compact structured oracle job request:
   "user_id": "discord-user-id",
   "priority": "normal",
   "route": "defer",
-  "oracle_text": "action request text derived from reflex intent or promoted interpreter evidence",
+  "oracle_text": "provisional action request text; requires interpreter/oracle promotion before irreversible action",
   "reflex_intent": "compact live intent",
   "reflex_transcript_hypothesis": "three to the power of seventeen",
   "auxiliary_transcript_hypotheses": [
@@ -627,6 +659,13 @@ auxiliary transcript hypothesis when enabled. The oracle should prefer
 interpreter evidence for tool arguments, using Moshi/S2S or classic ASR
 transcripts as supporting literal evidence while preserving the reflex route and
 "interface already said" context.
+
+`oracle_text` may start from a compact reflex intent so the job can be queued
+without waiting. That text remains provisional until interpreter evidence or
+oracle judgment promotes it. Irreversible tool, spend, provisioning, file,
+memory, message, or call actions must use the promoted transcript/intent fields
+or explicitly record that the oracle accepted responsibility for acting on a
+provisional request.
 
 Queued interpreter evidence must be folded into the oracle request before the
 job starts. If the interpreter produces a corrected transcript or intent while a
@@ -916,7 +955,9 @@ Deliverables:
 - tests with fake reflex and fake oracle
 - metrics showing which turns avoided the oracle
 
-This phase is the first point where the system can honestly be called KAME-style.
+This phase is a KAME-compatible reflex/oracle MVP. It proves the interface-model
+boundary and async oracle bridge, but the full three-tier KAME design is not
+complete until Phase 3 adds raw-audio Gemma interpretation.
 
 ### Phase 3: Gemma Interpreter Evidence Lane
 
