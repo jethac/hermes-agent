@@ -163,6 +163,7 @@ class OracleJobEvent:
     session_id: str
     state: OracleJobState
     payload: Mapping[str, Any] = field(default_factory=dict)
+    capacity: Mapping[str, Any] = field(default_factory=dict)
     timestamp_ms: int = field(default_factory=lambda: int(time.time() * 1000))
 
     def to_status(self) -> dict[str, Any]:
@@ -173,6 +174,7 @@ class OracleJobEvent:
             "state": self.state.value,
             "timestamp_ms": self.timestamp_ms,
             "payload": dict(self.payload),
+            "capacity": dict(self.capacity),
         }
 
 
@@ -509,25 +511,9 @@ class OracleJobManager:
     async def status_view(self) -> dict[str, Any]:
         async with self._lock:
             jobs = [job.to_status() for job in self._jobs.values()]
-            active = self._active_count_locked()
-            running = sum(1 for job in self._jobs.values() if job.state == OracleJobState.RUNNING)
-            queued = sum(1 for job in self._jobs.values() if job.state == OracleJobState.QUEUED)
-            waiting_for_approval = sum(
-                1 for job in self._jobs.values() if job.state == OracleJobState.WAITING_FOR_APPROVAL
-            )
-            cancel_requested = sum(
-                1 for job in self._jobs.values() if job.state == OracleJobState.CANCEL_REQUESTED
-            )
+            capacity = self._capacity_snapshot_locked()
         return {
-            "capacity": {
-                "active": active,
-                "running": running,
-                "max_concurrent": self.max_concurrent,
-                "queued": queued,
-                "queue_limit": self.queue_limit,
-                "waiting_for_approval": waiting_for_approval,
-                "cancel_requested": cancel_requested,
-            },
+            "capacity": capacity,
             "jobs": jobs,
         }
 
@@ -701,6 +687,7 @@ class OracleJobManager:
             session_id=job.session_id,
             state=job.state,
             payload=dict(payload) if payload is not None else job.to_status(),
+            capacity=self._capacity_snapshot_locked(),
         )
         if self.audit_ledger_path is not None:
             _append_audit_ledger_event(self.audit_ledger_path, event)
@@ -726,6 +713,21 @@ class OracleJobManager:
 
     def _queued_count_locked(self) -> int:
         return sum(1 for job in self._jobs.values() if job.state == OracleJobState.QUEUED)
+
+    def _capacity_snapshot_locked(self) -> dict[str, int]:
+        return {
+            "active": self._active_count_locked(),
+            "running": self._running_count_locked(),
+            "max_concurrent": self.max_concurrent,
+            "queued": self._queued_count_locked(),
+            "queue_limit": self.queue_limit,
+            "waiting_for_approval": sum(
+                1 for job in self._jobs.values() if job.state == OracleJobState.WAITING_FOR_APPROVAL
+            ),
+            "cancel_requested": sum(
+                1 for job in self._jobs.values() if job.state == OracleJobState.CANCEL_REQUESTED
+            ),
+        }
 
     def _remove_queued_locked(self, job_id: str) -> None:
         self._queue = deque(existing for existing in self._queue if existing != job_id)
@@ -1199,6 +1201,7 @@ def _append_audit_ledger_event(path: Path, event: OracleJobEvent) -> None:
         "session_id": event.session_id,
         "state": event.state.value,
         "timestamp_ms": event.timestamp_ms,
+        "capacity": _compact_audit_payload(event.capacity),
         "payload": _compact_audit_payload(event.payload),
     }
     try:

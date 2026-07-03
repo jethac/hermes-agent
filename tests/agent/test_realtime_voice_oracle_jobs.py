@@ -1440,6 +1440,38 @@ async def test_cancelling_waiting_for_approval_keeps_capacity_until_worker_stops
         "oracle.job.result_suppressed",
         "oracle.job.cancelled",
     ]
+    assert all(
+        set(row["capacity"]) == {
+            "active",
+            "running",
+            "max_concurrent",
+            "queued",
+            "queue_limit",
+            "waiting_for_approval",
+            "cancel_requested",
+        }
+        for row in rows
+    )
+    waiting = next(row for row in rows if row["event_type"] == "oracle.job.waiting_for_approval")
+    assert waiting["capacity"] == {
+        "active": 1,
+        "running": 0,
+        "max_concurrent": 1,
+        "queued": 1,
+        "queue_limit": 16,
+        "waiting_for_approval": 1,
+        "cancel_requested": 0,
+    }
+    cancel_requested = next(row for row in rows if row["event_type"] == "oracle.job.cancel_requested")
+    assert cancel_requested["capacity"] == {
+        "active": 1,
+        "running": 0,
+        "max_concurrent": 1,
+        "queued": 1,
+        "queue_limit": 16,
+        "waiting_for_approval": 0,
+        "cancel_requested": 1,
+    }
     assert "oracle.job.completed" not in first_events
     suppressed = next(row for row in rows if row["event_type"] == "oracle.job.result_suppressed")
     assert suppressed["payload"]["suppression_reason"] == "cancelled_job_returned_result"
