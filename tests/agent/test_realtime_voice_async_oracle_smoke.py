@@ -135,6 +135,11 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_source_reached_oracle"] is True
     assert report["external_frontend_input_source"] == "ask_brain"
     assert report["external_frontend_oracle_text"] == "prepare an external kame handoff"
+    assert report["external_frontend_evidence_bundle_propagated"] is True
+    assert report["external_frontend_audio_segment_ref"] == "artifact://voiceclaw/turn-1.wav"
+    assert report["external_frontend_audio_time_range_ms"] == [100, 2100]
+    assert report["external_frontend_auxiliary_transcript_hypotheses"][0]["source"] == "moshi"
+    assert report["external_frontend_auxiliary_transcript_hypotheses"][0]["authority"] == "hypothesis"
     assert report["external_frontend_direct_tool_authority_exposed"] is False
     assert report["external_frontend_event_counts"]["tool.result"] == 1
     assert report["external_frontend_event_counts"]["oracle.job.accepted"] == 1

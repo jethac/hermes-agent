@@ -1232,6 +1232,17 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
                 "text": "prepare an external KAME handoff",
                 "intent": "Prepare external KAME handoff",
                 "transcript": "prepare an external kame handoff",
+                "audio_segment_ref": "artifact://voiceclaw/turn-1.wav",
+                "audio_time_range_ms": [100, 2100],
+                "moshi_transcript_hypothesis": "prepare an external kame handoff",
+                "auxiliary_transcript_hypotheses": [
+                    {
+                        "source": "moshi",
+                        "text": "prepare an external kame handoff",
+                        "confidence": 0.78,
+                        "latency_ms": 140,
+                    }
+                ],
                 "interface_already_said": "I'm preparing the handoff.",
                 "conversation_summary": "The user is testing an external voice frontend.",
                 "requested_response_style": {"spoken": True, "max_sentences": 1},
@@ -1306,6 +1317,14 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
             "read_file",
         )
     )
+    evidence_bundle_propagated = (
+        request is not None
+        and getattr(request, "audio_segment_ref", "") == "artifact://voiceclaw/turn-1.wav"
+        and getattr(request, "audio_time_range_ms", ()) == (100, 2100)
+        and bool(getattr(request, "auxiliary_transcript_hypotheses", ()))
+        and getattr(request, "auxiliary_transcript_hypotheses", ())[0].get("source") == "moshi"
+        and getattr(request, "auxiliary_transcript_hypotheses", ())[0].get("authority") == "hypothesis"
+    )
     return {
         "ok": bool(job_id)
         and tool_result.payload.get("accepted") is True
@@ -1316,6 +1335,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and getattr(request, "source", "") == "voiceclaw"
         and getattr(request, "interface_input_source", "") == "ask_brain"
         and getattr(request, "oracle_text", "") == "prepare an external kame handoff"
+        and evidence_bundle_propagated
         and not direct_tool_authority_exposed
         and status_job.get("state") == "completed",
         "external_frontend_request_accepted": tool_result.payload.get("accepted") is True,
@@ -1335,6 +1355,16 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         if request is not None
         else "",
         "external_frontend_oracle_text": getattr(request, "oracle_text", "") if request is not None else "",
+        "external_frontend_evidence_bundle_propagated": evidence_bundle_propagated,
+        "external_frontend_audio_segment_ref": getattr(request, "audio_segment_ref", "") if request is not None else "",
+        "external_frontend_audio_time_range_ms": list(getattr(request, "audio_time_range_ms", ()))
+        if request is not None
+        else [],
+        "external_frontend_auxiliary_transcript_hypotheses": [
+            dict(item) for item in getattr(request, "auxiliary_transcript_hypotheses", ())
+        ]
+        if request is not None
+        else [],
         "external_frontend_direct_tool_authority_exposed": direct_tool_authority_exposed,
         "external_frontend_metadata_keys": sorted(str(key) for key in metadata),
         "external_frontend_event_counts": {
@@ -2364,6 +2394,18 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "external_frontend_oracle_text": external_frontend_bridge_smoke[
             "external_frontend_oracle_text"
+        ],
+        "external_frontend_evidence_bundle_propagated": external_frontend_bridge_smoke[
+            "external_frontend_evidence_bundle_propagated"
+        ],
+        "external_frontend_audio_segment_ref": external_frontend_bridge_smoke[
+            "external_frontend_audio_segment_ref"
+        ],
+        "external_frontend_audio_time_range_ms": external_frontend_bridge_smoke[
+            "external_frontend_audio_time_range_ms"
+        ],
+        "external_frontend_auxiliary_transcript_hypotheses": external_frontend_bridge_smoke[
+            "external_frontend_auxiliary_transcript_hypotheses"
         ],
         "external_frontend_direct_tool_authority_exposed": external_frontend_bridge_smoke[
             "external_frontend_direct_tool_authority_exposed"

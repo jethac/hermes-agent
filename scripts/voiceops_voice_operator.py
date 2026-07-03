@@ -1516,6 +1516,7 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("external_frontend_status_state") == "completed"
         and smoke.get("external_frontend_source_reached_oracle") is True
         and smoke.get("external_frontend_input_source") == "ask_brain"
+        and smoke.get("external_frontend_evidence_bundle_propagated") is True
         and smoke.get("external_frontend_direct_tool_authority_exposed") is False,
         "result_handling_bounded_and_durable": smoke.get("verbose_result_spoken_bounded") is True
         and smoke.get("verbose_result_committed_bounded") is True
@@ -2118,6 +2119,18 @@ def build_voice_operator_report(
                 "external_frontend_input_source"
             ),
             "external_frontend_oracle_text": async_oracle_smoke.get("external_frontend_oracle_text"),
+            "external_frontend_evidence_bundle_propagated": bool(
+                async_oracle_smoke.get("external_frontend_evidence_bundle_propagated")
+            ),
+            "external_frontend_audio_segment_ref": async_oracle_smoke.get(
+                "external_frontend_audio_segment_ref"
+            ),
+            "external_frontend_audio_time_range_ms": async_oracle_smoke.get(
+                "external_frontend_audio_time_range_ms"
+            ),
+            "external_frontend_auxiliary_transcript_hypotheses": list(
+                async_oracle_smoke.get("external_frontend_auxiliary_transcript_hypotheses") or []
+            ),
             "external_frontend_direct_tool_authority_exposed": bool(
                 async_oracle_smoke.get("external_frontend_direct_tool_authority_exposed")
             ),

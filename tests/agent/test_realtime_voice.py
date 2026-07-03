@@ -1199,6 +1199,17 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
         asr_transcript="find the node from yesterday's meeting",
         asr_transcript_source="asr",
         asr_transcript_confidence=0.68,
+        audio_segment_ref="artifact://voice/turn-1.wav",
+        audio_time_range_ms=(12840, 15320),
+        auxiliary_transcript_hypotheses=(
+            {
+                "source": "moshi",
+                "text": "find the note from yesterday's meeting",
+                "confidence": 0.74,
+                "latency_ms": 140,
+                "authority": "hypothesis",
+            },
+        ),
         interface_already_said="One moment.",
         conversation_summary="The user is testing KAME voice.",
         reflex_validation_error="oracle_required_for_files",
@@ -1215,6 +1226,10 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
     assert "The audio-native reflex was unavailable; this turn used local_stt as the interface fallback." in prompt
     assert "Reflex route override: oracle_required_for_files." in prompt
     assert "Reflex transcript hypothesis (reflex_audio): find the note" in prompt
+    assert "Raw audio evidence ref: artifact://voice/turn-1.wav (12840-15320 ms)." in prompt
+    assert "higher authority than transcript hypotheses" in prompt
+    assert "Auxiliary transcript hypothesis (moshi, confidence 0.74, latency 140 ms): find the note" in prompt
+    assert "Use it only as labeled evidence" in prompt
     assert "Verbatim ASR evidence (asr): find the node" in prompt
     assert "tool arguments" in prompt
     assert "oracle-facing text was selected from asr evidence" in prompt
@@ -1320,6 +1335,18 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
                     "asr_transcript": "find the node from yesterday's meeting",
                     "asr_transcript_source": "asr",
                     "asr_transcript_confidence": 0.68,
+                    "audio_segment_ref": "artifact://voice/voice-123-turn-1.wav",
+                    "audio_time_range_ms": [12840, 15320],
+                    "moshi_transcript_hypothesis": "find the note from yesterday's meeting",
+                    "auxiliary_transcript_hypotheses": [
+                        {
+                            "source": "moshi",
+                            "text": "find the note from yesterday's meeting",
+                            "confidence": 0.74,
+                            "latency_ms": 140,
+                            "authority": "hypothesis",
+                        }
+                    ],
                     "interface_input_source": "native_audio",
                     "reflex_provider": "vllm",
                     "interface_already_said": "One moment.",
@@ -1349,6 +1376,23 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert request.asr_transcript == "find the node from yesterday's meeting"
         assert request.asr_transcript_source == "asr"
         assert request.asr_transcript_confidence == 0.68
+        assert request.audio_segment_ref == "artifact://voice/voice-123-turn-1.wav"
+        assert request.audio_time_range_ms == (12840, 15320)
+        assert request.auxiliary_transcript_hypotheses == (
+            {
+                "source": "moshi",
+                "text": "find the note from yesterday's meeting",
+                "authority": "hypothesis",
+                "confidence": 0.74,
+                "latency_ms": 140,
+            },
+            {
+                "source": "asr",
+                "text": "find the node from yesterday's meeting",
+                "authority": "hypothesis",
+                "confidence": 0.68,
+            },
+        )
         assert request.oracle_text == "find the node from yesterday's meeting"
         assert request.oracle_text_source == "asr"
         assert request.interface_input_source == "native_audio"
@@ -1380,6 +1424,10 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert final.payload["kame_urgency"] == "interactive"
         assert final.payload["kame_transcript"] == "find the note from yesterday's meeting"
         assert final.payload["kame_asr_transcript"] == "find the node from yesterday's meeting"
+        assert final.payload["kame_audio_segment_ref"] == "artifact://voice/voice-123-turn-1.wav"
+        assert final.payload["kame_audio_time_range_ms"] == (12840, 15320)
+        assert final.payload["kame_auxiliary_transcript_hypotheses"][0]["source"] == "moshi"
+        assert final.payload["kame_auxiliary_transcript_hypotheses"][0]["authority"] == "hypothesis"
         assert final.payload["kame_oracle_text_source"] == "asr"
         assert final.payload["kame_interface_input_source"] == "native_audio"
         assert final.payload["kame_reflex_provider"] == "vllm"
@@ -1402,6 +1450,10 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert oracle_request.payload["oracle_text_source"] == "asr"
         assert oracle_request.payload["transcript"] == "find the note from yesterday's meeting"
         assert oracle_request.payload["asr_transcript"] == "find the node from yesterday's meeting"
+        assert oracle_request.payload["audio_segment_ref"] == "artifact://voice/voice-123-turn-1.wav"
+        assert oracle_request.payload["audio_time_range_ms"] == [12840, 15320]
+        assert oracle_request.payload["auxiliary_transcript_hypotheses"][0]["source"] == "moshi"
+        assert oracle_request.payload["auxiliary_transcript_hypotheses"][0]["authority"] == "hypothesis"
         assert oracle_request.payload["interface_input_source"] == "native_audio"
         assert oracle_request.payload["reflex_provider"] == "vllm"
         assert oracle_request.payload["requested_response_style"] == {

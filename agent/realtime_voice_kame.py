@@ -367,6 +367,9 @@ class KameOracleRequest:
     asr_transcript: str = ""
     asr_transcript_source: str = ""
     asr_transcript_confidence: Optional[float] = None
+    audio_segment_ref: str = ""
+    audio_time_range_ms: tuple[int, int] | tuple[()] = field(default_factory=tuple)
+    auxiliary_transcript_hypotheses: Sequence[Mapping[str, Any]] = field(default_factory=tuple)
     mode: str = "voice"
     urgency: str = "interactive"
     interface_already_said: str = ""
@@ -434,6 +437,14 @@ class KameOracleRequest:
             metadata["kame_asr_transcript_source"] = self.asr_transcript_source or "asr"
         if self.asr_transcript_confidence is not None:
             metadata["kame_asr_transcript_confidence"] = self.asr_transcript_confidence
+        if self.audio_segment_ref:
+            metadata["kame_audio_segment_ref"] = self.audio_segment_ref
+        if self.audio_time_range_ms:
+            metadata["kame_audio_time_range_ms"] = tuple(self.audio_time_range_ms)
+        if self.auxiliary_transcript_hypotheses:
+            metadata["kame_auxiliary_transcript_hypotheses"] = tuple(
+                dict(item) for item in self.auxiliary_transcript_hypotheses
+            )
         if self.interface_already_said:
             metadata["kame_interface_already_said"] = self.interface_already_said
         if self.conversation_summary:
@@ -532,6 +543,14 @@ class KameOracleRequest:
             asr_transcript=asr_transcript.strip(),
             asr_transcript_source=asr_transcript_source or ("asr" if asr_transcript else ""),
             asr_transcript_confidence=asr_transcript_confidence,
+            audio_segment_ref=_optional_text(
+                payload.get("audio_segment_ref")
+                or payload.get("audio_ref")
+                or payload.get("clipped_audio_ref")
+                or payload.get("audio_artifact_ref")
+            ),
+            audio_time_range_ms=_audio_time_range_ms(payload.get("audio_time_range_ms")),
+            auxiliary_transcript_hypotheses=_auxiliary_transcript_hypotheses(payload),
             mode=_optional_text(payload.get("mode")) or "voice",
             urgency=_optional_text(payload.get("urgency")) or "interactive",
             interface_already_said=_optional_text(payload.get("interface_already_said")) or "",
@@ -642,6 +661,101 @@ def _job_updates_from_payload(value: object) -> tuple[str, ...]:
         if text:
             updates.append(text)
     return tuple(updates)
+
+
+def _audio_time_range_ms(value: object) -> tuple[int, int] | tuple[()]:
+    if not isinstance(value, Sequence) or isinstance(value, (bytes, bytearray, str)):
+        return ()
+    if len(value) < 2:
+        return ()
+    start = _non_negative_int(value[0])
+    end = _non_negative_int(value[1])
+    if start is None or end is None or end < start:
+        return ()
+    return (start, end)
+
+
+def _non_negative_int(value: object) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if parsed < 0:
+        return None
+    return parsed
+
+
+def _auxiliary_transcript_hypotheses(payload: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    raw_items: list[object] = []
+    raw = payload.get("auxiliary_transcript_hypotheses")
+    if isinstance(raw, Sequence) and not isinstance(raw, (bytes, bytearray, str)):
+        raw_items.extend(raw)
+    elif isinstance(raw, Mapping):
+        raw_items.append(raw)
+
+    for source, key in (
+        ("moshi", "moshi_transcript_hypothesis"),
+        ("s2s", "s2s_transcript_hypothesis"),
+        ("asr", "asr_transcript"),
+        ("asr", "oracle_verbatim_transcript"),
+    ):
+        text = _optional_text(payload.get(key))
+        if text:
+            raw_items.append(
+                {
+                    "source": source,
+                    "text": text,
+                    "confidence": payload.get(f"{key}_confidence"),
+                }
+            )
+
+    hypotheses: list[Mapping[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in raw_items:
+        hypothesis = _auxiliary_transcript_hypothesis(item)
+        if not hypothesis:
+            continue
+        key = (str(hypothesis.get("source") or ""), str(hypothesis.get("text") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        hypotheses.append(hypothesis)
+        if len(hypotheses) >= 5:
+            break
+    return tuple(hypotheses)
+
+
+def _auxiliary_transcript_hypothesis(value: object) -> dict[str, Any]:
+    if isinstance(value, str):
+        text = _optional_text(value)
+        return {"source": "unknown", "text": text, "authority": "hypothesis"} if text else {}
+    if not isinstance(value, Mapping):
+        return {}
+    text = (
+        _optional_text(value.get("text"))
+        or _optional_text(value.get("transcript"))
+        or _optional_text(value.get("hypothesis"))
+    )
+    if not text:
+        return {}
+    source = _optional_text(value.get("source")) or _optional_text(value.get("provider")) or "unknown"
+    hypothesis: dict[str, Any] = {
+        "source": source,
+        "text": text,
+        "authority": "hypothesis",
+    }
+    confidence = _confidence(value.get("confidence"))
+    if confidence is not None:
+        hypothesis["confidence"] = confidence
+    latency_ms = _non_negative_int(value.get("latency_ms"))
+    if latency_ms is not None:
+        hypothesis["latency_ms"] = latency_ms
+    language = _optional_text(value.get("language"))
+    if language:
+        hypothesis["language"] = language
+    return hypothesis
 
 
 def apply_kame_routing_policy(

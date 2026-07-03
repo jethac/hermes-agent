@@ -377,6 +377,11 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
     transcript_source = _metadata_text(metadata.get("kame_transcript_source"))
     asr_transcript = _metadata_text(metadata.get("kame_asr_transcript"))
     asr_transcript_source = _metadata_text(metadata.get("kame_asr_transcript_source"))
+    audio_segment_ref = _metadata_text(metadata.get("kame_audio_segment_ref"))
+    audio_time_range_ms = _metadata_time_range(metadata.get("kame_audio_time_range_ms"))
+    auxiliary_transcript_hypotheses = _metadata_transcript_hypotheses(
+        metadata.get("kame_auxiliary_transcript_hypotheses")
+    )
     intent_source = _metadata_text(metadata.get("kame_intent_source"))
     route = _metadata_text(metadata.get("kame_route"))
     route_confidence = _metadata_float(metadata.get("kame_route_confidence"))
@@ -410,6 +415,28 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
     transcript_source_is_asr = transcript_source.lower().startswith("asr")
     if transcript and not transcript_source_is_asr:
         parts.append(f"Reflex transcript hypothesis ({transcript_source or 'reflex_audio'}): {transcript}")
+    if audio_segment_ref:
+        if audio_time_range_ms:
+            parts.append(
+                f"Raw audio evidence ref: {audio_segment_ref} ({audio_time_range_ms[0]}-{audio_time_range_ms[1]} ms). "
+                "Treat the raw audio/interpreter evidence as higher authority than transcript hypotheses."
+            )
+        else:
+            parts.append(
+                f"Raw audio evidence ref: {audio_segment_ref}. "
+                "Treat the raw audio/interpreter evidence as higher authority than transcript hypotheses."
+            )
+    for hypothesis in auxiliary_transcript_hypotheses:
+        source = hypothesis.get("source") or "unknown"
+        text = hypothesis.get("text") or ""
+        confidence = hypothesis.get("confidence")
+        confidence_text = f", confidence {confidence:.2f}" if isinstance(confidence, float) else ""
+        latency = hypothesis.get("latency_ms")
+        latency_text = f", latency {latency} ms" if isinstance(latency, int) else ""
+        parts.append(
+            f"Auxiliary transcript hypothesis ({source}{confidence_text}{latency_text}): {text}. "
+            "Use it only as labeled evidence; do not treat it as durable truth unless it agrees with interpreter/oracle judgment."
+        )
     if not asr_transcript and transcript and transcript_source_is_asr:
         asr_transcript = transcript
         asr_transcript_source = transcript_source
@@ -486,6 +513,45 @@ def _metadata_text_sequence(value: object) -> list[str]:
         if text:
             items.append(text)
     return items[:5]
+
+
+def _metadata_time_range(value: object) -> tuple[int, int] | tuple[()]:
+    if not isinstance(value, (list, tuple)) or len(value) < 2:
+        return ()
+    try:
+        start = int(value[0])
+        end = int(value[1])
+    except (TypeError, ValueError):
+        return ()
+    if start < 0 or end < start:
+        return ()
+    return (start, end)
+
+
+def _metadata_transcript_hypotheses(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    hypotheses: list[dict[str, object]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        text = _metadata_text(item.get("text"))
+        if not text:
+            continue
+        hypothesis: dict[str, object] = {
+            "source": _metadata_text(item.get("source")) or "unknown",
+            "text": text,
+        }
+        confidence = _metadata_float(item.get("confidence"))
+        if confidence is not None:
+            hypothesis["confidence"] = confidence
+        latency = _metadata_positive_int(item.get("latency_ms"))
+        if latency is not None:
+            hypothesis["latency_ms"] = latency
+        hypotheses.append(hypothesis)
+        if len(hypotheses) >= 5:
+            break
+    return hypotheses
 
 
 def _metadata_positive_int(value: object) -> Optional[int]:

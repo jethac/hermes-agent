@@ -218,6 +218,18 @@ def _async_oracle_smoke_payload() -> dict:
         "external_frontend_source_reached_oracle": True,
         "external_frontend_input_source": "ask_brain",
         "external_frontend_oracle_text": "prepare an external kame handoff",
+        "external_frontend_evidence_bundle_propagated": True,
+        "external_frontend_audio_segment_ref": "artifact://voiceclaw/turn-1.wav",
+        "external_frontend_audio_time_range_ms": [100, 2100],
+        "external_frontend_auxiliary_transcript_hypotheses": [
+            {
+                "source": "moshi",
+                "text": "prepare an external kame handoff",
+                "authority": "hypothesis",
+                "confidence": 0.78,
+                "latency_ms": 140,
+            }
+        ],
         "external_frontend_direct_tool_authority_exposed": False,
         "external_frontend_event_counts": {
             "tool.result": 1,
@@ -588,6 +600,18 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_status_state"] == "completed"
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_source_reached_oracle"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_input_source"] == "ask_brain"
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_evidence_bundle_propagated"] is True
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_audio_segment_ref"]
+        == "artifact://voiceclaw/turn-1.wav"
+    )
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_audio_time_range_ms"] == [100, 2100]
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_auxiliary_transcript_hypotheses"][0][
+            "authority"
+        ]
+        == "hypothesis"
+    )
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_direct_tool_authority_exposed"] is False
     assert report["requirements"]["async_oracle_external_frontend_bridge"] is True
     assert report["proofs"]["async_oracle_jobs"]["audit_scalar_smoke_ok"] is True
@@ -979,6 +1003,7 @@ def test_voice_operator_validation_rejects_missing_terminal_result_suppression_p
 def test_voice_operator_validation_rejects_missing_external_frontend_bridge_proof():
     report = _voice_operator_report()
     report["async_oracle_smoke"]["external_frontend_request_accepted"] = False
+    report["async_oracle_smoke"]["external_frontend_evidence_bundle_propagated"] = False
     report["async_oracle_smoke"]["external_frontend_direct_tool_authority_exposed"] = True
 
     issues = validate_voice_operator_report(report)

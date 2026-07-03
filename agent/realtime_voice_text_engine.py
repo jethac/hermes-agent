@@ -727,6 +727,24 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                         or payload.get("s2s_transcript_hypothesis")
                         or ""
                     ).strip(),
+                    "audio_segment_ref": str(
+                        payload.get("audio_segment_ref")
+                        or payload.get("audio_ref")
+                        or payload.get("clipped_audio_ref")
+                        or payload.get("audio_artifact_ref")
+                        or ""
+                    ).strip(),
+                    "audio_time_range_ms": payload.get("audio_time_range_ms") or (),
+                    "reflex_transcript_hypothesis": str(
+                        payload.get("reflex_transcript_hypothesis") or ""
+                    ).strip(),
+                    "moshi_transcript_hypothesis": str(
+                        payload.get("moshi_transcript_hypothesis") or ""
+                    ).strip(),
+                    "s2s_transcript_hypothesis": str(
+                        payload.get("s2s_transcript_hypothesis") or ""
+                    ).strip(),
+                    "auxiliary_transcript_hypotheses": payload.get("auxiliary_transcript_hypotheses") or (),
                     "interface_already_said": str(
                         payload.get("interface_already_said")
                         or payload.get("already_said")
@@ -3388,6 +3406,14 @@ def _oracle_job_payload(job: OracleJob) -> dict[str, Any]:
             payload["user_id"] = request.user_id
         if request.cancellation_token:
             payload["cancellation_token"] = request.cancellation_token
+        if request.audio_segment_ref:
+            payload["audio_segment_ref"] = request.audio_segment_ref
+        if request.audio_time_range_ms:
+            payload["audio_time_range_ms"] = list(request.audio_time_range_ms)
+        if request.auxiliary_transcript_hypotheses:
+            payload["auxiliary_transcript_hypotheses"] = [
+                dict(item) for item in request.auxiliary_transcript_hypotheses
+            ]
     return payload
 
 
@@ -3510,6 +3536,14 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
         payload["asr_transcript_source"] = request.asr_transcript_source or "asr"
     if request.asr_transcript_confidence is not None:
         payload["asr_transcript_confidence"] = request.asr_transcript_confidence
+    if request.audio_segment_ref:
+        payload["audio_segment_ref"] = request.audio_segment_ref
+    if request.audio_time_range_ms:
+        payload["audio_time_range_ms"] = list(request.audio_time_range_ms)
+    if request.auxiliary_transcript_hypotheses:
+        payload["auxiliary_transcript_hypotheses"] = [
+            dict(item) for item in request.auxiliary_transcript_hypotheses
+        ]
     if request.interface_already_said:
         payload["interface_already_said"] = request.interface_already_said
     if request.conversation_summary:
@@ -3756,6 +3790,16 @@ def _kame_interface_payload_from_metadata(metadata: Mapping[str, Any]) -> dict[s
         payload["asr_transcript_source"] = str(metadata.get("kame_asr_transcript_source") or "asr")
     if metadata.get("kame_asr_transcript_confidence") is not None:
         payload["asr_transcript_confidence"] = metadata.get("kame_asr_transcript_confidence")
+    if metadata.get("kame_audio_segment_ref"):
+        payload["audio_segment_ref"] = str(metadata.get("kame_audio_segment_ref"))
+    if isinstance(metadata.get("kame_audio_time_range_ms"), (list, tuple)):
+        payload["audio_time_range_ms"] = list(metadata.get("kame_audio_time_range_ms") or [])[:2]
+    if isinstance(metadata.get("kame_auxiliary_transcript_hypotheses"), (list, tuple)):
+        payload["auxiliary_transcript_hypotheses"] = [
+            dict(item)
+            for item in metadata.get("kame_auxiliary_transcript_hypotheses") or []
+            if isinstance(item, Mapping)
+        ][:5]
     if metadata.get("kame_interface_already_said"):
         payload["interface_already_said"] = str(metadata.get("kame_interface_already_said"))
     if metadata.get("kame_conversation_summary"):
