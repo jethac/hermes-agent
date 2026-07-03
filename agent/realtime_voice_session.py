@@ -231,7 +231,11 @@ class RealtimeVoiceSession:
                 )
             self.transcript.partial_user_text = ""
             turn_key = _final_user_turn_key(event.payload)
-            if text and (not turn_key or turn_key not in self._committed_final_user_turn_keys):
+            if (
+                text
+                and not _payload_non_durable(event.payload)
+                and (not turn_key or turn_key not in self._committed_final_user_turn_keys)
+            ):
                 self.transcript.final_user_segments.append(text)
                 if turn_key:
                     self._committed_final_user_turn_keys.add(turn_key)
@@ -291,7 +295,11 @@ class RealtimeVoiceSession:
             else:
                 text = str(event.payload.get("text") or self.transcript.assistant_draft or "").strip()
                 turn_key = _assistant_commit_turn_key(event.payload)
-                if text and (not turn_key or turn_key not in self._committed_assistant_turn_keys):
+                if (
+                    text
+                    and not _payload_non_durable(event.payload)
+                    and (not turn_key or turn_key not in self._committed_assistant_turn_keys)
+                ):
                     self.transcript.committed_assistant_segments.append(text)
                     if turn_key:
                         self._committed_assistant_turn_keys.add(turn_key)
@@ -645,6 +653,12 @@ def _payload_is_kame(payload: Mapping[str, Any]) -> bool:
     if str(payload.get("intent") or "").strip() and str(payload.get("route") or "").strip():
         return True
     return any(str(payload.get(key) or "").strip() for key in ("kame_intent", "kame_route", "intent_source"))
+
+
+def _payload_non_durable(payload: Mapping[str, Any]) -> bool:
+    if payload.get("durable") is False:
+        return True
+    return payload.get("oracle_job_status_poll") is True
 
 
 def _oracle_record_is_ephemeral(event: VoiceEvent) -> bool:

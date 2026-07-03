@@ -857,6 +857,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             if oracle_request.cancellation_token:
                 self._cancellation_token_by_generation[generation] = oracle_request.cancellation_token
             self._interface_decision_at_by_generation[generation] = interface_decision_at
+            if _kame_oracle_job_status_poll_requested(
+                oracle_request,
+                has_manager=self._oracle_job_manager is not None,
+            ):
+                assistant_metadata["oracle_job_status_poll"] = True
+                assistant_metadata["durable"] = False
         payload = {"text": transcript, "playback_generation": generation}
         if input_generation is not None:
             payload["input_generation"] = input_generation
@@ -892,17 +898,24 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if not local_reply:
             local_reply = _kame_local_reply(oracle_request)
         if local_reply:
+            local_metadata = assistant_metadata
+            if oracle_request is not None and assistant_metadata.get("oracle_job_status_poll") is True:
+                local_metadata = {
+                    **assistant_metadata,
+                    "oracle_job_status_poll": True,
+                    "durable": False,
+                }
             if oracle_request is not None:
                 await self._emit_interface_event(
                     VoiceEventType.INTERFACE_REPLY_LOCAL,
                     {
-                        **_kame_interface_payload_with_metrics(oracle_request, generation, assistant_metadata),
+                        **_kame_interface_payload_with_metrics(oracle_request, generation, local_metadata),
                         "text": local_reply,
                     },
                 )
             self._active_task_interrupts_oracle = True
             self._active_task = asyncio.create_task(
-                self._speak_kame_local_reply(local_reply, generation, assistant_metadata)
+                self._speak_kame_local_reply(local_reply, generation, local_metadata)
             )
             return
         if oracle_request is not None:
@@ -931,12 +944,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
 
     async def _kame_oracle_job_status_reply(self, oracle_request: Optional[KameOracleRequest]) -> str:
         manager = self._oracle_job_manager
-        if manager is None or oracle_request is None:
+        if not _kame_oracle_job_status_poll_requested(
+            oracle_request,
+            has_manager=manager is not None,
+        ):
             return ""
-        if oracle_request.route not in {KameRoute.LOCAL, KameRoute.REJECT_OR_CLARIFY}:
-            return ""
-        if not _kame_oracle_job_status_requested(oracle_request):
-            return ""
+        assert manager is not None
         return _kame_oracle_job_status_text(await manager.status_view())
 
     async def _kame_oracle_job_control_reply(self, oracle_request: Optional[KameOracleRequest]) -> str:
@@ -2715,6 +2728,18 @@ def _kame_oracle_job_status_requested(request: KameOracleRequest) -> bool:
     return "status" in haystack and any(token in haystack for token in ("job", "jobs", "task", "tasks", "oracle"))
 
 
+def _kame_oracle_job_status_poll_requested(
+    request: Optional[KameOracleRequest],
+    *,
+    has_manager: bool,
+) -> bool:
+    if not has_manager or request is None:
+        return False
+    if request.route not in {KameRoute.LOCAL, KameRoute.REJECT_OR_CLARIFY}:
+        return False
+    return _kame_oracle_job_status_requested(request)
+
+
 def _kame_oracle_job_status_text(status: Mapping[str, Any]) -> str:
     capacity = status.get("capacity") if isinstance(status.get("capacity"), Mapping) else {}
     jobs = [dict(job) for job in status.get("jobs", []) if isinstance(job, Mapping)]
@@ -3259,6 +3284,10 @@ def _kame_interface_payload_with_metrics(
     input_generation = _payload_input_generation(dict(metadata))
     if input_generation is not None:
         payload["input_generation"] = input_generation
+    if metadata.get("oracle_job_status_poll") is True:
+        payload["oracle_job_status_poll"] = True
+    if metadata.get("durable") is False:
+        payload["durable"] = False
     metrics = metadata.get("metrics") if isinstance(metadata, Mapping) else None
     if isinstance(metrics, Mapping):
         sanitized = _nonnegative_int_metrics(metrics)

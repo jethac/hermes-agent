@@ -2482,7 +2482,30 @@ def test_kame_engine_local_status_question_uses_oracle_job_state(monkeypatch):
 
         await engine.close()
         assert len(oracle.requests) == 1
+        status_transcript = next(
+            event
+            for event in seen
+            if event.type == VoiceEventType.TRANSCRIPT_FINAL
+            and event.payload.get("oracle_job_status_poll") is True
+        )
+        status_intent = next(
+            event
+            for event in seen
+            if event.type == VoiceEventType.INTERFACE_INTENT_FINAL
+            and event.payload.get("oracle_job_status_poll") is True
+        )
+        status_reply = next(
+            event
+            for event in seen
+            if event.type == VoiceEventType.INTERFACE_REPLY_LOCAL
+            and event.payload.get("oracle_job_status_poll") is True
+        )
         commit = next(event for event in seen if event.type == VoiceEventType.ASSISTANT_COMMIT)
+        assert status_transcript.payload["durable"] is False
+        assert status_intent.payload["durable"] is False
+        assert status_reply.payload["durable"] is False
+        assert commit.payload["oracle_job_status_poll"] is True
+        assert commit.payload["durable"] is False
         assert commit.payload["local_reply"] is True
         assert commit.payload["text"] == "Oracle jobs: 1 running out of 1. running: Checking that now."
         assert spoken == [
@@ -15403,6 +15426,54 @@ def test_kame_session_deduplicates_transcript_and_interface_final_for_same_turn(
         )
 
     assert session.durable_messages() == [{"role": "user", "content": "Check deployment status."}]
+
+
+def test_kame_session_does_not_persist_oracle_job_status_poll_messages():
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        ),
+        engine=KameInterfaceOracleEngine(oracle=FakeOracle()),
+    )
+
+    common = {
+        "turn_id": "voice-123:1",
+        "intent": "What are you working on?",
+        "text": "what are you working on",
+        "route": "local",
+        "playback_generation": 7,
+        "oracle_job_status_poll": True,
+        "durable": False,
+    }
+    for sequence, event_type in enumerate(
+        (VoiceEventType.TRANSCRIPT_FINAL, VoiceEventType.INTERFACE_INTENT_FINAL),
+        start=1,
+    ):
+        session._apply_server_event(
+            VoiceEvent(
+                type=event_type,
+                session_id="voice-123",
+                sequence=sequence,
+                payload=dict(common),
+            )
+        )
+    for event_type in (VoiceEventType.INTERFACE_COMMIT, VoiceEventType.ASSISTANT_COMMIT):
+        session._apply_server_event(
+            VoiceEvent(
+                type=event_type,
+                session_id="voice-123",
+                sequence=10,
+                payload={
+                    **common,
+                    "text": "Oracle jobs: 1 running out of 1. running: Checking logs.",
+                    "local_reply": True,
+                },
+            )
+        )
+
+    assert session.durable_messages() == []
+    assert session.state == RealtimeVoiceSessionState.LISTENING
 
 
 def test_session_treats_caption_events_as_ephemeral_state():
