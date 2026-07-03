@@ -1407,7 +1407,27 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 if isinstance(item, Mapping):
                     oracle_tool_event_type = _oracle_tool_event_type(item)
                     if oracle_tool_event_type is not None:
-                        if oracle_tool_event_type == VoiceEventType.ORACLE_TOOL_CALL and _oracle_tool_event_waits_for_approval(item):
+                        waits_for_approval = _oracle_tool_event_waits_for_approval(item)
+                        high_risk_tool_event = _oracle_tool_event_requires_kame_action_gate(item)
+                        if (
+                            high_risk_tool_event
+                            and not waits_for_approval
+                            and not (
+                                oracle_tool_event_type == VoiceEventType.ORACLE_TOOL_RESULT
+                                and job.state == OracleJobState.WAITING_FOR_APPROVAL
+                            )
+                        ):
+                            await self._emit_oracle_job_voice_event(
+                                VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED,
+                                _oracle_job_runtime_result_suppressed_payload(
+                                    job,
+                                    reason="unapproved_high_risk_tool_event",
+                                ),
+                            )
+                            raise RuntimeError(
+                                "KAME action gate failed; suppressed unapproved high-risk tool event"
+                            )
+                        if oracle_tool_event_type == VoiceEventType.ORACLE_TOOL_CALL and waits_for_approval:
                             manager = self._oracle_job_manager
                             if manager is not None:
                                 with contextlib.suppress(OracleJobNotFoundError):
@@ -1441,7 +1461,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                             tool_event=_with_oracle_job_interpreter_evidence(
                                 _oracle_tool_event_payload(
                                     item,
-                                    redact_sensitive=_oracle_tool_event_waits_for_approval(item),
+                                    redact_sensitive=waits_for_approval or high_risk_tool_event,
                                 ),
                                 job,
                             ),
@@ -4813,6 +4833,38 @@ _ORACLE_TOOL_APPROVAL_STATUS_VALUES = frozenset(
         "requires_approval",
     }
 )
+_ORACLE_TOOL_ACTION_GATE_NAME_MARKERS = frozenset(
+    {
+        "append_file",
+        "buy",
+        "call",
+        "charge",
+        "checkout",
+        "create_file",
+        "credential",
+        "delete_file",
+        "edit_file",
+        "email_send",
+        "external_message",
+        "link_purchase",
+        "memory_write",
+        "payment",
+        "phone",
+        "post_message",
+        "provision",
+        "purchase",
+        "remember",
+        "run_command",
+        "save_memory",
+        "send_message",
+        "shell",
+        "sms",
+        "spend",
+        "stripe",
+        "whatsapp",
+        "write_file",
+    }
+)
 
 
 def _oracle_tool_event_type(item: Mapping[str, Any]) -> Optional[VoiceEventType]:
@@ -4842,6 +4894,37 @@ def _oracle_tool_event_waits_for_approval(item: Mapping[str, Any]) -> bool:
         if nested_status in _ORACLE_TOOL_APPROVAL_STATUS_VALUES:
             return True
     return False
+
+
+def _oracle_tool_event_requires_kame_action_gate(item: Mapping[str, Any]) -> bool:
+    tool_name = _oracle_tool_event_name(item)
+    if not tool_name:
+        return False
+    normalized = (
+        tool_name.strip()
+        .lower()
+        .replace("-", "_")
+        .replace(".", "_")
+        .replace(" ", "_")
+    )
+    return any(marker in normalized for marker in _ORACLE_TOOL_ACTION_GATE_NAME_MARKERS)
+
+
+def _oracle_tool_event_name(item: Mapping[str, Any]) -> str:
+    for key in ("tool_name", "name", "tool"):
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, Mapping):
+            nested_name = value.get("name")
+            if isinstance(nested_name, str) and nested_name.strip():
+                return nested_name.strip()
+    function = item.get("function")
+    if isinstance(function, Mapping):
+        name = function.get("name")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    return ""
 
 
 def _oracle_tool_approval_reason(item: Mapping[str, Any]) -> str:

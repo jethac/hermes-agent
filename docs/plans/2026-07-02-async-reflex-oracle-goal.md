@@ -246,6 +246,14 @@ Headless acceptance requires `runtime_kame_action_gate_enforced` to prove both
 paths: hypothesis-only approvals fail closed, and consumed promoted interpreter
 evidence plus `tool_disclosure_ref = "tool_disclosure"` passes.
 
+Unflagged high-risk tool rule: the runtime must not rely on a provider to label
+every dangerous action as `approval_required`. A Stripe/spend/provisioning,
+phone/SMS/WhatsApp/external-message, shell, credential, memory-write, or
+file-write tool call/result that appears without an approval wait is still an
+action-boundary event. It must fail closed, suppress the tool event payload, and
+avoid speaking or committing the result unless the normal approval/action gate
+was already satisfied.
+
 Runtime packet rule: the async scheduler must treat raw audio plus
 Moshi/OpenClaw/VoiceClaw/classic-ASR text as one interpreter evidence packet,
 not competing work. The merge key is `turn_id + audio_segment_ref`; transcript
@@ -944,6 +952,9 @@ Add a local smoke report mode that proves:
 - degraded text-only VoiceClaw/OpenClaw/Moshi fixtures preserve hypothesis text
   for audit and clarification, but report `degraded_reason` and fail high-risk
   action gates until interpreter/oracle promotion exists
+- unflagged high-risk tool calls and tool results fail closed, including nested
+  `function.name` tool-call shapes, while low-risk oracle tool progress remains
+  streamable
 - live-evidence validation rejects transcript-only witness turns that lack raw
   audio segment evidence and interpreter evidence, even when the transcript text
   is correctly labeled as a hypothesis

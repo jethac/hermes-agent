@@ -1696,6 +1696,9 @@ Integration tests:
 - oracle timeout with spoken status
 - cancellation during oracle stream
 - cancellation during TTS playback
+- unflagged high-risk oracle tool calls/results fail closed, including nested
+  `function.name` event payloads, while low-risk oracle tool progress still
+  streams normally
 
 Manual smoke tests:
 

@@ -6289,6 +6289,138 @@ def test_async_oracle_job_failed_kame_gate_suppresses_tool_result_completion(mon
     asyncio.run(run())
 
 
+async def _run_unapproved_high_risk_tool_event_smoke(monkeypatch, tool_event):
+    class ToolOracle:
+        async def stream_answer_for_request(self, _request):
+            yield tool_event
+            yield "This should not be spoken."
+
+    spoken = []
+
+    async def fake_speak(self, text, playback_generation):
+        spoken.append(text)
+
+    monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+    engine = KameInterfaceOracleEngine(oracle=ToolOracle())
+    await engine.start(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            interface_audio_input="native_audio",
+            oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+            metadata={"transport": "discord_voice"},
+        )
+    )
+    await engine.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.AUDIO_INPUT_CHUNK,
+            session_id="voice-123",
+            sequence=1,
+            payload={
+                "transcript": "buy service credits",
+                "intent": "Buy service credits.",
+                "intent_source": "reflex_audio",
+                "route": "defer",
+                "interface_already_said": "Preparing the spend request.",
+                "end_of_utterance": True,
+            },
+        )
+    )
+
+    seen = []
+    async for event in engine.events():
+        seen.append(event)
+        if event.type == VoiceEventType.ORACLE_JOB_FAILED:
+            break
+
+    await engine.close()
+    return seen, spoken
+
+
+def test_async_oracle_unflagged_high_risk_tool_call_fails_closed(monkeypatch):
+    async def run():
+        seen, spoken = await _run_unapproved_high_risk_tool_event_smoke(
+            monkeypatch,
+            {
+                "event": "tool_call",
+                "tool_name": "stripe_link_purchase",
+                "tool_call_id": "call-unsafe",
+                "arguments": {"amount": 200, "card": "secret-card"},
+            },
+        )
+
+        suppressed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED)
+        failed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_FAILED)
+        assert suppressed.payload["suppression_reason"] == "unapproved_high_risk_tool_event"
+        assert "KAME action gate failed" in failed.payload["error"]
+        assert not any(
+            event.type == VoiceEventType.ORACLE_JOB_PROGRESS
+            and event.payload.get("phase") == "tool"
+            for event in seen
+        )
+        assert "secret-card" not in str(seen)
+        assert spoken == ["Preparing the spend request."]
+
+    asyncio.run(run())
+
+
+def test_async_oracle_unflagged_nested_high_risk_tool_call_fails_closed(monkeypatch):
+    async def run():
+        seen, spoken = await _run_unapproved_high_risk_tool_event_smoke(
+            monkeypatch,
+            {
+                "event": "tool_call",
+                "function": {
+                    "name": "stripe_link_purchase",
+                    "arguments": {"amount": 200, "card": "secret-card"},
+                },
+                "tool_call_id": "call-unsafe",
+            },
+        )
+
+        suppressed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED)
+        failed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_FAILED)
+        assert suppressed.payload["suppression_reason"] == "unapproved_high_risk_tool_event"
+        assert "KAME action gate failed" in failed.payload["error"]
+        assert not any(
+            event.type == VoiceEventType.ORACLE_JOB_PROGRESS
+            and event.payload.get("phase") == "tool"
+            for event in seen
+        )
+        assert "secret-card" not in str(seen)
+        assert spoken == ["Preparing the spend request."]
+
+    asyncio.run(run())
+
+
+def test_async_oracle_unflagged_high_risk_tool_result_fails_closed(monkeypatch):
+    async def run():
+        seen, spoken = await _run_unapproved_high_risk_tool_event_smoke(
+            monkeypatch,
+            {
+                "event": "tool_result",
+                "tool_name": "stripe_link_purchase",
+                "tool_call_id": "call-unsafe",
+                "result": {"approved": True, "credential": "secret-card"},
+            },
+        )
+
+        suppressed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED)
+        failed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_FAILED)
+        assert suppressed.payload["suppression_reason"] == "unapproved_high_risk_tool_event"
+        assert "KAME action gate failed" in failed.payload["error"]
+        assert not any(
+            event.type == VoiceEventType.ORACLE_JOB_PROGRESS
+            and event.payload.get("phase") == "tool"
+            for event in seen
+        )
+        assert "secret-card" not in str(seen)
+        assert spoken == ["Preparing the spend request."]
+
+    asyncio.run(run())
+
+
 def test_oracle_job_approval_marks_hypothesis_only_action_gate_unsafe():
     async def run():
         release = asyncio.Event()
