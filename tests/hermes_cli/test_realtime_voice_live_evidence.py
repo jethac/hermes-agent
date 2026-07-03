@@ -135,6 +135,9 @@ def _complete_live_turn():
         "kind": "live_turn",
         "collector_attestation": _collector_attestation("live_turn"),
         "transcript_observed": True,
+        "audio_segment_ref_observed": True,
+        "interpreter_evidence_observed": True,
+        "transcript_hypotheses_labeled": True,
         "assistant_audio_observed": True,
         "barge_in_observed": True,
         "spoken_reply_short": True,
@@ -885,6 +888,48 @@ def test_live_evidence_audit_only_reports_invalid_evidence_without_writing(monke
     assert payload["ok"] is False
     assert payload["artifact_writes"] is False
     assert "live_evidence_validation:live_turn:barge_in_stop_ms_over_target" in payload["issues"]
+    assert "live_turn" in payload["strict_validation"]["missing_gates"]
+    assert not output_dir.exists()
+
+
+def test_live_evidence_rejects_transcript_only_turn_without_kame_audio(monkeypatch, tmp_path, capsys):
+    async def unexpected_loopback():
+        raise AssertionError("loopback probe should not run in audit-only mode")
+
+    async def unexpected_live(_args):
+        raise AssertionError("live Discord probe should not run in audit-only mode")
+
+    transcript_only_turn = _complete_live_turn()
+    transcript_only_turn["audio_segment_ref_observed"] = False
+    transcript_only_turn["interpreter_evidence_observed"] = False
+    transcript_only_turn["transcript_hypotheses_labeled"] = True
+    discord_path = _write_json(tmp_path / "discord-live-probe.json", _complete_discord_probe())
+    sidecar_path = _write_json(tmp_path / "sidecar-session.json", _complete_sidecar_session())
+    live_turn_path = _write_json(tmp_path / "live-turn.json", transcript_only_turn)
+    output_dir = tmp_path / "bundle"
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", unexpected_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", unexpected_live)
+
+    exit_code = realtime_voice_live_evidence.main(
+        [
+            "--output-dir",
+            str(output_dir),
+            "--audit-only",
+            "--discord-live-probe-evidence",
+            str(discord_path),
+            "--sidecar-session-evidence",
+            str(sidecar_path),
+            "--live-turn-evidence",
+            str(live_turn_path),
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert payload["ok"] is False
+    assert payload["artifact_writes"] is False
+    assert "live_evidence_validation:live_turn:audio_segment_ref_observed_not_true" in payload["issues"]
+    assert "live_evidence_validation:live_turn:interpreter_evidence_observed_not_true" in payload["issues"]
     assert "live_turn" in payload["strict_validation"]["missing_gates"]
     assert not output_dir.exists()
 

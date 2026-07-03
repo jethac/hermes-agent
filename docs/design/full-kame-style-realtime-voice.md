@@ -1004,6 +1004,9 @@ Acceptance gates:
 - Moshi/S2S transcript evidence must be labeled `authority = "hypothesis"`
 - Moshi/OpenClaw/VoiceClaw witness text is accepted only as interpreter context
   joined to the same `turn_id` and `audio_segment_ref` as the raw audio
+- transcript-only witness evidence must fail the full KAME live-evidence gate;
+  it can be preserved for audit, captions, clarification, or degraded fallback,
+  but it does not prove that Hermes heard raw voice or that Gemma interpreted it
 - interpreter prompts must include raw audio whenever an audio segment is
   available, even when Moshi or ASR produced a complete-looking transcript
 - interpreter prompts explicitly identify witness transcripts as non-authority

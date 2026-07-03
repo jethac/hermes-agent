@@ -190,6 +190,12 @@ Target KAME layout:
   Headless acceptance requires `witness_fusion_timing_preserves_single_bundle`
   to pass for early, inline, and late witness arrival, with the same bundle id
   surviving degraded-to-primary audio updates.
+- Live-evidence gate rule: transcript-only witness evidence must not close the
+  full KAME live voice gate. A Moshi/OpenClaw/VoiceClaw/STT string without raw
+  audio segment evidence and interpreter evidence is useful for audit,
+  clarification, captions, or degraded fallback, but it cannot prove Hermes
+  heard the user or satisfy Stripe, NemoClaw, phone, memory, file, or external
+  message readiness.
 - Action-authority rule: Stripe spend, provider provisioning, NemoClaw action
   packets, phone-call payloads, memory writes, file writes, and external
   messages require `interpreter_promoted` or `oracle_promoted` evidence for the

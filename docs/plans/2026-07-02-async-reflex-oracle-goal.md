@@ -922,6 +922,9 @@ Add a local smoke report mode that proves:
 - degraded text-only VoiceClaw/OpenClaw/Moshi fixtures preserve hypothesis text
   for audit and clarification, but report `degraded_reason` and fail high-risk
   action gates until interpreter/oracle promotion exists
+- live-evidence validation rejects transcript-only witness turns that lack raw
+  audio segment evidence and interpreter evidence, even when the transcript text
+  is correctly labeled as a hypothesis
 - queued oracle job updates are visible in the reflex/status event stream
 - one job can be cancelled while others complete
 - queued oracle jobs can be cancelled before worker execution
