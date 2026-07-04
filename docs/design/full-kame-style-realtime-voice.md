@@ -766,6 +766,13 @@ Canonical shape:
       "tool_authority": false
     }
   ],
+  "interpreter_input_order": ["raw_audio", "metadata", "reflex", "transcript_hypotheses"],
+  "interpreter_prompt_policy": {
+    "version": "raw_audio_compare_v1",
+    "raw_audio_primary": true,
+    "witness_transcripts_context_only": true,
+    "require_witness_adjudication": true
+  },
   "interpreter": {
     "model": "gemma-4-audio",
     "status": "pending"
@@ -806,6 +813,13 @@ The prompt must tell the interpreter that hypotheses may be clipped, stale,
 hallucinated, or from the wrong speaker. Gemma may use them to recover names,
 numbers, prefixes, and code-switched phrases, but it must prefer the raw audio
 when the signals disagree and must report material disagreements.
+
+`interpreter_prompt_policy.version = "raw_audio_compare_v1"` is the normal
+policy for this packet. It means "compare witness text to raw voice" rather
+than "continue from this transcript." This is the concrete implementation of the
+Moshi-context decision: send the Moshi/Open-S2S transcript beside the raw
+waveform, let Gemma use it as a clue, and require an adjudication outcome before
+the text can influence durable user wording or any action field.
 
 Lifecycle rules:
 

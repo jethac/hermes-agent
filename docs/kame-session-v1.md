@@ -52,6 +52,12 @@ External frontends may provide:
 - `ask_brain` / `openclaw_agent_consult` style oracle requests
 - cancellation and status correlation ids
 
+External frontends may submit reflex job envelopes for Hermes to normalize, but
+transcript-looking fields inside those envelopes remain
+`transcript_hypotheses[]`. A full KAME envelope requires the same raw-audio
+interpreter packet described below. Text-only envelopes are degraded
+compatibility and cannot create durable user text or action authority.
+
 External frontends must not receive or execute direct Hermes file, shell,
 memory, payment, provisioning, phone, message, or credential tools.
 
@@ -129,6 +135,13 @@ Minimum external frontend evidence/job-envelope shape:
     "channel_id": "redacted-channel",
     "surface": "desk_voice"
   },
+  "interpreter_input_order": ["raw_audio", "metadata", "reflex", "transcript_hypotheses"],
+  "interpreter_prompt_policy": {
+    "version": "raw_audio_compare_v1",
+    "raw_audio_primary": true,
+    "witness_transcripts_context_only": true,
+    "require_witness_adjudication": true
+  },
   "transcript_hypotheses": [
     {
       "kind": "frontend_witness_hypothesis",
@@ -154,6 +167,15 @@ is stable for the logical speech cut, including witness-before-audio and
 late-witness updates. `evidence_merge_key` is the audio-aware merge proof over
 the session, turn, and `audio_segment_ref`.
 
+`interpreter_input_order` and `interpreter_prompt_policy` are required whenever
+raw audio is available. They make the Moshi/Open-S2S context rule machine
+checkable: the interpreter receives the waveform first, then metadata, then
+reflex state, then transcript hypotheses, and the prompt explicitly treats
+those hypotheses as context to compare against audio. A frontend witness may
+help Gemma recover a clipped prefix, name, number, or code-switch, but the
+packet must still require witness adjudication before any durable wording or
+tool-critical field is promoted.
+
 `tool_name = "ask_brain"` is adapter-edge compatibility, not a direct Hermes
 tool grant. `arguments.provisional_request_summary` and
 `arguments.reflex_intent` are provisional frontend route/context fields for the
@@ -161,6 +183,10 @@ job envelope. They are allowed to help create queue state or a spoken
 acknowledgement, but they are not durable user text, not `oracle_text`, and not
 tool/action authority. Oracle text and high-risk action text must come from
 `interpreter_promoted` or `oracle_promoted` evidence.
+Queue state may be created from the reflex route plus accepted raw-audio packet.
+If the summary was derived from Moshi/Open-S2S/VoiceClaw transcript-looking
+text, it remains hypothesis context and must not schedule a job or populate
+`oracle_text` by itself.
 
 If the adapter cannot prove whether transcript-looking text came from the live
 reflex model or a sibling caption/S2S lane, it must use
@@ -206,6 +232,13 @@ This is intentionally boring metadata, but it prevents later adapters from
 turning Moshi text, classic ASR, or a reflex caption into the first prompt item
 Gemma sees. If raw audio is absent, the packet must omit `raw_audio` from the
 order, set degraded compatibility mode, and fail full-KAME/action-gate proofs.
+
+Normalized packets should also carry
+`interpreter_prompt_policy.version = "raw_audio_compare_v1"` for the normal
+path. That policy means the interpreter is asked to compare witness transcripts
+against raw audio, not to trust them as pre-transcribed user text. Adapters that
+cannot provide raw audio must use a degraded policy value and must not claim
+full KAME readiness.
 
 ## Transcript Hypothesis Semantics
 

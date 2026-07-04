@@ -223,6 +223,12 @@ Target KAME layout:
   labeled hypotheses field with source, timing/confidence when available,
   partial/final state, and `authority = "hypothesis"` so Gemma can accept,
   correct, or reject it instead of silently treating it as the user message.
+- Interpreter prompt policy rule: every complete raw-audio KAME bundle should
+  expose `interpreter_input_order = ["raw_audio", "metadata", "reflex", "transcript_hypotheses"]`
+  and `interpreter_prompt_policy.version = "raw_audio_compare_v1"`. This makes
+  the Moshi-context decision auditable: Moshi/Open-S2S text is sent beside raw
+  voice as a clue for Gemma, not ahead of raw voice as a transcript prompt and
+  not around Gemma as a separate Hermes turn.
 - Bundle schema rule: every speech cut creates one interpreter evidence bundle
   keyed by `turn_id` and `audio_segment_ref`. The bundle carries primary audio,
   VAD/energy timing, speaker metadata, channel/transport metadata, reflex route

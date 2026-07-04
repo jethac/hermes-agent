@@ -77,9 +77,9 @@ external and internal realtime frontends. The adapter may receive Moshi/open-S2S
 or classic-ASR witness text before the accepted audio cut, with the cut, or
 after the interpreter has started. All three cases must attach to one
 `turn_id`, one `audio_segment_ref`, one `evidence_bundle_id`, and one
-`evidence_merge_key`. The scheduler must hold early witness text on the pending
-bundle and append late witness text to the existing bundle; it must not create a
-duplicate oracle job or durable user turn.
+`evidence_merge_key`. The evidence merger/job manager must hold early witness
+text on the pending bundle and append late witness text to the existing bundle;
+witness text itself must not schedule jobs or durable turns.
 
 Runtime decision: every attached witness hypothesis should retain an
 `arrival_phase` of `before_raw_audio`, `with_raw_audio`, or
@@ -586,10 +586,10 @@ For external realtime clients, an oracle job is also the compatibility target
 for VoiceClaw/OpenClaw-style brain calls. A client may submit an
 `ask_brain`-shaped request, but Hermes must translate it into the same
 `OracleJob` shape used by Discord KAME sessions before it reaches the oracle.
-Text-only `ask_brain` requests are degraded and non-authoritative for
-high-risk actions unless raw-audio-grounded interpreter evidence exists. They
-may produce drafts, clarifications, or low-risk status, but they cannot satisfy
-Stripe/NemoClaw/phone/file/memory action gates through oracle-only promotion.
+Text-only `ask_brain` requests are explicitly degraded fallback. They may
+produce non-authoritative drafts, clarifications, or low-risk status, but they
+cannot create durable user text, satisfy action gates, or be promoted as full
+KAME evidence without the raw-audio interpreter packet.
 No external frontend should receive direct Hermes tools as a shortcut around
 the job manager.
 
@@ -993,7 +993,9 @@ Responsibilities:
   `audio_segment_ref`, `audio_time_range_ms`, `reflex_transcript_hypothesis`,
   `auxiliary_transcript_hypotheses`, and correlation ids, instead of flattening
   them into a single transcript string
-- create a normal oracle job with a Hermes session id and audit id
+- create a normal oracle job with a Hermes session id and audit id only after
+  raw-audio references are present in the same packet; otherwise mark the
+  envelope degraded and keep transcript evidence hypothesis-only
 - return an immediate accepted/queued/status placeholder to the frontend,
   including the same reflex-safe status projection used by spoken job controls
   and excluding raw transcript hypotheses, speaker/channel metadata, hidden
@@ -1182,7 +1184,7 @@ Add a local smoke report mode that proves:
   `["raw_audio", "metadata", "reflex", "transcript_hypotheses"]` for a complete
   raw-audio plus witness bundle
 - the smoke and VoiceOps artifacts also expose
-  `interpreter_prompt_policy = "raw_audio_compare_v1"` proving witness
+  `interpreter_prompt_policy.version = "raw_audio_compare_v1"` proving witness
   hypotheses are non-authoritative context, raw audio is primary evidence, and
   transcript-looking text cannot directly become `oracle_text`, durable
   transcript, spend reason, phone payload, or tool arguments
