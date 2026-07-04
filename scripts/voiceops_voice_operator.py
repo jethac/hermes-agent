@@ -40,6 +40,28 @@ LIVE_EVIDENCE_REQUIRED_GATES = (
     "production_sidecar",
     "live_turn",
 )
+LIVE_EVIDENCE_VALID_WITNESS_ARRIVAL_PHASES = {
+    "before_raw_audio",
+    "with_raw_audio",
+    "after_interpreter_start",
+}
+LIVE_EVIDENCE_VALID_HYPOTHESIS_KINDS = {
+    "frontend_witness_hypothesis",
+    "reflex_transcript_hypothesis",
+    "s2s_transcript_hypothesis",
+    "classic_asr_hypothesis",
+}
+LIVE_EVIDENCE_REQUIRED_INTERPRETER_INPUT_ORDER = (
+    "raw_audio",
+    "metadata",
+    "reflex",
+    "transcript_hypotheses",
+)
+LIVE_EVIDENCE_VALID_ADJUDICATION_OUTCOMES = {
+    "accepted_as_supporting_evidence",
+    "corrected_by_audio",
+    "rejected_or_diagnostic_only",
+}
 COLLECTOR_ATTESTATION_REQUIRED_FIELDS = (
     "collector_name",
     "collector_version",
@@ -835,6 +857,11 @@ def build_live_probe_evidence_template() -> dict[str, Any]:
             "audio_segment_ref_observed": False,
             "interpreter_evidence_observed": False,
             "transcript_hypotheses_labeled": False,
+            "witness_arrival_phases": [],
+            "interpreter_input_order": [],
+            "transcript_hypotheses": [],
+            "interpreter_adjudication_outcomes": [],
+            "promoted_evidence_authority": {},
             "assistant_audio_observed": False,
             "barge_in_observed": False,
             "spoken_reply_short": False,
@@ -921,6 +948,28 @@ def build_live_probe_evidence_example() -> dict[str, Any]:
             "audio_segment_ref_observed": True,
             "interpreter_evidence_observed": True,
             "transcript_hypotheses_labeled": True,
+            "witness_arrival_phases": ["with_raw_audio"],
+            "interpreter_input_order": [
+                "raw_audio",
+                "metadata",
+                "reflex",
+                "transcript_hypotheses",
+            ],
+            "transcript_hypotheses": [
+                {
+                    "kind": "frontend_witness_hypothesis",
+                    "source": "moshi",
+                    "text": "[redacted witness hypothesis]",
+                    "arrival_phase": "with_raw_audio",
+                    "authority": "hypothesis",
+                    "tool_authority": False,
+                }
+            ],
+            "interpreter_adjudication_outcomes": ["corrected_by_audio"],
+            "promoted_evidence_authority": {
+                "interpreter_corrected_transcript": "interpreter_promoted",
+                "interpreter_normalized_intent": "interpreter_promoted",
+            },
             "assistant_audio_observed": True,
             "barge_in_observed": True,
             "spoken_reply_short": True,
@@ -1220,6 +1269,109 @@ def _discord_probe_section(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     return {}
 
 
+def _normalized_string_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        values: list[Any] = [value]
+    elif isinstance(value, (list, tuple)):
+        values = list(value)
+    else:
+        return []
+    normalized: list[str] = []
+    for item in values:
+        text = str(item or "").strip()
+        if text:
+            normalized.append(text)
+    return normalized
+
+
+def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list[str], dict[str, bool]]:
+    issues: list[str] = []
+    hypotheses = live_turn.get("transcript_hypotheses")
+    if not isinstance(hypotheses, list) or not hypotheses:
+        issues.append("live_turn:missing_transcript_hypotheses")
+        hypotheses = []
+
+    valid_hypothesis_observed = False
+    hypothesis_phases: list[str] = []
+    for index, hypothesis in enumerate(hypotheses):
+        if not isinstance(hypothesis, Mapping):
+            issues.append(f"live_turn:transcript_hypothesis_{index}_not_object")
+            continue
+        kind = str(hypothesis.get("kind") or "").strip()
+        source = str(hypothesis.get("source") or "").strip()
+        authority = str(hypothesis.get("authority") or "").strip()
+        arrival_phase = str(hypothesis.get("arrival_phase") or "").strip()
+        if not kind:
+            issues.append(f"live_turn:transcript_hypothesis_{index}_missing_kind")
+        elif kind not in LIVE_EVIDENCE_VALID_HYPOTHESIS_KINDS:
+            issues.append(f"live_turn:transcript_hypothesis_{index}_invalid_kind")
+        if not source:
+            issues.append(f"live_turn:transcript_hypothesis_{index}_missing_source")
+        if authority != "hypothesis":
+            issues.append(f"live_turn:transcript_hypothesis_{index}_authority_not_hypothesis")
+        if hypothesis.get("tool_authority") is not False:
+            issues.append(f"live_turn:transcript_hypothesis_{index}_tool_authority_not_false")
+        if not arrival_phase:
+            issues.append(f"live_turn:transcript_hypothesis_{index}_missing_arrival_phase")
+        elif arrival_phase not in LIVE_EVIDENCE_VALID_WITNESS_ARRIVAL_PHASES:
+            issues.append(f"live_turn:transcript_hypothesis_{index}_invalid_arrival_phase")
+        else:
+            hypothesis_phases.append(arrival_phase)
+        if (
+            kind in LIVE_EVIDENCE_VALID_HYPOTHESIS_KINDS
+            and source
+            and authority == "hypothesis"
+            and hypothesis.get("tool_authority") is False
+            and arrival_phase in LIVE_EVIDENCE_VALID_WITNESS_ARRIVAL_PHASES
+        ):
+            valid_hypothesis_observed = True
+
+    declared_phases = _normalized_string_list(live_turn.get("witness_arrival_phases"))
+    if not declared_phases:
+        issues.append("live_turn:missing_witness_arrival_phases")
+    for phase in declared_phases:
+        if phase not in LIVE_EVIDENCE_VALID_WITNESS_ARRIVAL_PHASES:
+            issues.append("live_turn:invalid_witness_arrival_phase")
+    for phase in hypothesis_phases:
+        if phase not in declared_phases:
+            issues.append("live_turn:witness_arrival_phase_missing_hypothesis_phase")
+            break
+
+    input_order = tuple(_normalized_string_list(live_turn.get("interpreter_input_order")))
+    if not input_order:
+        issues.append("live_turn:missing_interpreter_input_order")
+    elif input_order != LIVE_EVIDENCE_REQUIRED_INTERPRETER_INPUT_ORDER:
+        issues.append("live_turn:interpreter_input_order_mismatch")
+
+    adjudication_outcomes = set(_normalized_string_list(live_turn.get("interpreter_adjudication_outcomes")))
+    valid_adjudication_observed = bool(adjudication_outcomes & LIVE_EVIDENCE_VALID_ADJUDICATION_OUTCOMES)
+    if not adjudication_outcomes:
+        issues.append("live_turn:missing_interpreter_adjudication_outcomes")
+    elif not valid_adjudication_observed:
+        issues.append("live_turn:invalid_interpreter_adjudication_outcome")
+
+    promoted_authority = live_turn.get("promoted_evidence_authority")
+    valid_promoted_authority_observed = False
+    if not isinstance(promoted_authority, Mapping) or not promoted_authority:
+        issues.append("live_turn:missing_promoted_evidence_authority")
+    else:
+        required_fields = ("interpreter_corrected_transcript", "interpreter_normalized_intent")
+        for field in required_fields:
+            if str(promoted_authority.get(field) or "").strip() != "interpreter_promoted":
+                issues.append(f"live_turn:promoted_evidence_authority_missing_{field}")
+        valid_promoted_authority_observed = all(
+            str(promoted_authority.get(field) or "").strip() == "interpreter_promoted"
+            for field in required_fields
+        )
+
+    return issues, {
+        "witness_packet_observed": valid_hypothesis_observed and bool(declared_phases),
+        "interpreter_input_order_observed": input_order == LIVE_EVIDENCE_REQUIRED_INTERPRETER_INPUT_ORDER,
+        "interpreter_adjudication_observed": valid_adjudication_observed,
+        "promoted_evidence_observed": valid_promoted_authority_observed,
+    }
+
+
 def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path] | None = None) -> dict[str, Any]:
     issues: list[str] = []
     if str(payload.get("schema_version") or "") != LIVE_EVIDENCE_SCHEMA_VERSION:
@@ -1393,6 +1545,8 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
     )
     if transcript_only_witness_rejected_for_full_kame:
         issues.append("live_turn:transcript_only_witness_without_raw_audio_interpreter_evidence")
+    witness_packet_issues, witness_packet_status = _live_turn_witness_packet_status(live_turn)
+    issues.extend(witness_packet_issues)
     first_audio_ms = _non_negative_number(live_turn.get("speech_end_to_first_audio_ms"))
     if first_audio_ms is None:
         issues.append("live_turn:missing_speech_end_to_first_audio_ms")
@@ -1445,6 +1599,7 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
             "ok": all(live_turn.get(key) is True for key in LIVE_EVIDENCE_REQUIRED_TURN_BOOLS)
             and kame_lineage_ids_complete
             and not transcript_only_witness_rejected_for_full_kame
+            and all(witness_packet_status.values())
             and first_audio_ms is not None
             and first_audio_ms <= 3000
             and barge_in_ms is not None
@@ -1457,6 +1612,7 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
             "raw_audio_interpreter_evidence_observed": raw_audio_interpreter_evidence_observed,
             "transcript_hypotheses_observed": transcript_hypotheses_observed,
             "transcript_only_witness_rejected_for_full_kame": transcript_only_witness_rejected_for_full_kame,
+            **witness_packet_status,
             "speech_end_to_first_audio_ms": first_audio_ms,
             "barge_in_stop_ms": barge_in_ms,
         },

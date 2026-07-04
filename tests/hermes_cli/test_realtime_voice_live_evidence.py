@@ -143,6 +143,22 @@ def _complete_live_turn():
         "interpreter_evidence_observed": True,
         "transcript_hypotheses_labeled": True,
         "witness_arrival_phases": ["before_raw_audio", "with_raw_audio", "after_interpreter_start"],
+        "interpreter_input_order": ["raw_audio", "metadata", "reflex", "transcript_hypotheses"],
+        "transcript_hypotheses": [
+            {
+                "kind": "frontend_witness_hypothesis",
+                "source": "moshi",
+                "text": "[redacted witness hypothesis]",
+                "arrival_phase": "with_raw_audio",
+                "authority": "hypothesis",
+                "tool_authority": False,
+            }
+        ],
+        "interpreter_adjudication_outcomes": ["corrected_by_audio"],
+        "promoted_evidence_authority": {
+            "interpreter_corrected_transcript": "interpreter_promoted",
+            "interpreter_normalized_intent": "interpreter_promoted",
+        },
         "assistant_audio_observed": True,
         "barge_in_observed": True,
         "spoken_reply_short": True,
@@ -233,8 +249,16 @@ def _alpha_realtime_voice_report(
                         "source": "moshi",
                         "text": "redacted hypothesis",
                         "arrival_phase": "after_interpreter_start",
+                        "authority": "hypothesis",
+                        "tool_authority": False,
                     }
                 ],
+                "interpreter_input_order": ["raw_audio", "metadata", "reflex", "transcript_hypotheses"],
+                "interpreter_adjudication_outcomes": ["corrected_by_audio"],
+                "promoted_evidence_authority": {
+                    "interpreter_corrected_transcript": "interpreter_promoted",
+                    "interpreter_normalized_intent": "interpreter_promoted",
+                },
                 "text": assistant_text,
                 **ALPHA_REQUIRED_SESSION_TURN_METADATA[text],
                 "transcript_final_ms": 10,
@@ -1079,11 +1103,67 @@ def test_live_evidence_derives_complete_sections_from_realtime_voice_report(monk
         "with_raw_audio",
         "after_interpreter_start",
     ]
+    assert live_turn["interpreter_input_order"] == [
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    ]
+    assert live_turn["transcript_hypotheses"][0]["kind"] == "frontend_witness_hypothesis"
+    assert live_turn["transcript_hypotheses"][0]["authority"] == "hypothesis"
+    assert live_turn["transcript_hypotheses"][0]["tool_authority"] is False
+    assert live_turn["interpreter_adjudication_outcomes"] == ["corrected_by_audio"]
+    assert live_turn["promoted_evidence_authority"] == {
+        "interpreter_corrected_transcript": "interpreter_promoted",
+        "interpreter_normalized_intent": "interpreter_promoted",
+    }
     assert live_turn["assistant_audio_observed"] is True
     assert live_turn["barge_in_observed"] is True
     assert live_turn["barge_in_stop_ms"] == 45.0
     for forbidden in ("assistant_text", "raw_transcript", "final_text", "assistant_final_text", "text"):
         assert forbidden not in live_turn
+
+
+def test_live_evidence_derivation_does_not_infer_observation_from_kame_ids(monkeypatch, tmp_path):
+    async def unexpected_loopback():
+        raise AssertionError("loopback probe should not run when deriving from an existing report")
+
+    async def unexpected_live(_args):
+        raise AssertionError("live Discord probe should not run when deriving from an existing report")
+
+    report = _alpha_realtime_voice_report(include_discord=True)
+    for entry in report:
+        if entry.get("kind") in {"session_turn", "audio_session"}:
+            entry.pop("audio_segment_ref_observed", None)
+            entry.pop("interpreter_evidence_observed", None)
+            entry["audio_bytes"] = 0
+            entry.pop("interpreter_input_order", None)
+            entry.pop("interpreter_adjudication_outcomes", None)
+            entry.pop("promoted_evidence_authority", None)
+    report_path = _write_json(tmp_path / "realtime-voice-report.json", report)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", unexpected_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", unexpected_live)
+
+    args = realtime_voice_live_evidence.build_parser().parse_args(
+        [
+            "--output-dir",
+            str(tmp_path / "bundle"),
+            "--from-realtime-voice-report",
+            str(report_path),
+        ]
+    )
+    result = asyncio.run(realtime_voice_live_evidence.collect_realtime_voice_live_evidence(args))
+
+    live_turn = json.loads((tmp_path / "bundle" / "live-turn.from-realtime-report.json").read_text(encoding="utf-8"))
+    assert result.ok is False
+    assert live_turn["turn_id"] == "voiceops-report-turn-001"
+    assert live_turn["audio_segment_ref"] == "artifact://redacted/voiceops-report-turn-001.wav"
+    assert live_turn["audio_segment_ref_observed"] is False
+    assert live_turn["interpreter_evidence_observed"] is False
+    assert "live_evidence_validation:live_turn:audio_segment_ref_observed_not_true" in result.issues
+    assert "live_evidence_validation:live_turn:interpreter_evidence_observed_not_true" in result.issues
+    assert "live_evidence_validation:live_turn:missing_interpreter_input_order" in result.issues
+    assert "live_turn" in result.strict_validation["missing_gates"]
 
 
 def test_live_evidence_collector_attestation_clamps_future_collected_at(monkeypatch):

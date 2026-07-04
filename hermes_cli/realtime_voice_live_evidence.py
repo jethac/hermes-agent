@@ -747,18 +747,24 @@ def _derive_live_turn_from_realtime_report(
         "evidence_merge_key",
         "kame_evidence_merge_key",
     )
-    audio_segment_ref_observed = bool(audio_segment_ref) or any(
-        entry.get("audio_segment_ref_observed") is True for entry in turn_entries
+    audio_segment_ref_observed = any(
+        entry.get("audio_segment_ref_observed") is True
+        or (str(entry.get("kind") or "") == "audio_session" and _positive_int(entry.get("audio_bytes")) > 0)
+        for entry in turn_entries
     )
-    interpreter_evidence_observed = bool(
-        evidence_bundle_id and evidence_merge_key and (turn_id or audio_segment_ref)
-    ) or any(entry.get("interpreter_evidence_observed") is True for entry in turn_entries)
+    interpreter_input_order = _interpreter_input_order_from_entries(turn_entries)
+    interpreter_adjudication_outcomes = _interpreter_adjudication_outcomes_from_entries(turn_entries)
+    promoted_evidence_authority = _promoted_evidence_authority_from_entries(turn_entries)
+    interpreter_evidence_observed = any(
+        entry.get("interpreter_evidence_observed") is True for entry in turn_entries
+    ) or bool(interpreter_input_order and interpreter_adjudication_outcomes and promoted_evidence_authority)
     transcript_hypotheses_labeled = any(
         entry.get("transcript_hypotheses_labeled") is True
         or _non_empty(entry.get("transcript_hypotheses"))
         for entry in turn_entries
     )
     witness_arrival_phases = _witness_arrival_phases_from_entries(turn_entries)
+    transcript_hypotheses = _transcript_hypotheses_from_entries(turn_entries)
     return {
         "kind": "live_turn",
         "source_artifact": str(report_path),
@@ -772,6 +778,10 @@ def _derive_live_turn_from_realtime_report(
         "interpreter_evidence_observed": bool(alpha_valid and interpreter_evidence_observed),
         "transcript_hypotheses_labeled": bool(alpha_valid and transcript_hypotheses_labeled),
         "witness_arrival_phases": witness_arrival_phases,
+        "interpreter_input_order": interpreter_input_order,
+        "transcript_hypotheses": transcript_hypotheses,
+        "interpreter_adjudication_outcomes": interpreter_adjudication_outcomes,
+        "promoted_evidence_authority": promoted_evidence_authority,
         "assistant_audio_observed": bool(alpha_valid and assistant_audio_observed),
         "barge_in_observed": bool(alpha_valid and isinstance(barge_in, dict) and barge_in.get("ok") is True),
         "spoken_reply_short": bool(alpha_valid and spoken_reply_short),
@@ -841,6 +851,99 @@ def _witness_arrival_phases_from_mapping(payload: dict[str, Any]) -> list[str]:
         if phase in {"before_raw_audio", "with_raw_audio", "after_interpreter_start"}:
             phases.append(phase)
     return phases
+
+
+def _transcript_hypotheses_from_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    hypotheses: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for entry in entries:
+        for payload in (entry, entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}):
+            raw_hypotheses = payload.get("transcript_hypotheses") if isinstance(payload, dict) else None
+            if not isinstance(raw_hypotheses, list):
+                continue
+            for raw in raw_hypotheses:
+                if not isinstance(raw, dict):
+                    continue
+                hypothesis: dict[str, Any] = {}
+                for key in (
+                    "kind",
+                    "source",
+                    "text",
+                    "arrival_phase",
+                    "authority",
+                    "tool_authority",
+                    "partial",
+                    "confidence",
+                    "latency_ms",
+                ):
+                    if key in raw:
+                        hypothesis[key] = raw[key]
+                if "text" in hypothesis:
+                    hypothesis["text"] = str(hypothesis["text"] or "")[:240]
+                identity = (
+                    str(hypothesis.get("kind") or ""),
+                    str(hypothesis.get("source") or ""),
+                    str(hypothesis.get("arrival_phase") or ""),
+                    str(hypothesis.get("text") or ""),
+                )
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                hypotheses.append(hypothesis)
+    return hypotheses
+
+
+def _interpreter_input_order_from_entries(entries: list[dict[str, Any]]) -> list[str]:
+    for entry in entries:
+        for payload in (entry, entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}):
+            if not isinstance(payload, dict):
+                continue
+            raw = payload.get("interpreter_input_order") or payload.get("latest_interpreter_input_order")
+            if isinstance(raw, (list, tuple)):
+                values = [str(value or "").strip() for value in raw if str(value or "").strip()]
+                if values:
+                    return values
+    return []
+
+
+def _interpreter_adjudication_outcomes_from_entries(entries: list[dict[str, Any]]) -> list[str]:
+    outcomes: list[str] = []
+    for entry in entries:
+        for payload in (entry, entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}):
+            if not isinstance(payload, dict):
+                continue
+            raw_outcomes = payload.get("interpreter_adjudication_outcomes") or payload.get(
+                "witness_adjudication_outcomes"
+            )
+            raw_adjudications = payload.get("witness_adjudications") or payload.get("interpreter_adjudications")
+            for raw in (raw_outcomes if isinstance(raw_outcomes, list) else []):
+                outcome = str(raw or "").strip()
+                if outcome and outcome not in outcomes:
+                    outcomes.append(outcome)
+            if isinstance(raw_adjudications, list):
+                for adjudication in raw_adjudications:
+                    if isinstance(adjudication, dict):
+                        outcome = str(adjudication.get("outcome") or "").strip()
+                        if outcome and outcome not in outcomes:
+                            outcomes.append(outcome)
+    return outcomes
+
+
+def _promoted_evidence_authority_from_entries(entries: list[dict[str, Any]]) -> dict[str, str]:
+    for entry in entries:
+        for payload in (entry, entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}):
+            if not isinstance(payload, dict):
+                continue
+            raw = payload.get("promoted_evidence_authority") or payload.get("promoted_fields_authority")
+            if isinstance(raw, dict):
+                promoted = {
+                    str(key): str(value)
+                    for key, value in raw.items()
+                    if str(key or "").strip() and str(value or "").strip()
+                }
+                if promoted:
+                    return promoted
+    return {}
 
 
 def _first_passing_entry(entries: list[dict[str, Any]], kind: str) -> dict[str, Any] | None:
@@ -1120,17 +1223,43 @@ def _optional_evidence_structural_issues(report_key: str, payload: dict[str, Any
             false_fields=("shutdown_timed_out",),
         )
     if report_key == "live_turn":
-        return _missing_required_optional_fields(
+        issues = _missing_required_optional_fields(
             payload,
             (
                 "transcript_observed",
+                "audio_segment_ref_observed",
+                "interpreter_evidence_observed",
+                "transcript_hypotheses_labeled",
                 "assistant_audio_observed",
                 "barge_in_observed",
                 "spoken_reply_short",
                 "no_voice_denial_observed",
             ),
+            required_strings=(
+                "turn_id",
+                "audio_segment_ref",
+                "evidence_bundle_id",
+                "evidence_merge_key",
+            ),
             nested_numbers=("speech_end_to_first_audio_ms", "barge_in_stop_ms"),
         )
+        if not isinstance(payload.get("transcript_hypotheses"), list) or not payload.get("transcript_hypotheses"):
+            issues.append("transcript_hypotheses must contain at least one redacted hypothesis")
+        if not isinstance(payload.get("witness_arrival_phases"), list) or not payload.get("witness_arrival_phases"):
+            issues.append("witness_arrival_phases must contain at least one phase")
+        expected_order = ["raw_audio", "metadata", "reflex", "transcript_hypotheses"]
+        if payload.get("interpreter_input_order") != expected_order:
+            issues.append("interpreter_input_order must be raw_audio, metadata, reflex, transcript_hypotheses")
+        if (
+            not isinstance(payload.get("interpreter_adjudication_outcomes"), list)
+            or not payload.get("interpreter_adjudication_outcomes")
+        ):
+            issues.append("interpreter_adjudication_outcomes must contain at least one outcome")
+        if not isinstance(payload.get("promoted_evidence_authority"), dict) or not payload.get(
+            "promoted_evidence_authority"
+        ):
+            issues.append("promoted_evidence_authority must contain promoted interpreter fields")
+        return issues
     return []
 
 

@@ -948,6 +948,28 @@ def _complete_live_evidence() -> dict:
             "audio_segment_ref_observed": True,
             "interpreter_evidence_observed": True,
             "transcript_hypotheses_labeled": True,
+            "witness_arrival_phases": ["with_raw_audio"],
+            "interpreter_input_order": [
+                "raw_audio",
+                "metadata",
+                "reflex",
+                "transcript_hypotheses",
+            ],
+            "transcript_hypotheses": [
+                {
+                    "kind": "frontend_witness_hypothesis",
+                    "source": "moshi",
+                    "text": "[redacted witness hypothesis]",
+                    "arrival_phase": "with_raw_audio",
+                    "authority": "hypothesis",
+                    "tool_authority": False,
+                }
+            ],
+            "interpreter_adjudication_outcomes": ["corrected_by_audio"],
+            "promoted_evidence_authority": {
+                "interpreter_corrected_transcript": "interpreter_promoted",
+                "interpreter_normalized_intent": "interpreter_promoted",
+            },
             "assistant_audio_observed": True,
             "barge_in_observed": True,
             "spoken_reply_short": True,
@@ -2684,6 +2706,10 @@ def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing
     assert live_evidence["live_turn"]["raw_audio_interpreter_evidence_observed"] is True
     assert live_evidence["live_turn"]["transcript_hypotheses_observed"] is True
     assert live_evidence["live_turn"]["transcript_only_witness_rejected_for_full_kame"] is False
+    assert live_evidence["live_turn"]["witness_packet_observed"] is True
+    assert live_evidence["live_turn"]["interpreter_input_order_observed"] is True
+    assert live_evidence["live_turn"]["interpreter_adjudication_observed"] is True
+    assert live_evidence["live_turn"]["promoted_evidence_observed"] is True
     assert not any("collector_attestation" in issue for issue in live_evidence["issues"])
 
 
@@ -2724,6 +2750,56 @@ def test_live_evidence_rejects_transcript_only_witness_for_full_kame():
     assert live_evidence["live_turn"]["raw_audio_interpreter_evidence_observed"] is False
     assert live_evidence["live_turn"]["transcript_hypotheses_observed"] is True
     assert live_evidence["live_turn"]["transcript_only_witness_rejected_for_full_kame"] is True
+    assert live_evidence["live_turn"]["ok"] is False
+
+
+def test_live_evidence_rejects_labeled_hypothesis_without_concrete_packet():
+    evidence = _complete_live_evidence()
+    evidence["live_turn"].pop("transcript_hypotheses")
+    evidence["live_turn"].pop("interpreter_input_order")
+    evidence["live_turn"].pop("interpreter_adjudication_outcomes")
+    evidence["live_turn"].pop("promoted_evidence_authority")
+    evidence["live_turn"]["witness_arrival_phases"] = []
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert live_evidence["overall_status"] == "partial_live_evidence"
+    assert "live_turn:missing_transcript_hypotheses" in live_evidence["issues"]
+    assert "live_turn:missing_witness_arrival_phases" in live_evidence["issues"]
+    assert "live_turn:missing_interpreter_input_order" in live_evidence["issues"]
+    assert "live_turn:missing_interpreter_adjudication_outcomes" in live_evidence["issues"]
+    assert "live_turn:missing_promoted_evidence_authority" in live_evidence["issues"]
+    assert live_evidence["live_turn"]["witness_packet_observed"] is False
+    assert live_evidence["live_turn"]["interpreter_input_order_observed"] is False
+    assert live_evidence["live_turn"]["interpreter_adjudication_observed"] is False
+    assert live_evidence["live_turn"]["promoted_evidence_observed"] is False
+    assert live_evidence["live_turn"]["ok"] is False
+
+
+def test_live_evidence_rejects_authoritative_or_unphased_witness_hypothesis():
+    evidence = _complete_live_evidence()
+    evidence["live_turn"]["transcript_hypotheses"] = [
+        {
+            "kind": "frontend_witness_hypothesis",
+            "source": "moshi",
+            "text": "[redacted witness hypothesis]",
+            "authority": "interpreter_promoted",
+            "tool_authority": True,
+        }
+    ]
+    evidence["live_turn"]["interpreter_input_order"] = [
+        "transcript_hypotheses",
+        "raw_audio",
+        "metadata",
+        "reflex",
+    ]
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert "live_turn:transcript_hypothesis_0_authority_not_hypothesis" in live_evidence["issues"]
+    assert "live_turn:transcript_hypothesis_0_tool_authority_not_false" in live_evidence["issues"]
+    assert "live_turn:transcript_hypothesis_0_missing_arrival_phase" in live_evidence["issues"]
+    assert "live_turn:interpreter_input_order_mismatch" in live_evidence["issues"]
     assert live_evidence["live_turn"]["ok"] is False
 
 
