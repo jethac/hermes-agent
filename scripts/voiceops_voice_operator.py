@@ -147,6 +147,16 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_session_client_interface_oracle_request_submits_external_kame_job",
         "tests/agent/test_realtime_voice_async_oracle_smoke.py::test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation",
     ],
+    "durable_resume": [
+        "tests/agent/test_realtime_voice.py::test_kame_resume_context_uses_promoted_turns_and_excludes_hypotheses",
+        "tests/agent/test_realtime_voice_async_oracle_smoke.py::test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation",
+    ],
+    "hypothesis_final_durability": [
+        "tests/agent/test_realtime_voice.py::test_kame_session_treats_hypothesis_final_as_non_durable_without_adapter_flag",
+        "tests/agent/test_realtime_voice.py::test_kame_session_treats_witness_sourced_interface_intent_as_non_durable",
+        "tests/agent/test_realtime_voice.py::test_kame_session_keeps_explicit_asr_fallback_final_durable",
+        "tests/agent/test_realtime_voice_async_oracle_smoke.py::test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation",
+    ],
     "witness_fusion": [
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_kame_evidence_bundle_id_is_stable_across_audio_availability_changes",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_interpreter_evidence_updates_queued_job_before_execution",
@@ -1811,6 +1821,14 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("unpromoted_hypothesis_not_file_write") is True
         and smoke.get("unpromoted_hypothesis_not_message_payload") is True
         and smoke.get("unpromoted_hypothesis_update_observed") is True,
+        "hypothesis_final_events_non_durable": smoke.get("hypothesis_final_durable_message_smoke_ok") is True
+        and smoke.get("hypothesis_final_durable_messages_empty") is True
+        and int(smoke.get("hypothesis_final_durable_message_count") or 0) == 0
+        and smoke.get("hypothesis_final_without_adapter_flag_non_durable") is True
+        and smoke.get("hypothesis_final_witness_intent_non_durable") is True
+        and smoke.get("explicit_asr_fallback_final_remains_durable") is True
+        and smoke.get("explicit_asr_fallback_durable_messages")
+        == [{"role": "user", "content": "check deployment status"}],
         "external_frontend_bridge_submits_oracle_job": smoke.get("external_frontend_bridge_smoke_ok") is True
         and smoke.get("external_frontend_request_accepted") is True
         and smoke.get("external_frontend_tool_result_observed") is True
@@ -1833,6 +1851,13 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("external_frontend_terminal_correlation_observed") is True
         and smoke.get("external_frontend_audit_id_continuity_observed") is True
         and smoke.get("external_frontend_direct_tool_authority_exposed") is False,
+        "durable_promoted_turn_resume_contract": smoke.get("durable_resume_contract_smoke_ok") is True
+        and smoke.get("durable_resume_contract_schema_version") == "voiceops.kame_durable_resume_context.v1"
+        and int(smoke.get("durable_resume_promoted_turn_count") or 0) >= 4
+        and smoke.get("durable_resume_recent_promoted_turns_verbatim") is True
+        and smoke.get("durable_resume_older_turns_summarized") is True
+        and smoke.get("durable_resume_hypothesis_replay_absent") is True
+        and smoke.get("durable_resume_ledger_authoritative") is True,
         "witness_fusion_timing_preserves_single_bundle": smoke.get("witness_fusion_timing_smoke_ok") is True
         and smoke.get("witness_fusion_early_single_bundle") is True
         and smoke.get("witness_fusion_with_single_bundle") is True
@@ -1887,7 +1912,7 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         == {
             "early": [],
             "with": [],
-            "late": ["wrong_speaker", "wrong_channel", "stale_witness"],
+            "late": ["ambiguous_speaker", "wrong_speaker", "wrong_channel", "stale_witness"],
         },
         "interpreter_prompt_input_order_visible": smoke.get(
             "witness_fusion_interpreter_prompt_input_order_visible"
@@ -2246,10 +2271,24 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             verification_mode="loopback_smoke_plus_focused_tests",
             runtime_verified_by_this_report=True,
         ),
+        "hypothesis_final_events_stay_non_durable": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("hypothesis_final_events_non_durable")),
+            evidence="async_oracle_smoke_plus_session_persistence_tests",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["hypothesis_final_durability"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
         "external_frontend_bridge_submits_oracle_job": _async_oracle_acceptance_row(
             ok=smoke_ok and bool(async_oracle_coverage.get("external_frontend_bridge_submits_oracle_job")),
             evidence="async_oracle_smoke_plus_external_frontend_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["external_frontend_bridge"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "durable_promoted_turn_resume_contract": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("durable_promoted_turn_resume_contract")),
+            evidence="async_oracle_smoke_plus_durable_resume_tests",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["durable_resume"],
             verification_mode="loopback_smoke_plus_focused_tests",
             runtime_verified_by_this_report=True,
         ),
@@ -2939,6 +2978,57 @@ def build_voice_operator_report(
             "external_frontend_event_counts": dict(
                 async_oracle_smoke.get("external_frontend_event_counts") or {}
             ),
+            "durable_resume_contract_smoke_ok": bool(
+                async_oracle_smoke.get("durable_resume_contract_smoke_ok")
+            ),
+            "durable_resume_contract_schema_version": async_oracle_smoke.get(
+                "durable_resume_contract_schema_version"
+            ),
+            "durable_resume_promoted_turn_count": async_oracle_smoke.get(
+                "durable_resume_promoted_turn_count"
+            ),
+            "durable_resume_recent_promoted_turns_verbatim": bool(
+                async_oracle_smoke.get("durable_resume_recent_promoted_turns_verbatim")
+            ),
+            "durable_resume_recent_promoted_turns": list(
+                async_oracle_smoke.get("durable_resume_recent_promoted_turns") or []
+            ),
+            "durable_resume_older_turns_summarized": bool(
+                async_oracle_smoke.get("durable_resume_older_turns_summarized")
+            ),
+            "durable_resume_older_promoted_turn_count": async_oracle_smoke.get(
+                "durable_resume_older_promoted_turn_count"
+            ),
+            "durable_resume_older_promoted_turn_summary": async_oracle_smoke.get(
+                "durable_resume_older_promoted_turn_summary"
+            ),
+            "durable_resume_hypothesis_replay_absent": bool(
+                async_oracle_smoke.get("durable_resume_hypothesis_replay_absent")
+            ),
+            "durable_resume_ledger_authoritative": bool(
+                async_oracle_smoke.get("durable_resume_ledger_authoritative")
+            ),
+            "hypothesis_final_durable_message_smoke_ok": bool(
+                async_oracle_smoke.get("hypothesis_final_durable_message_smoke_ok")
+            ),
+            "hypothesis_final_durable_messages_empty": bool(
+                async_oracle_smoke.get("hypothesis_final_durable_messages_empty")
+            ),
+            "hypothesis_final_durable_message_count": async_oracle_smoke.get(
+                "hypothesis_final_durable_message_count"
+            ),
+            "hypothesis_final_without_adapter_flag_non_durable": bool(
+                async_oracle_smoke.get("hypothesis_final_without_adapter_flag_non_durable")
+            ),
+            "hypothesis_final_witness_intent_non_durable": bool(
+                async_oracle_smoke.get("hypothesis_final_witness_intent_non_durable")
+            ),
+            "explicit_asr_fallback_final_remains_durable": bool(
+                async_oracle_smoke.get("explicit_asr_fallback_final_remains_durable")
+            ),
+            "explicit_asr_fallback_durable_messages": list(
+                async_oracle_smoke.get("explicit_asr_fallback_durable_messages") or []
+            ),
             "unpromoted_hypothesis_smoke_ok": bool(
                 async_oracle_smoke.get("unpromoted_hypothesis_smoke_ok")
             ),
@@ -3494,6 +3584,9 @@ def build_voice_operator_report(
             "async_oracle_transcript_hypotheses_unpromoted": async_oracle_coverage[
                 "transcript_hypotheses_remain_unpromoted"
             ],
+            "async_oracle_hypothesis_final_events_non_durable": async_oracle_coverage[
+                "hypothesis_final_events_non_durable"
+            ],
             "async_oracle_witness_fusion_single_bundle": async_oracle_coverage[
                 "witness_fusion_timing_preserves_single_bundle"
             ],
@@ -3520,6 +3613,9 @@ def build_voice_operator_report(
             ],
             "async_oracle_runtime_kame_action_gate": async_oracle_coverage[
                 "runtime_kame_action_gate_enforced"
+            ],
+            "async_oracle_durable_promoted_turn_resume_contract": async_oracle_coverage[
+                "durable_promoted_turn_resume_contract"
             ],
             "async_oracle_unflagged_high_risk_tool_fails_closed": async_oracle_coverage[
                 "unflagged_high_risk_tool_event_fails_closed"
@@ -3655,6 +3751,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "failed_job_reported_without_crash",
         "job_control_updates_reach_oracle",
         "transcript_hypotheses_remain_unpromoted",
+        "hypothesis_final_events_non_durable",
         "external_frontend_bridge_submits_oracle_job",
         "witness_fusion_timing_preserves_single_bundle",
         "witness_fusion_accepted_audio_gate_visible",
@@ -3665,6 +3762,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "energy_gate_ignores_non_speech_without_work",
         "kame_ack_latency_metrics_visible",
         "runtime_kame_action_gate_enforced",
+        "durable_promoted_turn_resume_contract",
         "unflagged_high_risk_tool_event_fails_closed",
         "result_handling_bounded_and_durable",
         "discord_session_cleanup_preserves_oracle_state",

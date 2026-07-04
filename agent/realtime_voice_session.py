@@ -218,6 +218,25 @@ class RealtimeVoiceSession:
             for record in self.transcript.committed_oracle_records
         ]
 
+    def durable_resume_context(self, *, recent_turn_limit: int = 4) -> Dict[str, Any]:
+        """Build restart/resume context from promoted durable oracle records only."""
+
+        promoted_turns = _promoted_resume_turns_from_oracle_records(self.durable_oracle_records())
+        limit = max(0, int(recent_turn_limit))
+        older_turns = promoted_turns[:-limit] if limit else promoted_turns
+        recent_turns = promoted_turns[-limit:] if limit else []
+        return {
+            "schema_version": "voiceops.kame_durable_resume_context.v1",
+            "source": "durable_oracle_records",
+            "ledger_authoritative": True,
+            "recent_turn_limit": limit,
+            "promoted_turn_count": len(promoted_turns),
+            "recent_promoted_turns": recent_turns,
+            "older_promoted_turn_summary": _summarize_older_promoted_turns(older_turns),
+            "older_promoted_turn_count": len(older_turns),
+            "hypothesis_replay_absent": _resume_context_has_no_hypothesis_text(recent_turns),
+        }
+
     def _apply_server_event(self, event: VoiceEvent) -> None:
         if event.type == VoiceEventType.TRANSCRIPT_PARTIAL:
             self.transcript.partial_user_text = str(event.payload.get("text") or "")
@@ -552,6 +571,56 @@ def _durable_record_is_oracle_job_cancelled(record: Mapping[str, Any], job_id: s
     )
 
 
+def _promoted_resume_turns_from_oracle_records(records: List[dict]) -> List[dict]:
+    turns: List[dict] = []
+    for record in records:
+        if record.get("type") != VoiceEventType.INTERFACE_ORACLE_REQUEST.value:
+            continue
+        payload = record.get("payload") if isinstance(record.get("payload"), Mapping) else {}
+        source = str(payload.get("oracle_text_source") or payload.get("text_source") or "").strip()
+        if not _durable_oracle_text_source_is_promoted(
+            source,
+            allow_asr=payload.get("interface_audio_input_fallback") is True
+            or payload.get("kame_interface_audio_input_fallback") is True,
+        ):
+            continue
+        text = str(payload.get("oracle_text") or payload.get("text") or "").strip()
+        if not text:
+            continue
+        turns.append(
+            {
+                "turn_id": str(payload.get("turn_id") or payload.get("kame_turn_id") or "").strip(),
+                "text": text,
+                "source": source,
+                "authority": "promoted",
+            }
+        )
+    return turns
+
+
+def _summarize_older_promoted_turns(turns: List[dict]) -> str:
+    if not turns:
+        return ""
+    ids = [str(turn.get("turn_id") or "").strip() for turn in turns if str(turn.get("turn_id") or "").strip()]
+    suffix = f": {', '.join(ids)}" if ids else ""
+    return f"{len(turns)} older promoted voice turn(s) summarized from durable oracle ledger{suffix}."
+
+
+def _resume_context_has_no_hypothesis_text(recent_turns: List[dict]) -> bool:
+    serialized = str(recent_turns).lower()
+    return not any(
+        marker in serialized
+        for marker in (
+            "hypothesis",
+            "frontend_witness",
+            "s2s_transcript",
+            "classic_asr",
+            "reflex_transcript",
+            "moshi",
+        )
+    )
+
+
 def _redacted_durable_oracle_payload(event: VoiceEvent) -> dict:
     payload = _durable_oracle_payload(event)
     return _redacted_durable_oracle_mapping(payload)
@@ -726,7 +795,50 @@ def _payload_is_kame(payload: Mapping[str, Any]) -> bool:
 def _payload_non_durable(payload: Mapping[str, Any]) -> bool:
     if payload.get("durable") is False:
         return True
-    return payload.get("oracle_job_status_poll") is True
+    if payload.get("oracle_job_status_poll") is True:
+        return True
+    return _payload_is_hypothesis_only_user_event(payload)
+
+
+def _payload_is_hypothesis_only_user_event(payload: Mapping[str, Any]) -> bool:
+    authority = str(payload.get("authority") or payload.get("kame_authority") or "").strip().lower()
+    if authority in {"hypothesis", "auxiliary_hypothesis", "diagnostic_only"}:
+        return True
+
+    kind = str(payload.get("kind") or payload.get("hypothesis_kind") or "").strip().lower()
+    if kind in {
+        "frontend_witness_hypothesis",
+        "reflex_transcript_hypothesis",
+        "s2s_transcript_hypothesis",
+        "classic_asr_hypothesis",
+        "asr_transcript_hypothesis",
+    }:
+        return True
+
+    intent_source = str(
+        payload.get("kame_intent_source")
+        or payload.get("intent_source")
+        or payload.get("oracle_text_source")
+        or payload.get("kame_oracle_text_source")
+        or ""
+    ).strip().lower()
+    if intent_source in {"asr", "asr_fallback"} and (
+        payload.get("kame_interface_audio_input_fallback") is True
+        or payload.get("interface_audio_input_fallback") is True
+    ):
+        return False
+    return intent_source in {
+        "frontend_witness_hypothesis",
+        "reflex_transcript_hypothesis",
+        "s2s_transcript_hypothesis",
+        "classic_asr_hypothesis",
+        "asr_transcript_hypothesis",
+        "moshi",
+        "openclaw",
+        "voiceclaw",
+        "asr",
+        "asr_fallback",
+    }
 
 
 def _oracle_record_is_ephemeral(event: VoiceEvent) -> bool:

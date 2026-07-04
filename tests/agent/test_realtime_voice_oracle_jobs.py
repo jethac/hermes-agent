@@ -895,7 +895,7 @@ async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witn
                 "source": "moshi",
                 "kind": "frontend_witness_hypothesis",
                 "text": "provision the phone account",
-                "speaker": {"channel_user_id": "other-user", "display_name": "guest"},
+                "speaker": {"channel_user_id": "other-user", "display_name": "guest", "ambiguous": True},
                 "channel": {"guild_id": "guild-1", "channel_id": "general"},
                 "audio_time_range_ms": [1100, 1800],
                 "adjudication": "accepted_as_supporting_evidence",
@@ -940,11 +940,11 @@ async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witn
             "authority": "hypothesis",
             "tool_authority": False,
             "kind": "frontend_witness_hypothesis",
-            "speaker": {"channel_user_id": "other-user", "display_name": "guest"},
+            "speaker": {"channel_user_id": "other-user", "display_name": "guest", "ambiguous": True},
             "channel": {"guild_id": "guild-1", "channel_id": "general"},
             "audio_time_range_ms": (1100, 1800),
             "adjudication": "rejected_or_diagnostic_only",
-            "rejection_reasons": ("wrong_speaker",),
+            "rejection_reasons": ("ambiguous_speaker", "wrong_speaker"),
         },
         {
             "source": "moshi",
@@ -973,7 +973,7 @@ async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witn
     )
     assert queued_status["transcript_hypotheses_count"] == 3
     assert [item["rejection_reasons"] for item in queued_status["transcript_hypotheses"]] == [
-        ("wrong_speaker",),
+        ("ambiguous_speaker", "wrong_speaker"),
         ("stale_witness",),
         ("wrong_channel",),
     ]

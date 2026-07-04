@@ -1937,6 +1937,59 @@ async def build_plan_run_async(
                     "external_frontend_direct_tool_authority_exposed": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_direct_tool_authority_exposed"],
+                    "durable_resume_contract_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
+                        "durable_resume_contract_smoke_ok"
+                    ],
+                    "durable_resume_contract_schema_version": voice_operator["proofs"]["async_oracle_jobs"][
+                        "durable_resume_contract_schema_version"
+                    ],
+                    "durable_resume_promoted_turn_count": voice_operator["proofs"]["async_oracle_jobs"][
+                        "durable_resume_promoted_turn_count"
+                    ],
+                    "durable_resume_recent_promoted_turns_verbatim": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["durable_resume_recent_promoted_turns_verbatim"],
+                    "durable_resume_recent_promoted_turns": list(
+                        voice_operator["proofs"]["async_oracle_jobs"]["durable_resume_recent_promoted_turns"]
+                    ),
+                    "durable_resume_older_turns_summarized": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["durable_resume_older_turns_summarized"],
+                    "durable_resume_older_promoted_turn_count": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["durable_resume_older_promoted_turn_count"],
+                    "durable_resume_older_promoted_turn_summary": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["durable_resume_older_promoted_turn_summary"],
+                    "durable_resume_hypothesis_replay_absent": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["durable_resume_hypothesis_replay_absent"],
+                    "durable_resume_ledger_authoritative": voice_operator["proofs"]["async_oracle_jobs"][
+                        "durable_resume_ledger_authoritative"
+                    ],
+                    "hypothesis_final_durable_message_smoke_ok": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["hypothesis_final_durable_message_smoke_ok"],
+                    "hypothesis_final_durable_messages_empty": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["hypothesis_final_durable_messages_empty"],
+                    "hypothesis_final_durable_message_count": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["hypothesis_final_durable_message_count"],
+                    "hypothesis_final_without_adapter_flag_non_durable": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["hypothesis_final_without_adapter_flag_non_durable"],
+                    "hypothesis_final_witness_intent_non_durable": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["hypothesis_final_witness_intent_non_durable"],
+                    "explicit_asr_fallback_final_remains_durable": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["explicit_asr_fallback_final_remains_durable"],
+                    "explicit_asr_fallback_durable_messages": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "explicit_asr_fallback_durable_messages"
+                        ]
+                    ),
                     "unpromoted_hypothesis_action_sinks_clean": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["unpromoted_hypothesis_action_sinks_clean"],

@@ -14587,6 +14587,81 @@ def test_external_kame_audio_metadata_without_segment_ref_is_degraded():
     }
 
 
+def test_external_kame_transcript_hypotheses_preserve_binding_metadata_and_ambiguous_reasons():
+    request = kame_external_brain_request_to_oracle_request(
+        {
+            "tool_name": "ask_brain",
+            "arguments": {
+                "query": "prepare the handoff",
+                "interface_already_said": "I'm preparing the handoff.",
+            },
+            "audio": {
+                "segment_ref": "artifact://voiceclaw/ambiguous-turn.wav",
+                "time_range_ms": [1200, 2600],
+                "vad": {"speech_start_ms": 1200, "speech_end_ms": 2600},
+                "authority": "primary_audio",
+            },
+            "transcript_hypotheses": [
+                {
+                    "source": "moshi",
+                    "text": "spend two hundred dollars",
+                    "authority": "hypothesis",
+                    "partial": False,
+                    "superseded_partial_texts": ["spend two hundred"],
+                    "speaker_guess": {
+                        "platform": "discord",
+                        "channel_user_id": "other-user",
+                        "display_name": "guest",
+                        "ambiguous": True,
+                    },
+                    "channel_guess": {
+                        "transport": "discord_voice",
+                        "guild_id": "guild-1",
+                        "channel_id": "general",
+                    },
+                    "audio_time_range_ms": [1250, 2550],
+                    "adjudication": "rejected_or_diagnostic_only",
+                    "rejection_reasons": ["ambiguous-speaker", "wrong_speaker"],
+                }
+            ],
+        },
+        session_id="external-kame-ambiguous-binding",
+        turn_id="external-kame-ambiguous-binding:1",
+        source="voiceclaw",
+        user_id="jetha",
+    )
+
+    expected_hypothesis = {
+        "source": "moshi",
+        "text": "spend two hundred dollars",
+        "authority": "hypothesis",
+        "tool_authority": False,
+        "kind": "frontend_witness_hypothesis",
+        "partial": False,
+        "superseded_partial_texts": ("spend two hundred",),
+        "speaker": {
+            "platform": "discord",
+            "channel_user_id": "other-user",
+            "display_name": "guest",
+            "ambiguous": True,
+        },
+        "channel": {
+            "transport": "discord_voice",
+            "guild_id": "guild-1",
+            "channel_id": "general",
+        },
+        "audio_time_range_ms": (1250, 2550),
+        "adjudication": "rejected_or_diagnostic_only",
+        "rejection_reasons": ("ambiguous_speaker", "wrong_speaker"),
+    }
+
+    metadata = request.to_metadata()
+    assert request.auxiliary_transcript_hypotheses == (expected_hypothesis,)
+    assert metadata["kame_transcript_hypotheses"] == (expected_hypothesis,)
+    assert request.oracle_text == "prepare the handoff"
+    assert "spend two hundred dollars" not in request.oracle_text
+
+
 def test_external_kame_bridge_arguments_preserve_top_level_evidence_bundle_fields():
     arguments = _external_kame_bridge_arguments(
         {
@@ -15173,9 +15248,11 @@ def test_session_client_interface_oracle_request_submits_external_kame_job(monke
                 session_id="voice-123",
                 sequence=1,
                 payload={
+                    "protocol": "kame_session_v1",
                     "tool": "ask_brain",
                     "tool_call_id": "call-1",
-                    "text": "prepare an external frontend result",
+                    "turn_id": "voice-123:voiceclaw:1",
+                    "query": "prepare an external frontend result",
                     "source": "voiceclaw",
                     "interface_already_said": "I'm preparing that result.",
                 },
@@ -15217,6 +15294,229 @@ def test_session_client_interface_oracle_request_submits_external_kame_job(monke
     asyncio.run(run())
 
 
+def test_session_client_external_oracle_request_treats_top_level_text_as_witness(monkeypatch):
+    class BlockingOracle:
+        def __init__(self):
+            self.requests = []
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.started.set()
+            await self.release.wait()
+            yield "I prepared the safe envelope."
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            pass
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = BlockingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+            ),
+            engine=engine,
+        )
+        await session.start()
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "protocol": "kame_session_v1",
+                    "tool": "ask_brain",
+                    "tool_call_id": "call-text-witness",
+                    "turn_id": "voice-123:voiceclaw:text-witness",
+                    "source": "voiceclaw",
+                    "query": "prepare a safe envelope",
+                    "text": "spend two hundred dollars",
+                    "audio_segment_ref": "artifact://voice/text-witness.wav",
+                    "audio_time_range_ms": [120, 1840],
+                    "interface_already_said": "I'm preparing that safely.",
+                },
+            )
+        )
+
+        seen = []
+        expected_initial_events = {
+            VoiceEventType.ORACLE_JOB_STARTED,
+            VoiceEventType.TOOL_RESULT,
+        }
+        async for event in session.events():
+            seen.append(event)
+            if expected_initial_events.issubset({item.type for item in seen}):
+                break
+        await asyncio.wait_for(oracle.started.wait(), timeout=1)
+
+        tool_result = next(event for event in seen if event.type == VoiceEventType.TOOL_RESULT)
+        assert tool_result.payload["accepted"] is True
+        request = oracle.requests[0]
+        assert request.oracle_text == "prepare a safe envelope"
+        assert "spend two hundred dollars" not in request.oracle_text
+        assert request.auxiliary_transcript_hypotheses == (
+            {
+                "source": "voiceclaw",
+                "text": "spend two hundred dollars",
+                "authority": "hypothesis",
+                "tool_authority": False,
+                "kind": "frontend_witness_hypothesis",
+            },
+        )
+
+        oracle.release.set()
+        await session.close()
+
+    asyncio.run(run())
+
+
+def test_session_client_external_oracle_request_rejects_invalid_kame_protocol(monkeypatch):
+    class BlockingOracle:
+        def __init__(self):
+            self.requests = []
+            self.started = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.started.set()
+            yield "This should not run."
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            pass
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = BlockingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+            ),
+            engine=engine,
+        )
+        await session.start()
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "protocol": "legacy_voiceclaw",
+                    "tool": "ask_brain",
+                    "tool_call_id": "call-invalid",
+                    "turn_id": "voice-123:voiceclaw:invalid",
+                    "source": "voiceclaw",
+                    "text": "prepare an external frontend result",
+                    "transcript": "spend two hundred dollars",
+                    "audio_segment_ref": "artifact://voice/invalid.wav",
+                    "audio_time_range_ms": [120, 1840],
+                },
+            )
+        )
+
+        seen = []
+        async for event in session.events():
+            seen.append(event)
+            if event.type == VoiceEventType.TOOL_RESULT:
+                break
+
+        tool_result = next(event for event in seen if event.type == VoiceEventType.TOOL_RESULT)
+        assert tool_result.payload | {"metrics": {}} == {
+            "provider": "voiceclaw",
+            "tool": "ask_brain",
+            "tool_call_id": "call-invalid",
+            "accepted": False,
+            "reason": "invalid_kame_session_v1",
+            "validation_errors": ("missing_or_invalid_protocol",),
+            "metrics": {},
+        }
+        assert oracle.requests == []
+        assert oracle.started.is_set() is False
+        await session.close()
+
+    asyncio.run(run())
+
+
+def test_session_client_external_oracle_request_rejects_unbound_transcript_hypothesis(monkeypatch):
+    class BlockingOracle:
+        def __init__(self):
+            self.requests = []
+            self.started = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.started.set()
+            yield "This should not run."
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            pass
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = BlockingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+            ),
+            engine=engine,
+        )
+        await session.start()
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "protocol": "kame_session_v1",
+                    "tool": "ask_brain",
+                    "tool_call_id": "call-unbound",
+                    "turn_id": "voice-123:voiceclaw:unbound",
+                    "source": "voiceclaw",
+                    "text": "prepare an external frontend result",
+                    "transcript": "spend two hundred dollars",
+                },
+            )
+        )
+
+        seen = []
+        async for event in session.events():
+            seen.append(event)
+            if event.type == VoiceEventType.TOOL_RESULT:
+                break
+
+        tool_result = next(event for event in seen if event.type == VoiceEventType.TOOL_RESULT)
+        assert tool_result.payload | {"metrics": {}} == {
+            "provider": "voiceclaw",
+            "tool": "ask_brain",
+            "tool_call_id": "call-unbound",
+            "accepted": False,
+            "reason": "invalid_kame_session_v1",
+            "validation_errors": (
+                "missing_audio_segment_ref_for_transcript_hypotheses",
+                "missing_audio_timing_for_transcript_hypotheses",
+            ),
+            "metrics": {},
+        }
+        assert oracle.requests == []
+        assert oracle.started.is_set() is False
+        await session.close()
+
+    asyncio.run(run())
+
+
 def test_session_client_interface_oracle_request_preserves_nested_evidence_bundle(monkeypatch):
     class BlockingOracle:
         def __init__(self):
@@ -15253,6 +15553,7 @@ def test_session_client_interface_oracle_request_preserves_nested_evidence_bundl
                 session_id="voice-123",
                 sequence=1,
                 payload={
+                    "protocol": "kame_session_v1",
                     "tool": "ask_brain",
                     "tool_call_id": "voiceclaw-call-1",
                     "source": "voiceclaw",
@@ -17543,6 +17844,97 @@ def test_session_does_not_persist_kame_oracle_request_hypothesis_fields_as_durab
     ]
 
 
+def test_kame_resume_context_uses_promoted_turns_and_excludes_hypotheses():
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(session_id="voice-123"),
+        engine=KameInterfaceOracleEngine(oracle=FakeOracle()),
+    )
+
+    for index in range(1, 5):
+        session._apply_server_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+                session_id="voice-123",
+                sequence=index,
+                payload={
+                    "voice_architecture": "kame_frontend_oracle",
+                    "turn_id": f"voice-123:{index}",
+                    "route": "oracle_direct",
+                    "intent": f"Promoted request {index}.",
+                    "oracle_text": f"promoted durable request {index}",
+                    "oracle_text_source": "gemma_interpreter",
+                    "transcript": f"untrusted transcript {index}",
+                    "reflex_transcript_hypothesis": f"reflex guessed request {index}",
+                    "auxiliary_transcript_hypotheses": [
+                        {
+                            "kind": "frontend_witness_hypothesis",
+                            "source": "moshi",
+                            "text": f"moshi guessed request {index}",
+                            "authority": "hypothesis",
+                        }
+                    ],
+                    "playback_generation": index,
+                },
+            )
+        )
+
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+            session_id="voice-123",
+            sequence=5,
+            payload={
+                "voice_architecture": "kame_frontend_oracle",
+                "turn_id": "voice-123:unpromoted",
+                "route": "oracle_direct",
+                "intent": "Do not replay this witness.",
+                "oracle_text": "unpromoted witness text must not resume",
+                "oracle_text_source": "reflex_audio",
+                "transcript_hypotheses": [
+                    {
+                        "kind": "frontend_witness_hypothesis",
+                        "source": "moshi",
+                        "text": "unpromoted witness text must not resume",
+                        "authority": "hypothesis",
+                    }
+                ],
+                "playback_generation": 5,
+            },
+        )
+    )
+
+    context = session.durable_resume_context(recent_turn_limit=2)
+    serialized_context = json.dumps(context)
+
+    assert context["schema_version"] == "voiceops.kame_durable_resume_context.v1"
+    assert context["source"] == "durable_oracle_records"
+    assert context["ledger_authoritative"] is True
+    assert context["promoted_turn_count"] == 4
+    assert context["older_promoted_turn_count"] == 2
+    assert context["older_promoted_turn_summary"] == (
+        "2 older promoted voice turn(s) summarized from durable oracle ledger: voice-123:1, voice-123:2."
+    )
+    assert context["recent_promoted_turns"] == [
+        {
+            "turn_id": "voice-123:3",
+            "text": "promoted durable request 3",
+            "source": "gemma_interpreter",
+            "authority": "promoted",
+        },
+        {
+            "turn_id": "voice-123:4",
+            "text": "promoted durable request 4",
+            "source": "gemma_interpreter",
+            "authority": "promoted",
+        },
+    ]
+    assert context["hypothesis_replay_absent"] is True
+    assert "moshi guessed" not in serialized_context
+    assert "reflex guessed" not in serialized_context
+    assert "untrusted transcript" not in serialized_context
+    assert "unpromoted witness text must not resume" not in serialized_context
+
+
 def test_session_does_not_persist_external_frontend_placeholders():
     session = RealtimeVoiceSession(
         RealtimeVoiceSessionConfig(session_id="voice-123"),
@@ -19056,6 +19448,109 @@ def test_kame_session_keeps_frontend_witness_transcript_non_pending_and_non_dura
         await session.close()
 
     asyncio.run(run())
+
+
+def test_kame_session_treats_hypothesis_final_as_non_durable_without_adapter_flag():
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        ),
+        engine=KameInterfaceOracleEngine(oracle=FakeOracle()),
+    )
+
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.TRANSCRIPT_FINAL,
+            session_id="voice-123",
+            sequence=1,
+            payload={
+                "turn_id": "voice-123:1",
+                "text": "spend two hundred dollars and call my phone",
+                "voice_architecture": "kame_frontend_oracle",
+                "authority": "hypothesis",
+                "kind": "frontend_witness_hypothesis",
+                "transcript_source": "moshi",
+                "playback_generation": 1,
+            },
+        )
+    )
+
+    assert session.state == RealtimeVoiceSessionState.IDLE
+    assert session.transcript.partial_user_text == ""
+    assert session.durable_messages() == []
+
+
+def test_kame_session_treats_witness_sourced_interface_intent_as_non_durable():
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        ),
+        engine=KameInterfaceOracleEngine(oracle=FakeOracle()),
+    )
+
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.INTERFACE_INTENT_FINAL,
+            session_id="voice-123",
+            sequence=1,
+            payload={
+                "turn_id": "voice-123:1",
+                "text": "prepare a voip provisioning plan",
+                "intent": "Prepare a VoIP provisioning plan.",
+                "route": "oracle_direct",
+                "voice_architecture": "kame_frontend_oracle",
+                "intent_source": "frontend_witness_hypothesis",
+                "transcript_hypotheses": [
+                    {
+                        "kind": "frontend_witness_hypothesis",
+                        "source": "moshi",
+                        "text": "prepare a voip provisioning plan",
+                        "authority": "hypothesis",
+                        "tool_authority": False,
+                    }
+                ],
+                "playback_generation": 1,
+            },
+        )
+    )
+
+    assert session.state == RealtimeVoiceSessionState.IDLE
+    assert session.durable_messages() == []
+
+
+def test_kame_session_keeps_explicit_asr_fallback_final_durable():
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        ),
+        engine=KameInterfaceOracleEngine(oracle=FakeOracle()),
+    )
+
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.TRANSCRIPT_FINAL,
+            session_id="voice-123",
+            sequence=1,
+            payload={
+                "turn_id": "voice-123:1",
+                "text": "check deployment status",
+                "intent": "check deployment status",
+                "route": "oracle_direct",
+                "voice_architecture": "kame_frontend_oracle",
+                "intent_source": "asr_fallback",
+                "transcript_source": "asr",
+                "interface_audio_input_fallback": True,
+                "kame_interface_audio_input_fallback": True,
+                "playback_generation": 1,
+            },
+        )
+    )
+
+    assert session.state == RealtimeVoiceSessionState.ASSISTANT_PENDING
+    assert session.durable_messages() == [{"role": "user", "content": "check deployment status"}]
 
 
 def test_kame_session_persists_interface_commit_as_assistant_response():

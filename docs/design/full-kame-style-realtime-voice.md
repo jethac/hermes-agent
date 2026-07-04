@@ -167,6 +167,17 @@ partials are retained only as superseded provenance. The acceptance proof must
 show witness-before-cut, witness-with-cut, and witness-after-cut cases without
 duplicate oracle jobs or durable user turns.
 
+2026-07-04 Moshi raw-voice join decision: yes, a Moshi/Open-S2S transcript may
+and should be provided to the interpreter alongside the raw voice when both
+refer to the same accepted speech cut. That transcript is not "STT evidence" in
+the old Hermes sense. It is a `frontend_witness_hypothesis`: a compact report
+of what the live voice frontend believed it heard. The Gemma interpreter should
+receive the waveform, timing, speaker/channel metadata, reflex route,
+acknowledgement already spoken, and the Moshi witness in one packet. It may use
+the witness to recover clipped starts, names, numbers, or code-switched terms,
+but only its promoted fields may reach durable history or the active Hermes
+oracle as user wording.
+
 | Tier | Primary input | Immediate output | Authority boundary |
 | --- | --- | --- | --- |
 | Reflex | live audio, VAD/energy, current session state | acknowledgement, barge-in, route, rough intent, optional witness transcript | floor control only; provisional `reflex_hypothesis` |
@@ -260,9 +271,9 @@ the power of seventeen," the durable wording still comes from Gemma's promoted
 also preserve `interpreter_normalized_intent`, entities such as `3^17`, and the
 fact that the witness remains hypothesis authority.
 Rejected frontend witnesses should also carry typed `rejection_reasons` such as
-`wrong_speaker`, `wrong_channel`, or `stale_witness` when speaker/channel/timing
-metadata proves the conflict. These reasons are audit evidence, not prompts for
-the oracle to reinterpret the rejected text.
+`ambiguous_speaker`, `wrong_speaker`, `wrong_channel`, or `stale_witness` when
+speaker/channel/timing metadata proves the conflict. These reasons are audit
+evidence, not prompts for the oracle to reinterpret the rejected text.
 
 ## Current Implementation Target
 
@@ -285,6 +296,24 @@ This keeps a three-tier user experience without creating three competing
 conversations. The user hears the reflex quickly. Gemma gets both the waveform
 and the Moshi/open-S2S witness text. The oracle receives compact, promoted
 business intent rather than raw partials or duplicate STT turns.
+
+Moshi-style transcript output should therefore be implemented as a witness
+attachment API, not as an ASR replacement API. The adapter may pass the Moshi
+string to Gemma, and should do so when it belongs to the same accepted speech
+cut, but it must arrive under `transcript_hypotheses[]` with hypothesis
+authority. The interpreter packet should make the comparison explicit: raw
+audio first, then timing and speaker/channel metadata, then the reflex route and
+acknowledgement, then the Moshi/open-S2S witness. A helpful Moshi string can
+improve the promoted wording, but the durable wording is still the interpreter
+promotion result.
+
+The acceptance fixture for this path should include a positive and negative
+case. Positive: raw audio is clipped, Moshi supplies a same-turn witness, Gemma
+accepts or corrects it, and the promoted fields reach the active Hermes
+`/model`. Negative: Moshi supplies a hallucinated, ambiguous-speaker,
+wrong-speaker, stale, or energy-inconsistent string; Gemma rejects it as
+diagnostic evidence; no spend, phone, file, memory, external-message, tool, or
+durable-history sink receives that unpromoted text.
 
 ## Provider Role Matrix
 
@@ -398,8 +427,8 @@ Acceptance artifacts for this contract must show:
 - positive witness use, where Gemma accepts or corrects witness text after
   comparing it to audio
 - adversarial witness rejection, where Gemma rejects stale, hallucinated,
-  wrong-speaker, wrong-channel, or energy-inconsistent text without allowing it
-  to become durable history or an action argument
+  ambiguous-speaker, wrong-speaker, wrong-channel, or energy-inconsistent text
+  without allowing it to become durable history or an action argument
 
 ## Purpose
 
@@ -617,7 +646,10 @@ Canonical shape:
   "turn_id": "voice-turn-id",
   "session_id": "voice-session-id",
   "audio_segment_ref": "artifact-or-buffer-ref",
+  "evidence_bundle_id": "kame-bundle-id",
+  "evidence_merge_key": "kame-merge-session-turn-audio",
   "audio": {
+    "segment_ref": "artifact-or-buffer-ref",
     "codec": "pcm_s16le",
     "sample_rate_hz": 16000,
     "channels": 1,
@@ -675,6 +707,12 @@ Canonical shape:
   "oracle_job_id": "voice-oracle-001"
 }
 ```
+
+`audio.segment_ref` mirrors the canonical `audio_segment_ref` for adapters that
+nest transport audio metadata; both values must identify the same accepted
+speech cut. `evidence_bundle_id` remains stable for the logical turn, while
+`evidence_merge_key` proves the raw-audio/witness join for the specific
+session, turn, and audio reference.
 
 If an operator calls the Moshi side channel "Moshi STT", the runtime should
 store it as `frontend_witness_hypothesis` unless the adapter can prove it came
@@ -1308,8 +1346,9 @@ Acceptance gates:
   measured from the reflex decision path rather than inferred from generic mixer
   timing
 - rejected frontend witnesses must preserve typed rejection reasons for
-  speaker, channel, and timing conflicts, including `wrong_speaker`,
-  `wrong_channel`, and `stale_witness` when those conflicts are present
+  speaker, channel, and timing conflicts, including `ambiguous_speaker`,
+  `wrong_speaker`, `wrong_channel`, and `stale_witness` when those conflicts are
+  present
 - text-only VoiceClaw/OpenClaw compatibility requests are marked degraded when
   no raw audio is available
 - oracle jobs must distinguish `reflex_transcript_hypothesis`,

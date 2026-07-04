@@ -377,6 +377,14 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_promoted_ok"] = False
     readiness["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_self_attested_ok"] = True
     readiness["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_missing_tool_disclosure_ok"] = True
+    readiness["proofs"]["async_oracle_jobs"]["durable_resume_hypothesis_replay_absent"] = False
+    readiness["proofs"]["async_oracle_jobs"]["hypothesis_final_durable_message_smoke_ok"] = False
+    readiness["proofs"]["async_oracle_jobs"]["hypothesis_final_durable_messages_empty"] = False
+    readiness["proofs"]["async_oracle_jobs"]["hypothesis_final_durable_message_count"] = 1
+    readiness["proofs"]["async_oracle_jobs"]["hypothesis_final_without_adapter_flag_non_durable"] = False
+    readiness["proofs"]["async_oracle_jobs"]["hypothesis_final_witness_intent_non_durable"] = False
+    readiness["proofs"]["async_oracle_jobs"]["explicit_asr_fallback_final_remains_durable"] = False
+    readiness["proofs"]["async_oracle_jobs"]["explicit_asr_fallback_durable_messages"] = []
     _write_json(readiness_path, readiness)
 
     report = audit_package(artifact_root)
@@ -497,6 +505,38 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_witness_tool_authority_false_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.durable_resume_hypothesis_replay_absent_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.hypothesis_final_durable_message_smoke_ok_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.hypothesis_final_durable_messages_empty_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.hypothesis_final_durable_message_count_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.hypothesis_final_without_adapter_flag_non_durable_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.hypothesis_final_witness_intent_non_durable_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.explicit_asr_fallback_final_remains_durable_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.explicit_asr_fallback_durable_messages_mismatch"
         in report["issues"]
     )
     assert (

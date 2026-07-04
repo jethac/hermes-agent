@@ -1627,7 +1627,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_rejection_reasons"] == {
         "early": [],
         "with": [],
-        "late": ["wrong_speaker", "wrong_channel", "stale_witness"],
+        "late": ["ambiguous_speaker", "wrong_speaker", "wrong_channel", "stale_witness"],
     }
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_adjudication_outcomes_observed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_smoke_ok"] is True
@@ -1696,6 +1696,40 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "runtime_kame_action_gate_missing_tool_disclosure_authorities"
     ] == ["interpreter_promoted"]
     assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_tool_disclosure_ref_observed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["durable_resume_contract_smoke_ok"] is True
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["durable_resume_contract_schema_version"]
+        == "voiceops.kame_durable_resume_context.v1"
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["durable_resume_promoted_turn_count"] == 4
+    assert voice_result["details"]["async_oracle_smoke"]["durable_resume_recent_promoted_turns_verbatim"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["durable_resume_recent_promoted_turns"] == [
+        {
+            "turn_id": "voice-smoke-durable-resume:3",
+            "text": "promoted durable resume request 3",
+            "source": "gemma_interpreter",
+            "authority": "promoted",
+        },
+        {
+            "turn_id": "voice-smoke-durable-resume:4",
+            "text": "promoted durable resume request 4",
+            "source": "gemma_interpreter",
+            "authority": "promoted",
+        },
+    ]
+    assert voice_result["details"]["async_oracle_smoke"]["durable_resume_older_turns_summarized"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["durable_resume_older_promoted_turn_count"] == 2
+    assert "voice-smoke-durable-resume:1" in voice_result["details"]["async_oracle_smoke"][
+        "durable_resume_older_promoted_turn_summary"
+    ]
+    assert "voice-smoke-durable-resume:2" in voice_result["details"]["async_oracle_smoke"][
+        "durable_resume_older_promoted_turn_summary"
+    ]
+    assert voice_result["details"]["async_oracle_smoke"]["durable_resume_hypothesis_replay_absent"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["durable_resume_ledger_authoritative"] is True
+    assert voice_result["details"]["async_oracle_acceptance"]["durable_promoted_turn_resume_contract"][
+        "ok"
+    ] is True
     assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_smoke_ok"] is True
     assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_payload_redacted"] is True
     assert voice_result["details"]["async_oracle_smoke"]["audit_scalar_secret_canary_checked"] is True

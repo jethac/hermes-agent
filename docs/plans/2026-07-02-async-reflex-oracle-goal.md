@@ -38,6 +38,13 @@ believed it heard, especially for clipped starts, names, numbers, and
 code-switching, but it is not the transcript of record and it must not create a
 parallel oracle turn.
 
+2026-07-04 refinement: this is the intended way to use Moshi "STT" output.
+When Moshi/Open-S2S produces both audio and text for one accepted cut, Hermes
+should pass both to Gemma. The text is context for direct-audio interpretation,
+not a competing ASR result and not a prerequisite for acknowledgement. The
+interpreter owns the accept/correct/reject decision and emits the first wording
+that can become durable user text.
+
 Protocol decision: use `docs/kame-session-v1.md` as the packet contract for
 external and internal realtime frontends. The adapter may receive Moshi/open-S2S
 or classic-ASR witness text before the accepted audio cut, with the cut, or
@@ -258,6 +265,27 @@ Moshi/OpenClaw/VoiceClaw bridge with ambiguous transcript-like text should fail
 the local package audit if that witness regresses from
 `frontend_witness_hypothesis` to the older `s2s_transcript_hypothesis` default.
 
+Latest implementation target: include the Moshi/open-S2S witness in the Gemma
+interpreter context beside the raw voice, but never as a standalone scheduler.
+The runtime should support three timing paths:
+
+- witness-before-cut: store the Moshi text on a pending bundle until the
+  accepted raw-audio cut exists
+- witness-with-cut: submit raw audio and Moshi text in the same interpreter
+  packet
+- witness-after-interpreter-start: append the Moshi text as late evidence on
+  the same bundle while preserving the existing oracle job id
+
+All three paths must share the same `turn_id`, `audio_segment_ref`,
+`evidence_bundle_id`, and `evidence_merge_key`. They must also prove no
+duplicate oracle job, no second durable user message, and no direct action sink
+from hypothesis-only text. The positive fixture should show Gemma using a
+Moshi witness to recover or confirm wording before emitting
+`interpreter_promoted` fields. The negative fixture should show Gemma rejecting
+a hallucinated, ambiguous-speaker, stale, wrong-speaker, wrong-channel, or
+low-energy witness while keeping that text out of `oracle_text`, spend reasons,
+phone payloads, memory, files, tools, external messages, and durable history.
+
 The same headless evidence path should preserve cross-surface audit continuity.
 External KAME frontend requests may carry `audit_id`, `source_audit_id`, and
 `parent_audit_id`; Hermes should keep those ids on the normalized
@@ -384,7 +412,8 @@ metadata, reflex route, acknowledgement already spoken, and
 direct-audio judgment. It is not an ASR gate, not a scheduler, and not a
 parallel Hermes turn. Headless proof should include one fixture where witness
 text helps Gemma recover a clipped prefix or number, and another where Gemma
-rejects a hallucinated or wrong-speaker witness while preserving it for audit.
+rejects a hallucinated, ambiguous-speaker, wrong-speaker, wrong-channel, stale,
+or low-energy witness while preserving it for audit.
 The Moshi/OpenClaw/VoiceClaw adapter should therefore pass transcript-looking
 text as `frontend_witness_hypothesis` with source, confidence, timing,
 speaker/channel guess, and partial/final state when present. The waveform and
@@ -395,10 +424,10 @@ The transport-neutral wire contract for that packet is `kame_session_v1` in
 `docs/kame-session-v1.md`.
 When the interpreter rejects witness text because its speaker, channel, or
 timing metadata conflicts with the canonical speech cut, the evidence bundle
-should preserve typed `rejection_reasons` such as `wrong_speaker`,
-`wrong_channel`, or `stale_witness`. The VoiceOps proof should fail if a
-frontend witness is merely labeled rejected without the metadata-derived reason
-needed to audit the rejection.
+should preserve typed `rejection_reasons` such as `ambiguous_speaker`,
+`wrong_speaker`, `wrong_channel`, or `stale_witness`. The VoiceOps proof should
+fail if a frontend witness is merely labeled rejected without the
+metadata-derived reason needed to audit the rejection.
 
 The oracle is the worker. It owns:
 
@@ -1111,8 +1140,8 @@ Add a local smoke report mode that proves:
 - witness transcript adjudication is recorded as accepted, corrected, or
   rejected/diagnostic-only before any promoted action text is produced
 - rejected frontend witnesses preserve typed speaker, channel, and timing
-  rejection reasons such as `wrong_speaker`, `wrong_channel`, and
-  `stale_witness`
+  rejection reasons such as `ambiguous_speaker`, `wrong_speaker`,
+  `wrong_channel`, and `stale_witness`
 - degraded text-only VoiceClaw/OpenClaw/Moshi fixtures preserve hypothesis text
   for audit and clarification, but report `degraded_reason` and fail high-risk
   action gates unless raw-audio-grounded interpreter evidence exists

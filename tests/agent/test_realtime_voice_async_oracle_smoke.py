@@ -203,6 +203,39 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_event_counts"]["oracle.job.accepted"] == 1
     assert report["external_frontend_event_counts"]["oracle.job.started"] == 1
     assert report["external_frontend_event_counts"]["oracle.job.completed"] == 1
+    assert report["durable_resume_contract_smoke_ok"] is True
+    assert report["durable_resume_contract_schema_version"] == "voiceops.kame_durable_resume_context.v1"
+    assert report["durable_resume_promoted_turn_count"] == 4
+    assert report["durable_resume_recent_promoted_turns_verbatim"] is True
+    assert report["durable_resume_recent_promoted_turns"] == [
+        {
+            "turn_id": "voice-smoke-durable-resume:3",
+            "text": "promoted durable resume request 3",
+            "source": "gemma_interpreter",
+            "authority": "promoted",
+        },
+        {
+            "turn_id": "voice-smoke-durable-resume:4",
+            "text": "promoted durable resume request 4",
+            "source": "gemma_interpreter",
+            "authority": "promoted",
+        },
+    ]
+    assert report["durable_resume_older_turns_summarized"] is True
+    assert report["durable_resume_older_promoted_turn_count"] == 2
+    assert "voice-smoke-durable-resume:1" in report["durable_resume_older_promoted_turn_summary"]
+    assert "voice-smoke-durable-resume:2" in report["durable_resume_older_promoted_turn_summary"]
+    assert report["durable_resume_hypothesis_replay_absent"] is True
+    assert report["durable_resume_ledger_authoritative"] is True
+    assert report["hypothesis_final_durable_message_smoke_ok"] is True
+    assert report["hypothesis_final_durable_messages_empty"] is True
+    assert report["hypothesis_final_durable_message_count"] == 0
+    assert report["hypothesis_final_without_adapter_flag_non_durable"] is True
+    assert report["hypothesis_final_witness_intent_non_durable"] is True
+    assert report["explicit_asr_fallback_final_remains_durable"] is True
+    assert report["explicit_asr_fallback_durable_messages"] == [
+        {"role": "user", "content": "check deployment status"}
+    ]
     assert report["unpromoted_hypothesis_smoke_ok"] is True
     assert report["unpromoted_hypothesis_evidence_bundle_id"].startswith("kame-evidence-")
     assert report["unpromoted_hypothesis_single_bundle_observed"] is True
@@ -377,7 +410,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["witness_fusion_rejection_reasons"] == {
         "early": [],
         "with": [],
-        "late": ["wrong_speaker", "wrong_channel", "stale_witness"],
+        "late": ["ambiguous_speaker", "wrong_speaker", "wrong_channel", "stale_witness"],
     }
     assert report["witness_fusion_adjudication_outcomes_observed"] is True
     assert report["witness_fusion_accepted_counts"] == {"early": 1, "with": 1, "late": 1}

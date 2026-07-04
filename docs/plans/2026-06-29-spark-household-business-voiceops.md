@@ -174,6 +174,17 @@ Target KAME layout:
   raw audio first and the Moshi/OpenClaw/VoiceClaw/classic-ASR strings as
   labeled `transcript_hypotheses[]`; the interpreter response should show which
   hypotheses were accepted, corrected, rejected, or kept diagnostic-only.
+- Moshi-context acceptance rule: the artifact should prove that a Moshi/open-S2S
+  transcript can be attached to the Gemma interpreter packet beside raw voice
+  without becoming a second turn. Cover witness-before-cut, witness-with-cut,
+  and witness-after-interpreter-start. All cases must preserve the same
+  `turn_id`, `audio_segment_ref`, `evidence_bundle_id`, and
+  `evidence_merge_key`, and must prove no duplicate oracle job or durable user
+  message. A positive case should show Gemma promoting corrected wording after
+  comparing raw audio and Moshi text. A negative case should show hallucinated,
+  ambiguous-speaker, stale, wrong-speaker, wrong-channel, or low-energy Moshi
+  text rejected and absent from spend, phone, NemoClaw, tool, memory, file,
+  external-message, and durable-history sinks.
 - Oracle-context rule: the active Hermes `/model` should receive promoted
   transcript/intent/entities plus compact labeled audit context. It should not
   receive unpromoted Moshi/STT witness strings as if they were the durable user
@@ -213,9 +224,10 @@ Target KAME layout:
   and acknowledgement, and a `transcript_hypotheses[]` list for Moshi/open-S2S,
   VoiceClaw/OpenClaw, reflex, and classic ASR text. Speaker/channel metadata is
   canonical evidence, not optional decoration, because it is needed to reject
-  wrong-speaker transcripts, cross-channel replay, stale captions, and
-  misattributed approvals. The implementation target is the canonical contract
-  in `docs/design/full-kame-style-realtime-voice.md`; duplicated text from any
+  ambiguous-speaker transcripts, wrong-speaker transcripts, cross-channel
+  replay, stale captions, and misattributed approvals. The implementation
+  target is the canonical contract in
+  `docs/design/full-kame-style-realtime-voice.md`; duplicated text from any
   transcript side channel must attach to that bundle, not spawn a new Hermes
   turn.
 - Multi-speaker rule: Discord voice, phone bridges, and future WhatsApp voice
@@ -517,11 +529,13 @@ not match the waveform or speaker context.
 
 When the frontend exposes a transcript-looking field under a vendor name such
 as "Moshi STT", Hermes should not special-case it as authoritative STT. Store
-the source name for diagnostics, but classify the field by authority:
-`reflex_transcript_hypothesis` if it came from the live reflex model's own
-hearing, or `s2s_transcript_hypothesis` if it came from a distinct S2S/caption
-side channel. Both sit beside the same raw audio in the interpreter evidence
-bundle.
+the source name for diagnostics, but classify the field by provenance and
+authority. Use `frontend_witness_hypothesis` by default when the adapter cannot
+prove the producer. Use `reflex_transcript_hypothesis` only if it came from the
+live reflex model's own hearing, or `s2s_transcript_hypothesis` only if it came
+from a distinct S2S/caption side channel. All of these sit beside the same raw
+audio in the interpreter evidence bundle with `authority = "hypothesis"` and
+`tool_authority = false`.
 
 The interpreter may attach evidence to an oracle job before it starts, or submit
 a patch/update if the oracle job is already running. It must not stall the

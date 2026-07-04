@@ -797,5 +797,7 @@ uv run --extra dev --extra voice python -m pytest \
 - Barge-in stops current speech within one callback turn and drops stale output.
 - `/voice leave` closes sidecar, receiver, mixer, and voice client cleanly.
 - Focused tests pass with exact results recorded in the PR or work log.
-- Logs from a manual Discord test can reconstruct join, mode, STT, TTS,
-  playback, barge-in, and shutdown timing.
+- Logs from a manual Discord test can reconstruct join, mode, reflex
+  acknowledgement, accepted audio cut, VAD/noise-gate decision, interpreter
+  evidence, transcript-hypothesis attachment, oracle job timing, TTS/playback,
+  barge-in, and shutdown timing.

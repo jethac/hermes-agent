@@ -2495,6 +2495,59 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
                 "runtime_kame_action_gate_schema_versions"
             )
             or [],
+            "durable_resume_contract_smoke_ok": bool(
+                async_smoke.get("durable_resume_contract_smoke_ok")
+            ),
+            "durable_resume_contract_schema_version": async_smoke.get(
+                "durable_resume_contract_schema_version"
+            ),
+            "durable_resume_promoted_turn_count": async_smoke.get(
+                "durable_resume_promoted_turn_count"
+            ),
+            "durable_resume_recent_promoted_turns_verbatim": bool(
+                async_smoke.get("durable_resume_recent_promoted_turns_verbatim")
+            ),
+            "durable_resume_recent_promoted_turns": async_smoke.get(
+                "durable_resume_recent_promoted_turns"
+            )
+            or [],
+            "durable_resume_older_turns_summarized": bool(
+                async_smoke.get("durable_resume_older_turns_summarized")
+            ),
+            "durable_resume_older_promoted_turn_count": async_smoke.get(
+                "durable_resume_older_promoted_turn_count"
+            ),
+            "durable_resume_older_promoted_turn_summary": async_smoke.get(
+                "durable_resume_older_promoted_turn_summary"
+            ),
+            "durable_resume_hypothesis_replay_absent": bool(
+                async_smoke.get("durable_resume_hypothesis_replay_absent")
+            ),
+            "durable_resume_ledger_authoritative": bool(
+                async_smoke.get("durable_resume_ledger_authoritative")
+            ),
+            "hypothesis_final_durable_message_smoke_ok": bool(
+                async_smoke.get("hypothesis_final_durable_message_smoke_ok")
+            ),
+            "hypothesis_final_durable_messages_empty": bool(
+                async_smoke.get("hypothesis_final_durable_messages_empty")
+            ),
+            "hypothesis_final_durable_message_count": async_smoke.get(
+                "hypothesis_final_durable_message_count"
+            ),
+            "hypothesis_final_without_adapter_flag_non_durable": bool(
+                async_smoke.get("hypothesis_final_without_adapter_flag_non_durable")
+            ),
+            "hypothesis_final_witness_intent_non_durable": bool(
+                async_smoke.get("hypothesis_final_witness_intent_non_durable")
+            ),
+            "explicit_asr_fallback_final_remains_durable": bool(
+                async_smoke.get("explicit_asr_fallback_final_remains_durable")
+            ),
+            "explicit_asr_fallback_durable_messages": async_smoke.get(
+                "explicit_asr_fallback_durable_messages"
+            )
+            or [],
             "audit_scalar_smoke_ok": bool(async_smoke.get("audit_scalar_smoke_ok")),
             "audit_scalar_payload_redacted": bool(async_smoke.get("audit_scalar_payload_redacted")),
             "audit_scalar_secret_canary_checked": bool(async_smoke.get("audit_scalar_secret_canary_checked")),

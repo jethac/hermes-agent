@@ -21,6 +21,12 @@ frontend believed it heard; the waveform remains primary. If the frontend can
 send only text, the packet is degraded text-only compatibility mode, not
 full-KAME evidence and not a high-risk action gate input.
 
+The preferred Moshi/Open-S2S shape is therefore not "run STT, then ask
+Hermes." It is "send the clipped waveform plus the frontend's transcript
+hypothesis to the interpreter." The hypothesis is useful context for Gemma, but
+it remains `authority = "hypothesis"` until the interpreter promotes
+raw-audio-grounded wording.
+
 ## Roles
 
 External frontends may provide:
@@ -39,6 +45,10 @@ memory, payment, provisioning, phone, message, or credential tools.
 
 Every spoken turn should use one `turn_id`. If raw audio is available, every
 witness transcript for that speech cut must share the same `audio_segment_ref`.
+The accepted raw-audio cut must come from the configured VAD/energy/noise gate
+before Hermes schedules direct-audio interpretation; silence, playback echo,
+room tone, and low-energy artifacts are not valid interpreter input by
+themselves.
 
 The frontend may send evidence in any of these orders:
 
@@ -56,6 +66,11 @@ Minimum external frontend evidence/job-envelope shape:
 ```json
 {
   "protocol": "kame_session_v1",
+  "session_id": "voice-session-001",
+  "turn_id": "voice-turn-001",
+  "audio_segment_ref": "artifact://frontend/turn-001.wav",
+  "evidence_bundle_id": "kame-bundle-001",
+  "evidence_merge_key": "kame-merge-session-turn-audio",
   "tool_name": "ask_brain",
   "tool_call_id": "frontend-call-001",
   "audit_id": "frontend-audit-001",
@@ -105,6 +120,12 @@ Minimum external frontend evidence/job-envelope shape:
   ]
 }
 ```
+
+`audio.segment_ref` is a transport-local copy of the canonical
+`audio_segment_ref`; when both are present they must match. `evidence_bundle_id`
+is stable for the logical speech cut, including witness-before-audio and
+late-witness updates. `evidence_merge_key` is the audio-aware merge proof over
+the session, turn, and `audio_segment_ref`.
 
 `arguments.query` and `arguments.intent` are provisional frontend route/context
 fields for the job envelope. They are allowed to help create queue state or a
@@ -188,18 +209,71 @@ diagnostic hypotheses remain visible in audit records but cannot become durable
 history, tool arguments, spend reasons, provider selections, phone payloads,
 memory writes, file writes, or external messages.
 
+### Moshi Witness Attachment
+
+When a Moshi-like frontend exposes both the clipped waveform and a transcript
+string for the same user utterance, the adapter should send both to Hermes. The
+waveform remains `audio.segment_ref` and primary interpreter evidence. The text
+should be stored in `transcript_hypotheses[]` with:
+
+- `source = "moshi"` or the narrower vendor/source identifier
+- `kind = "frontend_witness_hypothesis"` unless the adapter can prove a more
+  specific producer
+- `authority = "hypothesis"`
+- `tool_authority = false`
+- timing, confidence, partial/final state, speaker guess, and channel guess
+  when available
+
+This Moshi text is useful because it tells Gemma what the live interface model
+believed it heard. It must be attached to the same `turn_id`,
+`audio_segment_ref`, `evidence_bundle_id`, and `evidence_merge_key` as the raw
+audio. It may arrive before, with, or after the accepted cut, but it must not
+create a second Hermes turn, replace the waveform, block reflex
+acknowledgement, or become `oracle_text` before interpreter or oracle
+promotion.
+
+If the Moshi text conflicts with the waveform, speaker/channel metadata,
+energy/VAD decision, or current session state, the interpreter should mark it
+`rejected_or_diagnostic_only` with a typed reason. If it helps recover a clipped
+prefix, name, number, or code-switched phrase, the promoted wording still comes
+from `interpreter_promoted` fields, not directly from the Moshi string.
+
+Adapters should avoid naming this field `transcript`, `stt_text`, or
+`oracle_text` in normalized packets. Use `transcript_hypotheses[]` with
+`kind = "frontend_witness_hypothesis"` unless a narrower producer is proven.
+This makes the raw audio plus witness text visible to the interpreter without
+accidentally turning the witness into a durable Hermes user message.
+
 ## Output Events
 
-Hermes emits normalized session/job events back to the frontend:
+Hermes emits normalized session/job events back to the frontend. The canonical
+wire event names are dotted `kame_session_v1` event strings. Uppercase names are
+legacy compatibility aliases for internal enum names and older
+VoiceClaw/OpenClaw-style adapters.
 
-- accepted placeholder: `TOOL_RESULT` with `accepted = true`, `job_id`,
+- accepted placeholder: `tool.result` with `accepted = true`, `job_id`,
   `tool_call_id`, and provider/source fields
-- oracle lifecycle: `ORACLE_JOB_ACCEPTED`, `ORACLE_JOB_QUEUED`,
-  `ORACLE_JOB_STARTED`, `ORACLE_JOB_WAITING_FOR_APPROVAL`,
-  `ORACLE_JOB_COMPLETED`, `ORACLE_JOB_FAILED`, `ORACLE_JOB_CANCELLED`
-- cancellation feedback: `INTERFACE_ORACLE_CANCEL`
-- bounded updates: `INTERFACE_ORACLE_UPDATE`
+- oracle lifecycle: `oracle.job.accepted`, `oracle.job.queued`,
+  `oracle.job.started`, `oracle.job.waiting_for_approval`,
+  `oracle.job.completed`, `oracle.job.failed`, `oracle.job.cancelled`
+- cancellation feedback: `interface.oracle.cancel_job`
+- bounded updates: `interface.oracle.update_job`
 - speech/playback events from the normal realtime voice stream
+
+Compatibility aliases:
+
+| Canonical event | Compatibility alias |
+| --- | --- |
+| `tool.result` | `TOOL_RESULT` |
+| `oracle.job.accepted` | `ORACLE_JOB_ACCEPTED` |
+| `oracle.job.queued` | `ORACLE_JOB_QUEUED` |
+| `oracle.job.started` | `ORACLE_JOB_STARTED` |
+| `oracle.job.waiting_for_approval` | `ORACLE_JOB_WAITING_FOR_APPROVAL` |
+| `oracle.job.completed` | `ORACLE_JOB_COMPLETED` |
+| `oracle.job.failed` | `ORACLE_JOB_FAILED` |
+| `oracle.job.cancelled` | `ORACLE_JOB_CANCELLED` |
+| `interface.oracle.cancel_job` | `INTERFACE_ORACLE_CANCEL` |
+| `interface.oracle.update_job` | `INTERFACE_ORACLE_UPDATE` |
 
 Terminal events must preserve `tool_call_id`, `audit_id`, `source_audit_id`,
 and `parent_audit_id` so the frontend can correlate placeholders, progress,
@@ -249,6 +323,8 @@ audit should expose:
 - timing-order proof for witness-before-cut, witness-with-cut, and
   witness-after-cut cases
 - interpreter adjudication outcome for every active transcript hypothesis
+- Moshi/open-S2S transcript context, when present, attached beside raw audio as
+  a same-bundle hypothesis rather than routed as a second user turn
 - sink checks proving rejected or unpromoted witness text did not enter spend,
   provider, NemoClaw, phone, tool, memory, file, message, or durable-history
   payloads

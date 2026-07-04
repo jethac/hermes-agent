@@ -599,31 +599,9 @@ class KameOracleRequest:
         for hypothesis in self.auxiliary_transcript_hypotheses:
             if not isinstance(hypothesis, Mapping):
                 continue
-            text = _optional_text(
-                hypothesis.get("text")
-                or hypothesis.get("transcript")
-                or hypothesis.get("hypothesis")
-            )
-            if not text:
+            item = _canonical_transcript_hypothesis(hypothesis)
+            if not item:
                 continue
-            source = _optional_text(hypothesis.get("source")) or _optional_text(hypothesis.get("provider")) or "unknown"
-            item = {
-                "kind": _optional_text(hypothesis.get("kind"))
-                or _transcript_hypothesis_kind(source, default="s2s_transcript_hypothesis"),
-                "source": source,
-                "text": text,
-                "authority": "hypothesis",
-                "tool_authority": False,
-            }
-            confidence = _confidence(hypothesis.get("confidence"))
-            if confidence is not None:
-                item["confidence"] = confidence
-            latency_ms = _non_negative_int(hypothesis.get("latency_ms"))
-            if latency_ms is not None:
-                item["latency_ms"] = latency_ms
-            language = _optional_text(hypothesis.get("language"))
-            if language:
-                item["language"] = language
             items.append(item)
 
         compact: list[dict[str, Any]] = []
@@ -1240,6 +1218,20 @@ def _canonical_transcript_hypothesis(value: object) -> dict[str, Any]:
     partial = value.get("partial")
     if isinstance(partial, bool):
         hypothesis["partial"] = partial
+    superseded_partials = _transcript_hypothesis_superseded_partial_texts(
+        value.get("superseded_partial_texts")
+    )
+    if superseded_partials:
+        hypothesis["superseded_partial_texts"] = superseded_partials
+    speaker = _transcript_hypothesis_speaker_metadata(value)
+    if speaker:
+        hypothesis["speaker"] = speaker
+    channel = _transcript_hypothesis_channel_metadata(value)
+    if channel:
+        hypothesis["channel"] = channel
+    audio_time_range_ms = _transcript_hypothesis_audio_time_range_ms(value)
+    if audio_time_range_ms:
+        hypothesis["audio_time_range_ms"] = audio_time_range_ms
     adjudication = _transcript_hypothesis_adjudication(value)
     if adjudication:
         hypothesis["adjudication"] = adjudication
@@ -1361,6 +1353,9 @@ def _canonical_speaker_metadata(
     is_bot = speaker.get("is_bot")
     if isinstance(is_bot, bool):
         metadata["is_bot"] = is_bot
+    for key in ("ambiguous", "ambiguous_speaker"):
+        if isinstance(speaker.get(key), bool):
+            metadata[key] = speaker[key]
     if user_id and "user_id" not in metadata:
         metadata["user_id"] = " ".join(str(user_id).split())[:160]
     return metadata
@@ -1545,14 +1540,14 @@ def _transcript_hypothesis_superseded_partial_texts(value: object) -> tuple[str,
 
 
 def _transcript_hypothesis_speaker_metadata(value: Mapping[str, Any]) -> dict[str, Any]:
-    raw = value.get("speaker") or value.get("speaker_metadata")
+    raw = value.get("speaker") or value.get("speaker_metadata") or value.get("speaker_guess")
     if not isinstance(raw, Mapping):
         return {}
     return _canonical_speaker_metadata(raw, user_id=None)
 
 
 def _transcript_hypothesis_channel_metadata(value: Mapping[str, Any]) -> dict[str, Any]:
-    raw = value.get("channel") or value.get("channel_metadata")
+    raw = value.get("channel") or value.get("channel_metadata") or value.get("channel_guess")
     if not isinstance(raw, Mapping):
         return {}
     return _canonical_channel_metadata(raw)
@@ -1597,7 +1592,7 @@ def _transcript_hypothesis_rejection_reasons(value: Mapping[str, Any]) -> tuple[
     reasons: list[str] = []
     for item in raw_values:
         reason = _optional_text(item).lower().replace("-", "_").replace(" ", "_")
-        if reason in {"wrong_speaker", "wrong_channel", "stale_witness"}:
+        if reason in {"ambiguous_speaker", "wrong_speaker", "wrong_channel", "stale_witness"}:
             reasons.append(reason)
     return tuple(dict.fromkeys(reasons))
 

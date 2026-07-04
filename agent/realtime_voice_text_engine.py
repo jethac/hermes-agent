@@ -716,6 +716,28 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         if tool not in {"ask_brain", "ask_hermes_oracle", "agent_consult", "openclaw_agent_consult"}:
             return False
         arguments = _external_kame_bridge_arguments(payload)
+        validation_errors = _external_kame_bridge_validation_errors(payload, arguments)
+        if validation_errors:
+            tool_result_payload = {
+                "provider": source or "external_kame_frontend",
+                "tool": tool,
+                "tool_call_id": str(payload.get("tool_call_id") or ""),
+                "accepted": False,
+                "reason": "invalid_kame_session_v1",
+                "validation_errors": validation_errors,
+            }
+            await self._emit(VoiceEventType.TOOL_RESULT, tool_result_payload)
+            if self._sidecar is not None:
+                await self._send_sidecar_event(
+                    VoiceEvent(
+                        type=VoiceEventType.TOOL_RESULT,
+                        session_id=event.session_id,
+                        sequence=event.sequence,
+                        timestamp_ms=event.timestamp_ms,
+                        payload=tool_result_payload,
+                    )
+                )
+            return True
         response = await self.submit_external_brain_request(
             {
                 "tool_name": tool,
@@ -3778,8 +3800,16 @@ def _external_kame_bridge_arguments(payload: Mapping[str, Any]) -> dict[str, Any
         if isinstance(decoded, Mapping):
             arguments.update(decoded)
 
-    _overlay_first_text(arguments, payload, "query", ("text", "query"))
-    _overlay_first_text(arguments, payload, "intent", ("intent", "text", "query"))
+    protocol = str(payload.get("protocol") or arguments.get("protocol") or "").strip()
+    if protocol:
+        arguments.setdefault("protocol", protocol)
+    if protocol == "kame_session_v1":
+        _overlay_first_text(arguments, payload, "query", ("query", "question", "prompt", "message", "request"))
+        _overlay_first_text(arguments, payload, "intent", ("intent", "query"))
+        _append_top_level_text_as_witness_hypothesis(arguments, payload)
+    else:
+        _overlay_first_text(arguments, payload, "query", ("text", "query"))
+        _overlay_first_text(arguments, payload, "intent", ("intent", "text", "query"))
     _overlay_first_text(arguments, payload, "transcript", ("transcript",))
     _overlay_first_text(
         arguments,
@@ -3810,6 +3840,103 @@ def _external_kame_bridge_arguments(payload: Mapping[str, Any]) -> dict[str, Any
     _overlay_first_text(arguments, payload, "conversation_summary", ("conversation_summary",))
     _overlay_first_value(arguments, payload, "requested_response_style", ("requested_response_style",))
     return arguments
+
+
+def _append_top_level_text_as_witness_hypothesis(arguments: dict[str, Any], payload: Mapping[str, Any]) -> None:
+    text = str(payload.get("text") or "").strip()
+    if not text:
+        return
+    source = str(payload.get("provider") or payload.get("source") or payload.get("transport") or "").strip()
+    hypothesis = {
+        "kind": "frontend_witness_hypothesis",
+        "source": source or "external_kame_frontend",
+        "text": text,
+        "authority": "hypothesis",
+        "tool_authority": False,
+    }
+    raw = arguments.get("auxiliary_transcript_hypotheses")
+    if isinstance(raw, list):
+        items = list(raw)
+    elif isinstance(raw, tuple):
+        items = list(raw)
+    elif isinstance(raw, Mapping):
+        items = [dict(raw)]
+    elif raw:
+        items = [raw]
+    else:
+        items = []
+    if not any(isinstance(item, Mapping) and item.get("text") == text for item in items):
+        items.append(hypothesis)
+    arguments["auxiliary_transcript_hypotheses"] = items
+
+
+def _external_kame_bridge_validation_errors(
+    payload: Mapping[str, Any],
+    arguments: Mapping[str, Any],
+) -> tuple[str, ...]:
+    errors: list[str] = []
+    protocol = str(payload.get("protocol") or arguments.get("protocol") or "").strip()
+    if protocol != "kame_session_v1":
+        errors.append("missing_or_invalid_protocol")
+    if not str(payload.get("turn_id") or arguments.get("turn_id") or "").strip():
+        errors.append("missing_turn_id")
+
+    has_transcript_hypothesis = _external_kame_bridge_has_transcript_hypothesis(arguments)
+    if has_transcript_hypothesis and not _external_kame_bridge_audio_segment_ref(arguments):
+        errors.append("missing_audio_segment_ref_for_transcript_hypotheses")
+    if has_transcript_hypothesis and not _external_kame_bridge_has_audio_timing(arguments):
+        errors.append("missing_audio_timing_for_transcript_hypotheses")
+
+    return tuple(dict.fromkeys(errors))
+
+
+def _external_kame_bridge_has_transcript_hypothesis(arguments: Mapping[str, Any]) -> bool:
+    if str(arguments.get("transcript") or "").strip():
+        return True
+    for key in (
+        "reflex_transcript_hypothesis",
+        "moshi_transcript_hypothesis",
+        "s2s_transcript_hypothesis",
+        "asr_transcript",
+        "oracle_verbatim_transcript",
+    ):
+        if str(arguments.get(key) or "").strip():
+            return True
+    for key in ("auxiliary_transcript_hypotheses", "transcript_hypotheses"):
+        raw = arguments.get(key)
+        if isinstance(raw, Mapping):
+            return True
+        if isinstance(raw, list | tuple) and raw:
+            return True
+    return False
+
+
+def _external_kame_bridge_audio_segment_ref(arguments: Mapping[str, Any]) -> str:
+    for key in ("audio_segment_ref", "audio_ref", "clipped_audio_ref", "audio_artifact_ref"):
+        value = str(arguments.get(key) or "").strip()
+        if value:
+            return value
+    audio = arguments.get("audio")
+    if isinstance(audio, Mapping):
+        for key in ("audio_segment_ref", "segment_ref", "artifact_ref", "ref", "uri"):
+            value = str(audio.get(key) or "").strip()
+            if value:
+                return value
+    return ""
+
+
+def _external_kame_bridge_has_audio_timing(arguments: Mapping[str, Any]) -> bool:
+    if arguments.get("audio_time_range_ms") not in (None, "", (), [], {}):
+        return True
+    audio = arguments.get("audio")
+    if not isinstance(audio, Mapping):
+        return False
+    if audio.get("time_range_ms") not in (None, "", (), [], {}):
+        return True
+    if audio.get("audio_time_range_ms") not in (None, "", (), [], {}):
+        return True
+    vad = audio.get("vad")
+    return isinstance(vad, Mapping) and vad.get("speech_start_ms") is not None and vad.get("speech_end_ms") is not None
 
 
 def _overlay_first_text(

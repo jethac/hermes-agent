@@ -5,14 +5,16 @@ voice architecture on a ThinkStation PGX-class NVIDIA machine.
 
 It exposes OpenAI-compatible vLLM servers:
 
-- `gemma4-e2b-reflex` on host port `8001`, intended for the low-latency
-  audio-aware reflex/interface model.
-- `gemma4-12b-oracle` on host port `8002`, intended as the default local
-  multimodal Hermes brain for responsive household/business operation.
-- `nemotron-nano-oracle` on host port `8003`, intended as a second local
-  NVIDIA oracle brain for tool-heavy reasoning, comparison, and routing.
-- `nemotron-super-oracle` on host port `8004`, kept as an optional deep local
-  model when memory and latency budget allow it.
+- `gemma4-e2b-reflex` on host port `8001`, a legacy service name for the
+  Gemma audio-interpreter endpoint. It should be used for bounded direct-audio
+  evidence adjudication after the VAD/noise-gate cut, not as the live reflex
+  floor controller.
+- `gemma4-12b-oracle` on host port `8002`, retained as an optional local
+  comparison or fallback oracle endpoint.
+- `nemotron-nano-oracle` on host port `8003`, retained as an optional local
+  comparison or fallback NVIDIA oracle endpoint.
+- `nemotron-super-oracle` on host port `8004`, the preferred sponsor-aligned
+  local oracle target when memory and latency budget allow it.
 
 The stack is intentionally separate from the main Hermes `docker-compose.yml`.
 It mounts only model/cache directories, so Python, CUDA, and ML package
@@ -68,35 +70,31 @@ docker compose --env-file .env up -d --build gemma4-e2b-reflex
 docker compose --env-file .env logs -f gemma4-e2b-reflex
 ```
 
-After the reflex endpoint is healthy:
+After the Gemma interpreter endpoint is healthy:
 
 ```bash
 curl http://127.0.0.1:8001/v1/models
 ```
 
-Then start the default local oracle endpoint:
-
-```bash
-docker compose --env-file .env up -d --build gemma4-12b-oracle
-docker compose --env-file .env logs -f gemma4-12b-oracle
-curl http://127.0.0.1:8002/v1/models
-```
-
-Then start the secondary NVIDIA oracle endpoint:
-
-```bash
-docker compose --env-file .env up -d --build nemotron-nano-oracle
-docker compose --env-file .env logs -f nemotron-nano-oracle
-curl http://127.0.0.1:8003/v1/models
-```
-
-Nemotron Super is optional and large. Start it only when the default Gemma 12B
-+ Nano layout leaves enough memory headroom:
+Then start the preferred local oracle endpoint when the host has enough
+headroom:
 
 ```bash
 docker compose --env-file .env up -d --build nemotron-super-oracle
 docker compose --env-file .env logs -f nemotron-super-oracle
 curl http://127.0.0.1:8004/v1/models
+```
+
+Gemma 12B and Nemotron Nano remain optional comparison or fallback endpoints:
+
+```bash
+docker compose --env-file .env up -d --build gemma4-12b-oracle
+docker compose --env-file .env logs -f gemma4-12b-oracle
+curl http://127.0.0.1:8002/v1/models
+
+docker compose --env-file .env up -d --build nemotron-nano-oracle
+docker compose --env-file .env logs -f nemotron-nano-oracle
+curl http://127.0.0.1:8003/v1/models
 ```
 
 The committed default keeps all oracle endpoints at `65536` tokens so Hermes
@@ -108,47 +106,53 @@ can satisfy its local 64K-context requirement. Drop the selected oracle's
 Use these OpenAI-compatible endpoints from Hermes:
 
 ```text
-Reflex base URL: http://<thinkstation-host>:8001/v1
-Reflex model:    gemma-4-e2b-reflex
+Interpreter base URL: http://<thinkstation-host>:8001/v1
+Interpreter model:    gemma-4-e2b-reflex
 
-Primary oracle base URL:   http://<thinkstation-host>:8002/v1
-Primary oracle model:      gemma-4-12b-oracle
+Preferred oracle base URL: http://<thinkstation-host>:8004/v1
+Preferred oracle model:    nemotron-3-super-oracle
 
-Secondary oracle base URL: http://<thinkstation-host>:8003/v1
-Secondary oracle model:    nemotron-3-nano-oracle
+Fallback oracle base URL:  http://<thinkstation-host>:8002/v1
+Fallback oracle model:     gemma-4-12b-oracle
 
-Optional deep base URL:    http://<thinkstation-host>:8004/v1
-Optional deep model:       nemotron-3-super-oracle
+Optional nano base URL:    http://<thinkstation-host>:8003/v1
+Optional nano model:       nemotron-3-nano-oracle
 ```
 
-The oracle endpoint is just a serving target. Hermes model selection should
-still remain authoritative; `/model` should continue to choose the active
-Hermes oracle.
+The `gemma4-e2b-reflex` name is retained for Compose compatibility only. In the
+KAME architecture, Gemma is the interpreter/evidence model: it receives clipped
+raw audio plus labeled Moshi/open-S2S/classic-ASR hypotheses and emits promoted
+wording or rejection evidence. The live reflex/floor-control layer is separate
+and should be the fastest stable Moshi-like, VoiceClaw/OpenClaw-like, hosted
+realtime, or local timing/noise-gated path available. The oracle endpoint is
+just a serving target. Hermes model selection should still remain authoritative;
+`/model` should continue to choose the active Hermes oracle.
 
-For the hackathon branch, heavy requests should use both local oracle brains.
-Configure Hermes with Gemma 12B as the active `/model` target and the
-`gemma-nemotron` MoA preset enabled for the model router. In that layout,
-Nemotron Nano produces the second-model analysis for long or planning-heavy
-turns, and Gemma 12B aggregates it into the normal Hermes response.
+For the hackathon branch, heavy requests should go directly through Hermes'
+active `/model`. The preferred local target is Nemotron 3 Super when it is
+healthy; Gemma 12B or a hosted model may be selected through the same normal
+Hermes `/model` path as a clearly labeled fallback. The earlier Gemma 12B +
+Nemotron Nano MoA path is no longer the live voice strategy because it added
+latency and made turn timing harder to reason about.
 
 ## Useful Knobs
 
 - `GEMMA4_E2B_LIMIT_MM_PER_PROMPT`: defaults to `{"audio":1,"image":0,"video":0}`
-  so the reflex can accept one audio item per prompt without reserving image or
-  video slots.
-- `GEMMA4_E2B_MAX_MODEL_LEN`: defaults to `8192` because the reflex should stay
-  small and resident beside the oracle. Raise it only if real audio prompts need
-  more room.
+  so the interpreter can accept one bounded audio cut per prompt without
+  reserving image or video slots.
+- `GEMMA4_E2B_MAX_MODEL_LEN`: defaults to `8192` because the interpreter should
+  stay small and resident beside the oracle. Raise it only if real audio prompts
+  need more room. The service name is legacy; the model role is interpreter.
 - `GEMMA4_12B_LIMIT_MM_PER_PROMPT`: defaults to `{"audio":1,"image":1,"video":0}`
-  so the primary local brain can accept bounded multimodal inputs without
-  reserving video capacity.
+  so the optional Gemma fallback/comparison oracle can accept bounded
+  multimodal inputs without reserving video capacity.
 - `GEMMA4_12B_MAX_MODEL_LEN`: defaults to `65536` so Hermes can use it as the
-  active local model without tripping the 64K context guard.
+  active fallback/comparison model without tripping the 64K context guard.
 - `NEMOTRON_NANO_MAX_MODEL_LEN`: defaults to `65536` for the same reason.
 - `*_GPU_MEMORY_UTILIZATION`: Gemma 12B defaults to `0.38` and Nemotron Nano to
-  `0.28` so both can stay warm beside the reflex on a single-user GB10/PGX
-  host. Lower them if vLLM reports allocation failures; raise one only after
-  confirming the other services still have headroom.
+  `0.28` for optional comparison/fallback experiments. Lower them if vLLM
+  reports allocation failures; raise one only after confirming the selected
+  interpreter and oracle services still have headroom.
 - `NEMOTRON_NANO_TENSOR_PARALLEL_SIZE` and `NEMOTRON_SUPER_TENSOR_PARALLEL_SIZE`:
   set these to the number of GPUs when you want vLLM to shard an NVIDIA oracle
   across multiple GPUs.
@@ -181,7 +185,7 @@ If `--reasoning-parser nemotron_v3` is removed or unsupported by the installed
 vLLM image, the Nemotron endpoints can emit reasoning-style text such as
 planning phrases or `</think>` markers in normal assistant content. The API is
 healthy in that state, but Hermes must filter that content before it reaches
-Discord text, TTS, or the Gemma reflex context. Treat a clean `/v1/models`
+Discord text, TTS, or the Gemma interpreter context. Treat a clean `/v1/models`
 response and successful tool-choice probe as serving checks, not as proof that
 the model output is demo-ready.
 

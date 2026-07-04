@@ -354,6 +354,14 @@ Gemma or another interpreter reviews clipped raw audio plus transcript
 hypotheses, and Hermes's active `/model` remains the oracle for tools, memory,
 and durable work.
 
+In the realtime/full-KAME path, Moshi/Open-S2S transcript-like text is not a
+second user message. If the frontend exposes both a clipped waveform and a text
+guess, Hermes sends both to the interpreter in one evidence bundle. The waveform
+is primary; the text guess is a `frontend_witness_hypothesis` that may help the
+interpreter recover clipped words, names, numbers, or code-switched phrases.
+Only promoted interpreter/oracle wording is committed to durable history or used
+for tool, spend, phone, memory, file, or external-message actions.
+
 When the bot joins a voice channel, it:
 
 1. **Listens** to each user's audio stream independently

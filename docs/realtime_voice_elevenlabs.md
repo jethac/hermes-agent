@@ -29,6 +29,12 @@ external messages, or durable user text by itself. Full KAME evidence should
 preserve the raw audio reference and treat ElevenLabs text as
 `classic_asr_hypothesis` context.
 
+This is the same authority rule used for Moshi/Open-S2S frontends: a provider
+may supply a transcript-looking string beside the raw voice, but the string is
+only interpreter context until raw-audio-grounded promotion. Provider STT text
+must not become `oracle_text`, durable user history, or tool/action arguments
+by arriving before the interpreter result.
+
 ## Provider-Neutral Architecture
 
 The realtime voice sidecar speaks the same provider-neutral streaming contract

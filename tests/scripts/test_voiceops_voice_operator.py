@@ -665,7 +665,7 @@ def _async_oracle_smoke_payload() -> dict:
         "witness_fusion_rejection_reasons": {
             "early": [],
             "with": [],
-            "late": ["wrong_speaker", "wrong_channel", "stale_witness"],
+            "late": ["ambiguous_speaker", "wrong_speaker", "wrong_channel", "stale_witness"],
         },
         "witness_fusion_adjudication_outcomes_observed": True,
         "witness_fusion_accepted_counts": {"early": 1, "with": 1, "late": 1},
@@ -713,6 +713,41 @@ def _async_oracle_smoke_payload() -> dict:
             "voiceops.runtime_kame_action_gate.v1",
             "voiceops.runtime_kame_action_gate.v1",
             "voiceops.runtime_kame_action_gate.v1",
+        ],
+        "durable_resume_contract_smoke_ok": True,
+        "durable_resume_contract_schema_version": "voiceops.kame_durable_resume_context.v1",
+        "durable_resume_promoted_turn_count": 4,
+        "durable_resume_recent_promoted_turns_verbatim": True,
+        "durable_resume_recent_promoted_turns": [
+            {
+                "turn_id": "voice-smoke-durable-resume:3",
+                "text": "promoted durable resume request 3",
+                "source": "gemma_interpreter",
+                "authority": "promoted",
+            },
+            {
+                "turn_id": "voice-smoke-durable-resume:4",
+                "text": "promoted durable resume request 4",
+                "source": "gemma_interpreter",
+                "authority": "promoted",
+            },
+        ],
+        "durable_resume_older_turns_summarized": True,
+        "durable_resume_older_promoted_turn_count": 2,
+        "durable_resume_older_promoted_turn_summary": (
+            "2 older promoted voice turn(s) summarized from durable oracle ledger: "
+            "voice-smoke-durable-resume:1, voice-smoke-durable-resume:2."
+        ),
+        "durable_resume_hypothesis_replay_absent": True,
+        "durable_resume_ledger_authoritative": True,
+        "hypothesis_final_durable_message_smoke_ok": True,
+        "hypothesis_final_durable_messages_empty": True,
+        "hypothesis_final_durable_message_count": 0,
+        "hypothesis_final_without_adapter_flag_non_durable": True,
+        "hypothesis_final_witness_intent_non_durable": True,
+        "explicit_asr_fallback_final_remains_durable": True,
+        "explicit_asr_fallback_durable_messages": [
+            {"role": "user", "content": "check deployment status"}
         ],
         "audit_scalar_smoke_ok": True,
         "audit_scalar_payload_redacted": True,
@@ -1432,7 +1467,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_rejection_reasons"] == {
         "early": [],
         "with": [],
-        "late": ["wrong_speaker", "wrong_channel", "stale_witness"],
+        "late": ["ambiguous_speaker", "wrong_speaker", "wrong_channel", "stale_witness"],
     }
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_adjudication_outcomes_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_accepted_counts"] == {
@@ -1580,6 +1615,61 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     ]
     assert runtime_action_gate["ok"] is True
     assert runtime_action_gate["evidence"] == "async_oracle_smoke_plus_runtime_action_gate_tests"
+    assert report["proofs"]["async_oracle_jobs"]["durable_resume_contract_smoke_ok"] is True
+    assert (
+        report["proofs"]["async_oracle_jobs"]["durable_resume_contract_schema_version"]
+        == "voiceops.kame_durable_resume_context.v1"
+    )
+    assert report["proofs"]["async_oracle_jobs"]["durable_resume_promoted_turn_count"] == 4
+    assert report["proofs"]["async_oracle_jobs"]["durable_resume_recent_promoted_turns_verbatim"] is True
+    assert report["proofs"]["async_oracle_jobs"]["durable_resume_recent_promoted_turns"] == [
+        {
+            "turn_id": "voice-smoke-durable-resume:3",
+            "text": "promoted durable resume request 3",
+            "source": "gemma_interpreter",
+            "authority": "promoted",
+        },
+        {
+            "turn_id": "voice-smoke-durable-resume:4",
+            "text": "promoted durable resume request 4",
+            "source": "gemma_interpreter",
+            "authority": "promoted",
+        },
+    ]
+    assert report["proofs"]["async_oracle_jobs"]["durable_resume_older_turns_summarized"] is True
+    assert report["proofs"]["async_oracle_jobs"]["durable_resume_older_promoted_turn_count"] == 2
+    assert "voice-smoke-durable-resume:1" in report["proofs"]["async_oracle_jobs"][
+        "durable_resume_older_promoted_turn_summary"
+    ]
+    assert "voice-smoke-durable-resume:2" in report["proofs"]["async_oracle_jobs"][
+        "durable_resume_older_promoted_turn_summary"
+    ]
+    assert report["proofs"]["async_oracle_jobs"]["durable_resume_hypothesis_replay_absent"] is True
+    assert report["proofs"]["async_oracle_jobs"]["durable_resume_ledger_authoritative"] is True
+    assert report["proofs"]["async_oracle_jobs"]["hypothesis_final_durable_message_smoke_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["hypothesis_final_durable_messages_empty"] is True
+    assert report["proofs"]["async_oracle_jobs"]["hypothesis_final_durable_message_count"] == 0
+    assert (
+        report["proofs"]["async_oracle_jobs"]["hypothesis_final_without_adapter_flag_non_durable"]
+        is True
+    )
+    assert report["proofs"]["async_oracle_jobs"]["hypothesis_final_witness_intent_non_durable"] is True
+    assert report["proofs"]["async_oracle_jobs"]["explicit_asr_fallback_final_remains_durable"] is True
+    assert report["proofs"]["async_oracle_jobs"]["explicit_asr_fallback_durable_messages"] == [
+        {"role": "user", "content": "check deployment status"}
+    ]
+    assert report["requirements"]["async_oracle_hypothesis_final_events_non_durable"] is True
+    hypothesis_final = report["async_oracle_acceptance"]["hypothesis_final_events_stay_non_durable"]
+    assert hypothesis_final["ok"] is True
+    assert hypothesis_final["evidence"] == "async_oracle_smoke_plus_session_persistence_tests"
+    durable_resume = report["async_oracle_acceptance"]["durable_promoted_turn_resume_contract"]
+    assert durable_resume["ok"] is True
+    assert durable_resume["evidence"] == "async_oracle_smoke_plus_durable_resume_tests"
+    assert (
+        "tests/agent/test_realtime_voice.py::test_kame_resume_context_uses_promoted_turns_and_excludes_hypotheses"
+        in durable_resume["test_refs"]
+    )
+    assert report["requirements"]["async_oracle_durable_promoted_turn_resume_contract"] is True
     assert report["requirements"]["async_oracle_runtime_kame_action_gate"] is True
     assert report["requirements"]["async_oracle_unflagged_high_risk_tool_fails_closed"] is True
     assert report["proofs"]["async_oracle_jobs"]["audit_scalar_smoke_ok"] is True
@@ -1887,6 +1977,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:failed_job_reported_without_crash" in issues
     assert "missing_async_oracle_coverage:job_control_updates_reach_oracle" in issues
     assert "missing_async_oracle_coverage:transcript_hypotheses_remain_unpromoted" in issues
+    assert "missing_async_oracle_coverage:hypothesis_final_events_non_durable" in issues
     assert "missing_async_oracle_coverage:witness_fusion_timing_preserves_single_bundle" in issues
     assert "missing_async_oracle_coverage:witness_fusion_accepted_audio_gate_visible" in issues
     assert "missing_async_oracle_coverage:witness_fusion_partial_superseded_by_final" in issues
@@ -1901,6 +1992,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_acceptance:failed_job_is_reported_without_crashing_session" in issues
     assert "missing_async_oracle_acceptance:job_control_updates_reach_oracle" in issues
     assert "missing_async_oracle_acceptance:transcript_hypotheses_stay_non_authoritative" in issues
+    assert "missing_async_oracle_acceptance:hypothesis_final_events_stay_non_durable" in issues
     assert "missing_async_oracle_acceptance:witness_fusion_timing_preserves_single_bundle" in issues
     assert "missing_async_oracle_acceptance:witness_fusion_exposes_accepted_audio_gate" in issues
     assert "missing_async_oracle_acceptance:witness_fusion_supersedes_partial_witness" in issues

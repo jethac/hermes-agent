@@ -1868,6 +1868,188 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
     }
 
 
+def _run_durable_resume_contract_smoke() -> dict[str, Any]:
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(session_id="voice-smoke-durable-resume"),
+        engine=SmokeEngine(oracle=SmokeOracle()),
+    )
+    for index in range(1, 5):
+        session._apply_server_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+                session_id="voice-smoke-durable-resume",
+                sequence=index,
+                payload={
+                    "voice_architecture": "kame_frontend_oracle",
+                    "turn_id": f"voice-smoke-durable-resume:{index}",
+                    "route": "oracle_direct",
+                    "intent": f"Promoted resume request {index}.",
+                    "oracle_text": f"promoted durable resume request {index}",
+                    "oracle_text_source": "gemma_interpreter",
+                    "transcript": f"raw transcript hypothesis {index}",
+                    "reflex_transcript_hypothesis": f"reflex hypothesis {index}",
+                    "auxiliary_transcript_hypotheses": [
+                        {
+                            "kind": "frontend_witness_hypothesis",
+                            "source": "moshi",
+                            "text": f"moshi hypothesis {index}",
+                            "authority": "hypothesis",
+                            "tool_authority": False,
+                        }
+                    ],
+                    "playback_generation": index,
+                },
+            )
+        )
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+            session_id="voice-smoke-durable-resume",
+            sequence=5,
+            payload={
+                "voice_architecture": "kame_frontend_oracle",
+                "turn_id": "voice-smoke-durable-resume:unpromoted",
+                "route": "oracle_direct",
+                "intent": "Do not resume this witness.",
+                "oracle_text": "unpromoted witness text must not resume",
+                "oracle_text_source": "reflex_audio",
+                "transcript_hypotheses": [
+                    {
+                        "kind": "frontend_witness_hypothesis",
+                        "source": "moshi",
+                        "text": "unpromoted witness text must not resume",
+                        "authority": "hypothesis",
+                    }
+                ],
+                "playback_generation": 5,
+            },
+        )
+    )
+    context = session.durable_resume_context(recent_turn_limit=2)
+    serialized_context = json.dumps(context, sort_keys=True)
+    recent_texts = [turn.get("text") for turn in context.get("recent_promoted_turns") or []]
+    recent_turns_verbatim = recent_texts == [
+        "promoted durable resume request 3",
+        "promoted durable resume request 4",
+    ]
+    older_summarized = (
+        context.get("older_promoted_turn_count") == 2
+        and "voice-smoke-durable-resume:1" in str(context.get("older_promoted_turn_summary") or "")
+        and "voice-smoke-durable-resume:2" in str(context.get("older_promoted_turn_summary") or "")
+        and "promoted durable resume request 1" not in serialized_context
+        and "promoted durable resume request 2" not in serialized_context
+    )
+    hypothesis_replay_absent = (
+        context.get("hypothesis_replay_absent") is True
+        and "moshi hypothesis" not in serialized_context
+        and "reflex hypothesis" not in serialized_context
+        and "raw transcript hypothesis" not in serialized_context
+        and "unpromoted witness text must not resume" not in serialized_context
+    )
+    ledger_authoritative = (
+        context.get("schema_version") == "voiceops.kame_durable_resume_context.v1"
+        and context.get("source") == "durable_oracle_records"
+        and context.get("ledger_authoritative") is True
+    )
+    return {
+        "ok": recent_turns_verbatim and older_summarized and hypothesis_replay_absent and ledger_authoritative,
+        "durable_resume_contract_schema_version": context.get("schema_version"),
+        "durable_resume_promoted_turn_count": context.get("promoted_turn_count"),
+        "durable_resume_recent_promoted_turns_verbatim": recent_turns_verbatim,
+        "durable_resume_recent_promoted_turns": context.get("recent_promoted_turns") or [],
+        "durable_resume_older_turns_summarized": older_summarized,
+        "durable_resume_older_promoted_turn_count": context.get("older_promoted_turn_count"),
+        "durable_resume_older_promoted_turn_summary": context.get("older_promoted_turn_summary"),
+        "durable_resume_hypothesis_replay_absent": hypothesis_replay_absent,
+        "durable_resume_ledger_authoritative": ledger_authoritative,
+    }
+
+
+def _run_hypothesis_final_durable_message_smoke() -> dict[str, Any]:
+    session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(session_id="voice-smoke-hypothesis-final"),
+        engine=SmokeEngine(oracle=SmokeOracle()),
+    )
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.TRANSCRIPT_FINAL,
+            session_id="voice-smoke-hypothesis-final",
+            sequence=1,
+            payload={
+                "turn_id": "voice-smoke-hypothesis-final:1",
+                "text": "spend two hundred dollars and call my phone",
+                "voice_architecture": "kame_frontend_oracle",
+                "authority": "hypothesis",
+                "kind": "frontend_witness_hypothesis",
+                "transcript_source": "moshi",
+                "playback_generation": 1,
+            },
+        )
+    )
+    session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.INTERFACE_INTENT_FINAL,
+            session_id="voice-smoke-hypothesis-final",
+            sequence=2,
+            payload={
+                "turn_id": "voice-smoke-hypothesis-final:2",
+                "text": "prepare a voip provisioning plan",
+                "intent": "Prepare a VoIP provisioning plan.",
+                "route": "oracle_direct",
+                "voice_architecture": "kame_frontend_oracle",
+                "intent_source": "frontend_witness_hypothesis",
+                "transcript_hypotheses": [
+                    {
+                        "kind": "frontend_witness_hypothesis",
+                        "source": "moshi",
+                        "text": "prepare a voip provisioning plan",
+                        "authority": "hypothesis",
+                        "tool_authority": False,
+                    }
+                ],
+                "playback_generation": 2,
+            },
+        )
+    )
+    hypothesis_messages = session.durable_messages()
+
+    fallback_session = RealtimeVoiceSession(
+        RealtimeVoiceSessionConfig(session_id="voice-smoke-asr-fallback-final"),
+        engine=SmokeEngine(oracle=SmokeOracle()),
+    )
+    fallback_session._apply_server_event(
+        VoiceEvent(
+            type=VoiceEventType.TRANSCRIPT_FINAL,
+            session_id="voice-smoke-asr-fallback-final",
+            sequence=1,
+            payload={
+                "turn_id": "voice-smoke-asr-fallback-final:1",
+                "text": "check deployment status",
+                "intent": "check deployment status",
+                "route": "oracle_direct",
+                "voice_architecture": "kame_frontend_oracle",
+                "intent_source": "asr_fallback",
+                "transcript_source": "asr",
+                "interface_audio_input_fallback": True,
+                "kame_interface_audio_input_fallback": True,
+                "playback_generation": 1,
+            },
+        )
+    )
+    fallback_messages = fallback_session.durable_messages()
+    hypothesis_messages_empty = len(hypothesis_messages) == 0
+    fallback_preserved = fallback_messages == [{"role": "user", "content": "check deployment status"}]
+    return {
+        "ok": hypothesis_messages_empty and fallback_preserved,
+        "hypothesis_final_durable_messages_empty": hypothesis_messages_empty,
+        "hypothesis_final_durable_message_count": len(hypothesis_messages),
+        "hypothesis_final_without_adapter_flag_non_durable": hypothesis_messages_empty,
+        "hypothesis_final_witness_intent_non_durable": hypothesis_messages_empty,
+        "explicit_asr_fallback_final_remains_durable": fallback_preserved,
+        "explicit_asr_fallback_durable_messages": fallback_messages,
+    }
+
+
 async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
     oracle = SmokeOracle()
     engine = SmokeEngine(oracle=oracle)
@@ -2549,6 +2731,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
                     "platform": "discord",
                     "channel_user_id": "wrong-speaker",
                     "display_name": "guest",
+                    "ambiguous": True,
                 },
                 "channel": {
                     "transport": "discord_voice",
@@ -2810,7 +2993,12 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "early": ["corrected_by_audio"],
         "with": ["accepted_as_supporting_evidence"],
         "late": ["rejected_or_diagnostic_only"],
-    } and rejection_reasons["late"] == ["wrong_speaker", "wrong_channel", "stale_witness"]
+    } and rejection_reasons["late"] == [
+        "ambiguous_speaker",
+        "wrong_speaker",
+        "wrong_channel",
+        "stale_witness",
+    ]
     return {
         "ok": (
             early_single_bundle
@@ -3726,6 +3914,8 @@ async def run_smoke() -> dict[str, Any]:
     unflagged_high_risk_tool_smoke = await _run_unflagged_high_risk_tool_smoke()
     sidecar_control_smoke = await _run_sidecar_control_smoke()
     external_frontend_bridge_smoke = await _run_external_frontend_bridge_smoke()
+    durable_resume_contract_smoke = _run_durable_resume_contract_smoke()
+    hypothesis_final_durable_message_smoke = _run_hypothesis_final_durable_message_smoke()
     unpromoted_hypothesis_smoke = await _run_unpromoted_transcript_hypothesis_smoke()
     energy_gate_smoke = await _run_energy_gate_smoke()
     kame_first_audio_latency_smoke = await _run_kame_first_audio_latency_smoke()
@@ -4171,6 +4361,8 @@ async def run_smoke() -> dict[str, Any]:
             and unflagged_high_risk_tool_smoke["ok"]
             and sidecar_control_smoke["ok"]
             and external_frontend_bridge_smoke["ok"]
+            and durable_resume_contract_smoke["ok"]
+            and hypothesis_final_durable_message_smoke["ok"]
             and unpromoted_hypothesis_smoke["ok"]
             and energy_gate_smoke["ok"]
             and kame_first_audio_latency_smoke["ok"]
@@ -4499,6 +4691,53 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "external_frontend_event_counts": external_frontend_bridge_smoke[
             "external_frontend_event_counts"
+        ],
+        "durable_resume_contract_smoke_ok": durable_resume_contract_smoke["ok"],
+        "durable_resume_contract_schema_version": durable_resume_contract_smoke[
+            "durable_resume_contract_schema_version"
+        ],
+        "durable_resume_promoted_turn_count": durable_resume_contract_smoke[
+            "durable_resume_promoted_turn_count"
+        ],
+        "durable_resume_recent_promoted_turns_verbatim": durable_resume_contract_smoke[
+            "durable_resume_recent_promoted_turns_verbatim"
+        ],
+        "durable_resume_recent_promoted_turns": durable_resume_contract_smoke[
+            "durable_resume_recent_promoted_turns"
+        ],
+        "durable_resume_older_turns_summarized": durable_resume_contract_smoke[
+            "durable_resume_older_turns_summarized"
+        ],
+        "durable_resume_older_promoted_turn_count": durable_resume_contract_smoke[
+            "durable_resume_older_promoted_turn_count"
+        ],
+        "durable_resume_older_promoted_turn_summary": durable_resume_contract_smoke[
+            "durable_resume_older_promoted_turn_summary"
+        ],
+        "durable_resume_hypothesis_replay_absent": durable_resume_contract_smoke[
+            "durable_resume_hypothesis_replay_absent"
+        ],
+        "durable_resume_ledger_authoritative": durable_resume_contract_smoke[
+            "durable_resume_ledger_authoritative"
+        ],
+        "hypothesis_final_durable_message_smoke_ok": hypothesis_final_durable_message_smoke["ok"],
+        "hypothesis_final_durable_messages_empty": hypothesis_final_durable_message_smoke[
+            "hypothesis_final_durable_messages_empty"
+        ],
+        "hypothesis_final_durable_message_count": hypothesis_final_durable_message_smoke[
+            "hypothesis_final_durable_message_count"
+        ],
+        "hypothesis_final_without_adapter_flag_non_durable": hypothesis_final_durable_message_smoke[
+            "hypothesis_final_without_adapter_flag_non_durable"
+        ],
+        "hypothesis_final_witness_intent_non_durable": hypothesis_final_durable_message_smoke[
+            "hypothesis_final_witness_intent_non_durable"
+        ],
+        "explicit_asr_fallback_final_remains_durable": hypothesis_final_durable_message_smoke[
+            "explicit_asr_fallback_final_remains_durable"
+        ],
+        "explicit_asr_fallback_durable_messages": hypothesis_final_durable_message_smoke[
+            "explicit_asr_fallback_durable_messages"
         ],
         "unpromoted_hypothesis_smoke_ok": unpromoted_hypothesis_smoke["ok"],
         "unpromoted_hypothesis_job_id": unpromoted_hypothesis_smoke["unpromoted_hypothesis_job_id"],

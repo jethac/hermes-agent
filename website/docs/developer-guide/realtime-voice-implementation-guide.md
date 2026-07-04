@@ -211,6 +211,15 @@ Client events:
 
 Client `audio.input.chunk` events may include a `transcript` string for browser or sidecar experiments that produce text before raw-audio interpretation. Set `end_of_utterance`, `final`, or `is_final` to `false` for partial transcript captions. Only text-oracle and fallback modes should start a Hermes oracle turn directly from a final transcript payload. In full KAME mode, transcript payloads are hypotheses attached to the clipped raw audio and interpreter evidence bundle.
 
+For Moshi/OpenClaw/VoiceClaw-style frontends, the preferred implementation is
+not "send transcript to Hermes." It is "send raw audio plus the frontend's
+witness text to the interpreter." The adapter should keep one `turn_id`, one
+`audio_segment_ref`, one `evidence_bundle_id`, and one `evidence_merge_key` for
+the speech cut. A Moshi transcript may arrive before, with, or after the
+accepted cut; Hermes should merge it into the same interpreter bundle in all
+three cases. The witness text must be labeled as hypothesis authority and must
+not create a second oracle job or durable user turn.
+
 When Hermes forwards microphone chunks to a text-oracle sidecar, it adds a server-owned `input_generation` to each sidecar-bound `audio.input.chunk`. Sidecars should echo that value on `transcript.partial` and `transcript.final` events. Hermes uses it to ignore stale speech-recognition results after barge-in or after a newer utterance has started. Desktop clients do not set or rely on this field.
 
 Server events:

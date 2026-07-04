@@ -33,10 +33,10 @@ Realtime voice should ship in visible tiers instead of as a single "done" switch
 
 0. **One-shot fallback**: existing MediaRecorder upload, transcript submission, and TTS playback. This remains available for machines, browsers, or profiles where realtime preflight fails.
 1. **Portable desktop path**: desktop streams microphone frames to Hermes, Hermes owns session state, barge-in, permissions, durable transcript boundaries, and fallback to one-shot voice. This tier must not require local audio-model hardware.
-2. **External text-oracle sidecar path**: a loopback, LAN, or provider-backed sidecar supplies STT/audio understanding plus TTS. If the sidecar reports `streaming_stt: true` and `tts: true`, Hermes can treat it as live-like for text-oracle conversation. If it only has utterance STT, it is useful but not Gemini Live-style yet.
+2. **External text-oracle fallback path**: a loopback, LAN, or provider-backed sidecar supplies STT/audio understanding plus TTS for compatibility, bring-up, and provider comparison. If the sidecar reports `streaming_stt: true` and `tts: true`, Hermes can run a live-like fallback conversation, but this is not the target full-KAME control path. If it only has utterance STT, it is useful but remains degraded.
 3. **Gemma/interpreter LLM path**: Gemma 4 E2B/E4B/12B, or a similar audio-capable frontend model, can run inside the sidecar as an interpreter over clipped raw audio plus provenance-labeled transcript hypotheses. Gemma is not the Hermes oracle; the backend oracle remains whatever Hermes is configured to use for memory, files, tools, MCP, approvals, and profile behavior.
 4. **Native S2S/reflex path**: a sidecar speaks directly in a speech-to-speech loop and submits asynchronous oracle jobs to Hermes through a narrow `ask_brain`/`interface.oracle.request` bridge. This is the best long-term path for prosody and interruption feel. The portable text-oracle path remains a fallback and compatibility tier, not the final KAME architecture.
-5. **Gemini Live-style production quality**: requires `voice.realtime.production_evidence_report` to point at at least three verified EN/JA smoke report runs by default and `voice.realtime.production_review_report` to point at an evidence-backed launch-review JSON report. The combined gate covers repeatable latency evidence, full audio-session evidence from fixture audio through reflex/interpreter evidence, Hermes oracle text, and TTS, interruption reliability, multilingual metadata preservation, desktop reconnect recovery, graceful fallback, security review, and enough real conversation testing to prove the experience remains coherent under noise, remote sidecar latency, TTS/provider failure, and tool-using Hermes answers. Fallback STT evidence may satisfy fallback coverage only when labeled as fallback.
+5. **Full KAME production quality**: requires `voice.realtime.production_evidence_report` to point at at least three verified EN/JA smoke report runs by default and `voice.realtime.production_review_report` to point at an evidence-backed launch-review JSON report. The combined gate covers repeatable latency evidence, full audio-session evidence from fixture audio through reflex/interpreter evidence, Hermes oracle text, and TTS, interruption reliability, multilingual metadata preservation, desktop reconnect recovery, graceful fallback, security review, and enough real conversation testing to prove the experience remains coherent under noise, remote sidecar latency, TTS/provider failure, and tool-using Hermes answers. Fallback STT evidence may satisfy fallback coverage only when labeled as fallback; it cannot satisfy the raw-audio reflex + interpreter + Hermes `/model` architecture by itself.
 
 The ladder is intentionally hardware-neutral. A developer may use a large local inference workstation, a small desktop with cloud STT/TTS, a LAN model server, or a hosted provider, but the product contract is capabilities and evidence: preflight status, sidecar health, live-like `conversation_quality`, evidence-backed `production_readiness`, latency targets, English/Japanese fixture reports, launch-review checks, and safe fallback behavior.
 
@@ -178,11 +178,35 @@ create a second oracle turn, overwrite `oracle_text`, satisfy a high-risk action
 approval, or become durable user history unless the interpreter or oracle emits
 promoted evidence.
 
+Moshi-style transcript output is the canonical example. If the Moshi/frontend
+adapter has both the waveform and a transcript-looking string for the same
+speech cut, Hermes should send both to the Gemma interpreter in one evidence
+bundle. The raw audio is primary. The Moshi string is
+`frontend_witness_hypothesis` unless the adapter can prove a narrower source
+label. It can help the interpreter recover a clipped prefix, name, number, or
+code-switched phrase, but it must not become the transcript of record by
+arriving first.
+
+This is an explicit product requirement, not just an implementation hint. A
+Moshi/Open-S2S frontend may provide its transcript-like output as context to
+the interpreter alongside the raw voice. The interpreter prompt and schema must
+make the comparison visible: waveform first, VAD/energy and speaker/channel
+metadata second, reflex route and spoken acknowledgement third, witness
+hypotheses fourth. The oracle should receive only promoted wording and compact
+labeled evidence, never a Moshi witness string masquerading as the user's
+verified prompt.
+
+If the Moshi/frontend adapter has only text and no raw-audio reference, the turn
+is degraded compatibility mode. It may support captions, clarification, or
+low-risk drafting, but it cannot prove full KAME behavior or satisfy spend,
+phone, provisioning, memory, file, external-message, or tool-action gates.
+
 Acceptance evidence for a Moshi/open-S2S or classic-ASR path must include at
 least one positive and one adversarial case: one where the witness hypothesis
 helps the interpreter recover wording, and one where the interpreter corrects or
-rejects a stale, hallucinated, wrong-speaker, or energy-inconsistent
-hypothesis. Text-only frontend bridges are compatibility mode and must be
+rejects a stale, hallucinated, ambiguous-speaker, wrong-speaker,
+wrong-channel, or energy-inconsistent hypothesis. Text-only frontend bridges
+are compatibility mode and must be
 labeled degraded when raw audio is unavailable.
 
 The product requirement is three-tier sensor fan-in, not a parallel STT
@@ -220,7 +244,7 @@ oracle jobs, durable transcript candidates, or high-risk action evidence.
 ### Hermes Oracle
 
 - The oracle uses the model Hermes is configured to use. Voice configuration must not add a separate `oracle_model`; model selection stays in the normal Hermes `/model` and provider configuration path.
-- The oracle can see corrected transcript, reflex transcript hypothesis, Moshi/S2S transcript hypothesis, optional ASR hypothesis, interpreter confidence, and source provenance when a voice turn escalates.
+- The oracle receives promoted wording, intent, entities, interpreter confidence, and compact labeled audit context when a voice turn escalates. It may receive reflex/Moshi/S2S/ASR hypothesis metadata as labeled audit evidence, but unpromoted witness strings must not be presented as the user prompt or `oracle_text`.
 - Moshi/S2S and ASR transcript text reaches the oracle only as labeled evidence attached to the same raw-audio/interpreter bundle. It must not create a second oracle turn, overwrite the compact reflex intent directly, or become `oracle_text` unless interpreter/oracle judgment explicitly promotes it.
 - Tool calls from hypothesis-only speech require a conservative gate. Destructive or external side-effect tools require interpreter/oracle confirmation or explicit user confirmation.
 - Oracle output is guidance until committed by the speech planner.
@@ -298,5 +322,5 @@ oracle jobs, durable transcript candidates, or high-risk action evidence.
 - Which local reflex/S2S path should provide the first low-latency transcript hypotheses?
 - What is the maximum acceptable delay from speech end to Gemma interpreter evidence for escalated turns?
 - How aggressively should the planner allow early speech before interpreter evidence arrives?
-- Which tool classes are safe during partial transcript state?
+- Which low-risk local interface operations may use provisional reflex summaries? Tools, spend, files, memory, phone, provisioning, and external messages require `interpreter_promoted` or `oracle_promoted` evidence.
 - Should voice session traces be saved as optional debug artifacts?

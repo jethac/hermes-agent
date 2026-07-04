@@ -1761,6 +1761,8 @@ def _witness_hypothesis_rejection_reasons(
         return ()
     reasons: list[str] = []
     witness_speaker = hypothesis.get("speaker")
+    if _witness_speaker_is_ambiguous(hypothesis):
+        reasons.append("ambiguous_speaker")
     if isinstance(witness_speaker, Mapping) and _metadata_identity_conflicts(
         speaker_metadata,
         witness_speaker,
@@ -1790,6 +1792,25 @@ def _is_frontend_witness_hypothesis(hypothesis: Mapping[str, Any]) -> bool:
         "frontend_witness_hypothesis",
         "s2s_transcript_hypothesis",
     }
+
+
+def _witness_speaker_is_ambiguous(hypothesis: Mapping[str, Any]) -> bool:
+    if _metadata_flag_enabled(hypothesis.get("ambiguous_speaker")):
+        return True
+    speaker = hypothesis.get("speaker")
+    if not isinstance(speaker, Mapping):
+        return False
+    return _metadata_flag_enabled(speaker.get("ambiguous")) or _metadata_flag_enabled(
+        speaker.get("ambiguous_speaker")
+    )
+
+
+def _metadata_flag_enabled(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return False
 
 
 def _metadata_identity_conflicts(
@@ -1845,7 +1866,7 @@ def _compact_transcript_hypothesis_rejection_reasons(value: Mapping[str, Any]) -
     reasons: list[str] = []
     for value in raw_values:
         reason = _compact_evidence_text(value, limit=80).lower().replace("-", "_").replace(" ", "_")
-        if reason in {"wrong_speaker", "wrong_channel", "stale_witness"}:
+        if reason in {"ambiguous_speaker", "wrong_speaker", "wrong_channel", "stale_witness"}:
             reasons.append(reason)
     return tuple(dict.fromkeys(reasons))
 
@@ -1874,6 +1895,9 @@ def _compact_speaker_metadata(value: Mapping[str, Any]) -> dict[str, Any]:
         text = _compact_evidence_text(value.get(key), limit=160)
         if text:
             metadata[key] = text
+    for key in ("ambiguous", "ambiguous_speaker"):
+        if isinstance(value.get(key), bool):
+            metadata[key] = value[key]
     if isinstance(value.get("is_bot"), bool):
         metadata["is_bot"] = value["is_bot"]
     return metadata
