@@ -889,6 +889,14 @@ def _realtime_voice_kame_report_fields(result: Any) -> dict[str, Any]:
             for key, value in promoted.items()
             if str(key or "").strip() and str(value or "").strip()
         }
+    for key in ("speaker", "channel"):
+        value = field(key, None)
+        if isinstance(value, Mapping) and value:
+            fields[key] = {
+                str(item_key): item_value
+                for item_key, item_value in value.items()
+                if str(item_key or "").strip()
+            }
     return fields
 
 

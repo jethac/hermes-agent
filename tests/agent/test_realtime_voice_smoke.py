@@ -179,6 +179,14 @@ def test_session_turn_smoke_preserves_kame_witness_packet_fields(monkeypatch):
                     "transcript_hypotheses",
                 ],
                 "kame_witness_arrival_phases": ["with_raw_audio"],
+                "speaker": {
+                    "platform": "discord",
+                    "channel_user_id": "jetha-redacted",
+                },
+                "channel": {
+                    "transport": "discord_voice",
+                    "channel_id": "general-redacted",
+                },
                 "kame_transcript_hypotheses": [
                     {
                         "kind": "frontend_witness_hypothesis",
@@ -188,6 +196,14 @@ def test_session_turn_smoke_preserves_kame_witness_packet_fields(monkeypatch):
                         "authority": "hypothesis",
                         "tool_authority": False,
                         "adjudication": "corrected_by_audio",
+                        "speaker_guess": {
+                            "platform": "discord",
+                            "channel_user_id": "jetha-redacted",
+                        },
+                        "channel_guess": {
+                            "transport": "discord_voice",
+                            "channel_id": "general-redacted",
+                        },
                     }
                 ],
                 "promoted_evidence_authority": {
@@ -225,7 +241,13 @@ def test_session_turn_smoke_preserves_kame_witness_packet_fields(monkeypatch):
         "transcript_hypotheses",
     )
     assert result.interpreter_adjudication_outcomes == ("corrected_by_audio",)
+    assert result.speaker == {"platform": "discord", "channel_user_id": "jetha-redacted"}
+    assert result.channel == {"transport": "discord_voice", "channel_id": "general-redacted"}
     assert payload["transcript_hypotheses"][0]["authority"] == "hypothesis"
+    assert payload["transcript_hypotheses"][0]["speaker_guess"]["channel_user_id"] == "jetha-redacted"
+    assert payload["transcript_hypotheses"][0]["channel_guess"]["channel_id"] == "general-redacted"
+    assert payload["speaker"]["channel_user_id"] == "jetha-redacted"
+    assert payload["channel"]["channel_id"] == "general-redacted"
     assert payload["promoted_evidence_authority"] == {
         "interpreter_corrected_transcript": "interpreter_promoted",
         "interpreter_normalized_intent": "interpreter_promoted",

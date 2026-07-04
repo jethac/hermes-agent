@@ -219,12 +219,28 @@ class TestRealtimeVoiceReadiness:
                     "arrival_phase": "with_raw_audio",
                     "authority": "hypothesis",
                     "tool_authority": False,
+                    "speaker_guess": {
+                        "platform": "discord",
+                        "channel_user_id": "jetha-redacted",
+                    },
+                    "channel_guess": {
+                        "transport": "discord_voice",
+                        "channel_id": "general-redacted",
+                    },
                 },
             ),
             interpreter_adjudication_outcomes=("corrected_by_audio",),
             promoted_evidence_authority={
                 "interpreter_corrected_transcript": "interpreter_promoted",
                 "interpreter_normalized_intent": "interpreter_promoted",
+            },
+            speaker={
+                "platform": "discord",
+                "channel_user_id": "jetha-redacted",
+            },
+            channel={
+                "transport": "discord_voice",
+                "channel_id": "general-redacted",
             },
         )
 
@@ -241,7 +257,11 @@ class TestRealtimeVoiceReadiness:
             "transcript_hypotheses",
         ]
         assert payload["transcript_hypotheses"][0]["authority"] == "hypothesis"
+        assert payload["transcript_hypotheses"][0]["speaker_guess"]["channel_user_id"] == "jetha-redacted"
+        assert payload["transcript_hypotheses"][0]["channel_guess"]["channel_id"] == "general-redacted"
         assert payload["interpreter_adjudication_outcomes"] == ["corrected_by_audio"]
+        assert payload["speaker"]["channel_user_id"] == "jetha-redacted"
+        assert payload["channel"]["channel_id"] == "general-redacted"
         assert payload["promoted_evidence_authority"] == {
             "interpreter_corrected_transcript": "interpreter_promoted",
             "interpreter_normalized_intent": "interpreter_promoted",

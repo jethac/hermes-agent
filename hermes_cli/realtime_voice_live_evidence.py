@@ -772,6 +772,8 @@ def _derive_live_turn_from_realtime_report(
     )
     witness_arrival_phases = _witness_arrival_phases_from_entries(turn_entries)
     transcript_hypotheses = _transcript_hypotheses_from_entries(turn_entries)
+    speaker = _mapping_from_entries(turn_entries, "speaker")
+    channel = _mapping_from_entries(turn_entries, "channel")
     return {
         "kind": "live_turn",
         "source_artifact": str(report_path),
@@ -789,6 +791,8 @@ def _derive_live_turn_from_realtime_report(
         "transcript_hypotheses": transcript_hypotheses,
         "interpreter_adjudication_outcomes": interpreter_adjudication_outcomes,
         "promoted_evidence_authority": promoted_evidence_authority,
+        "speaker": speaker,
+        "channel": channel,
         "assistant_audio_observed": bool(alpha_valid and assistant_audio_observed),
         "barge_in_observed": bool(alpha_valid and isinstance(barge_in, dict) and barge_in.get("ok") is True),
         "spoken_reply_short": bool(alpha_valid and spoken_reply_short),
@@ -925,6 +929,10 @@ def _transcript_hypotheses_from_entries(entries: list[dict[str, Any]]) -> list[d
                     "partial",
                     "confidence",
                     "latency_ms",
+                    "speaker_guess",
+                    "channel_guess",
+                    "speaker",
+                    "channel",
                 ):
                     if key in raw:
                         hypothesis[key] = raw[key]
@@ -941,6 +949,18 @@ def _transcript_hypotheses_from_entries(entries: list[dict[str, Any]]) -> list[d
                 seen.add(identity)
                 hypotheses.append(hypothesis)
     return hypotheses
+
+
+def _mapping_from_entries(entries: list[dict[str, Any]], key: str) -> dict[str, Any]:
+    for entry in entries:
+        for payload in (entry, entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}):
+            if isinstance(payload, dict) and isinstance(payload.get(key), dict) and payload.get(key):
+                return {
+                    str(item_key): item_value
+                    for item_key, item_value in payload[key].items()
+                    if str(item_key or "").strip()
+                }
+    return {}
 
 
 def _interpreter_input_order_from_entries(entries: list[dict[str, Any]]) -> list[str]:

@@ -239,6 +239,14 @@ def _alpha_realtime_voice_report(
                 "audio_segment_ref": "artifact://redacted/voiceops-report-turn-001.wav",
                 "evidence_bundle_id": "kame-evidence-voiceops-report-turn-001",
                 "evidence_merge_key": "kame-merge-voiceops-report-turn-001",
+                "speaker": {
+                    "platform": "discord",
+                    "channel_user_id": "jetha-redacted",
+                },
+                "channel": {
+                    "transport": "discord_voice",
+                    "channel_id": "general-redacted",
+                },
                 "audio_segment_ref_observed": True,
                 "interpreter_evidence_observed": True,
                 "transcript_hypotheses_labeled": True,
@@ -251,6 +259,14 @@ def _alpha_realtime_voice_report(
                         "arrival_phase": "after_interpreter_start",
                         "authority": "hypothesis",
                         "tool_authority": False,
+                        "speaker_guess": {
+                            "platform": "discord",
+                            "channel_user_id": "jetha-redacted",
+                        },
+                        "channel_guess": {
+                            "transport": "discord_voice",
+                            "channel_id": "general-redacted",
+                        },
                     }
                 ],
                 "interpreter_input_order": ["raw_audio", "metadata", "reflex", "transcript_hypotheses"],
@@ -1112,6 +1128,10 @@ def test_live_evidence_derives_complete_sections_from_realtime_voice_report(monk
     assert live_turn["transcript_hypotheses"][0]["kind"] == "frontend_witness_hypothesis"
     assert live_turn["transcript_hypotheses"][0]["authority"] == "hypothesis"
     assert live_turn["transcript_hypotheses"][0]["tool_authority"] is False
+    assert live_turn["transcript_hypotheses"][0]["speaker_guess"]["channel_user_id"] == "jetha-redacted"
+    assert live_turn["transcript_hypotheses"][0]["channel_guess"]["channel_id"] == "general-redacted"
+    assert live_turn["speaker"]["channel_user_id"] == "jetha-redacted"
+    assert live_turn["channel"]["channel_id"] == "general-redacted"
     assert live_turn["interpreter_adjudication_outcomes"] == ["corrected_by_audio"]
     assert live_turn["promoted_evidence_authority"] == {
         "interpreter_corrected_transcript": "interpreter_promoted",

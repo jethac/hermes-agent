@@ -61,6 +61,8 @@ class RealtimeVoiceSidecarSmokeResult:
     transcript_hypotheses: Tuple[Mapping[str, Any], ...] = ()
     interpreter_adjudication_outcomes: Tuple[str, ...] = ()
     promoted_evidence_authority: Mapping[str, Any] | None = None
+    speaker: Mapping[str, Any] | None = None
+    channel: Mapping[str, Any] | None = None
     transport: str = ""
     error: str = ""
 
@@ -104,6 +106,8 @@ def realtime_voice_smoke_result_payload(
         "transcript_hypotheses": [dict(item) for item in result.transcript_hypotheses],
         "interpreter_adjudication_outcomes": list(result.interpreter_adjudication_outcomes),
         "promoted_evidence_authority": dict(result.promoted_evidence_authority or {}),
+        "speaker": dict(result.speaker or {}),
+        "channel": dict(result.channel or {}),
         "transport": result.transport or None,
         "error": result.error or None,
     }
@@ -731,6 +735,10 @@ def _capture_kame_evidence(target: dict[str, Any], payload: Mapping[str, Any]) -
                     "partial",
                     "confidence",
                     "latency_ms",
+                    "speaker_guess",
+                    "channel_guess",
+                    "speaker",
+                    "channel",
                     "adjudication",
                     "outcome",
                     "interpreter_adjudication",
@@ -774,6 +782,14 @@ def _capture_kame_evidence(target: dict[str, Any], payload: Mapping[str, Any]) -
         and target.get("promoted_evidence_authority")
     ):
         target["interpreter_evidence_observed"] = True
+    for key in ("speaker", "channel"):
+        value = payload.get(key)
+        if isinstance(value, Mapping) and value and not target.get(key):
+            target[key] = {
+                str(item_key): item_value
+                for item_key, item_value in value.items()
+                if str(item_key or "").strip()
+            }
 
 
 def _is_final_user_turn_event(event: VoiceEvent) -> bool:
