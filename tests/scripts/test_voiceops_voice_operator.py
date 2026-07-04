@@ -551,9 +551,9 @@ def _async_oracle_smoke_payload() -> dict:
             "before_raw_audio": {
                 "session_id": "voice-smoke-witness-fusion",
                 "turn_id": "witness-fusion:same-turn",
-                "audio_segment_ref": "artifact://voice/witness-same-turn.wav",
+                "audio_segment_ref": "",
                 "evidence_bundle_id": "kame-evidence-witness-same-turn",
-                "evidence_merge_key": "kame-merge-witness-same-turn",
+                "evidence_merge_key": "kame-merge-witness-same-turn-pending",
                 "job_id": "voice-oracle-008",
             },
             "with_raw_audio": {
@@ -573,6 +573,18 @@ def _async_oracle_smoke_payload() -> dict:
                 "job_id": "voice-oracle-008",
             },
         },
+        "witness_fusion_same_turn_bundle_ids_by_phase": {
+            "before_raw_audio": "kame-evidence-witness-same-turn",
+            "with_raw_audio": "kame-evidence-witness-same-turn",
+            "after_interpreter_start": "kame-evidence-witness-same-turn",
+        },
+        "witness_fusion_same_turn_job_ids_by_phase": {
+            "before_raw_audio": "voice-oracle-008",
+            "with_raw_audio": "voice-oracle-008",
+            "after_interpreter_start": "voice-oracle-008",
+        },
+        "witness_fusion_same_turn_single_bundle": True,
+        "witness_fusion_same_turn_one_oracle_job": True,
         "witness_fusion_same_turn_oracle_job_counts": {
             "accepted": 1,
             "started": 1,
@@ -1644,14 +1656,37 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert same_turn_lineage["turn_id"] == "witness-fusion:same-turn"
     assert same_turn_lineage["audio_segment_ref"] == "artifact://voice/witness-same-turn.wav"
     assert same_turn_lineage["evidence_merge_key"] == "kame-merge-witness-same-turn"
+    phase_lineage = report["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_phase_lineage"]
+    assert phase_lineage["before_raw_audio"]["audio_segment_ref"] == ""
+    assert phase_lineage["with_raw_audio"]["audio_segment_ref"] == "artifact://voice/witness-same-turn.wav"
+    assert (
+        phase_lineage["after_interpreter_start"]["audio_segment_ref"]
+        == "artifact://voice/witness-same-turn.wav"
+    )
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_bundle_ids_by_phase"] == {
+        phase: same_turn_lineage["evidence_bundle_id"]
+        for phase in ("before_raw_audio", "with_raw_audio", "after_interpreter_start")
+    }
     assert len(
-        {
-            tuple(sorted(lineage.items()))
-            for lineage in report["proofs"]["async_oracle_jobs"][
-                "witness_fusion_same_turn_phase_lineage"
+        set(
+            report["proofs"]["async_oracle_jobs"][
+                "witness_fusion_same_turn_bundle_ids_by_phase"
             ].values()
-        }
+        )
     ) == 1
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_job_ids_by_phase"] == {
+        phase: same_turn_lineage["job_id"]
+        for phase in ("before_raw_audio", "with_raw_audio", "after_interpreter_start")
+    }
+    assert len(
+        set(
+            report["proofs"]["async_oracle_jobs"][
+                "witness_fusion_same_turn_job_ids_by_phase"
+            ].values()
+        )
+    ) == 1
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_single_bundle"] is True
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_one_oracle_job"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_oracle_job_counts"] == {
         "accepted": 1,
         "started": 1,

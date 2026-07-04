@@ -2320,6 +2320,22 @@ async def build_plan_run_async(
                             "witness_fusion_same_turn_phase_lineage"
                         ]
                     ),
+                    "witness_fusion_same_turn_bundle_ids_by_phase": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "witness_fusion_same_turn_bundle_ids_by_phase"
+                        ]
+                    ),
+                    "witness_fusion_same_turn_job_ids_by_phase": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "witness_fusion_same_turn_job_ids_by_phase"
+                        ]
+                    ),
+                    "witness_fusion_same_turn_single_bundle": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_fusion_same_turn_single_bundle"],
+                    "witness_fusion_same_turn_one_oracle_job": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_fusion_same_turn_one_oracle_job"],
                     "witness_fusion_same_turn_oracle_job_counts": dict(
                         voice_operator["proofs"]["async_oracle_jobs"][
                             "witness_fusion_same_turn_oracle_job_counts"

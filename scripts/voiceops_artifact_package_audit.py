@@ -2559,6 +2559,20 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
                 "witness_fusion_same_turn_phase_lineage"
             )
             or {},
+            "witness_fusion_same_turn_bundle_ids_by_phase": async_smoke.get(
+                "witness_fusion_same_turn_bundle_ids_by_phase"
+            )
+            or {},
+            "witness_fusion_same_turn_job_ids_by_phase": async_smoke.get(
+                "witness_fusion_same_turn_job_ids_by_phase"
+            )
+            or {},
+            "witness_fusion_same_turn_single_bundle": bool(
+                async_smoke.get("witness_fusion_same_turn_single_bundle")
+            ),
+            "witness_fusion_same_turn_one_oracle_job": bool(
+                async_smoke.get("witness_fusion_same_turn_one_oracle_job")
+            ),
             "witness_fusion_same_turn_oracle_job_counts": async_smoke.get(
                 "witness_fusion_same_turn_oracle_job_counts"
             )

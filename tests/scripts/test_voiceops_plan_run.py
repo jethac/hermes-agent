@@ -1649,14 +1649,49 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
             "witness_fusion_same_turn_expected_merge_key"
         ]
     )
+    phase_lineage = voice_result["details"]["async_oracle_smoke"][
+        "witness_fusion_same_turn_phase_lineage"
+    ]
+    assert phase_lineage["before_raw_audio"]["audio_segment_ref"] == ""
+    assert phase_lineage["with_raw_audio"]["audio_segment_ref"] == "artifact://voice/witness-same-turn.wav"
+    assert (
+        phase_lineage["after_interpreter_start"]["audio_segment_ref"]
+        == "artifact://voice/witness-same-turn.wav"
+    )
+    assert voice_result["details"]["async_oracle_smoke"][
+        "witness_fusion_same_turn_bundle_ids_by_phase"
+    ] == {
+        phase: same_turn_lineage["evidence_bundle_id"]
+        for phase in ("before_raw_audio", "with_raw_audio", "after_interpreter_start")
+    }
     assert len(
-        {
-            tuple(sorted(lineage.items()))
-            for lineage in voice_result["details"]["async_oracle_smoke"][
-                "witness_fusion_same_turn_phase_lineage"
+        set(
+            voice_result["details"]["async_oracle_smoke"][
+                "witness_fusion_same_turn_bundle_ids_by_phase"
             ].values()
-        }
+        )
     ) == 1
+    assert voice_result["details"]["async_oracle_smoke"][
+        "witness_fusion_same_turn_job_ids_by_phase"
+    ] == {
+        phase: same_turn_lineage["job_id"]
+        for phase in ("before_raw_audio", "with_raw_audio", "after_interpreter_start")
+    }
+    assert len(
+        set(
+            voice_result["details"]["async_oracle_smoke"][
+                "witness_fusion_same_turn_job_ids_by_phase"
+            ].values()
+        )
+    ) == 1
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["witness_fusion_same_turn_single_bundle"]
+        is True
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["witness_fusion_same_turn_one_oracle_job"]
+        is True
+    )
     assert voice_result["details"]["async_oracle_smoke"][
         "witness_fusion_same_turn_oracle_job_counts"
     ] == {"accepted": 1, "started": 1, "completed": 1}

@@ -415,6 +415,35 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["queued_interpreter_fold_in_oracle_text"] = "run uncorrected task five"
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_early_single_bundle"] = False
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_evidence_merge_keys"] = {"early": "kame-merge-wrong"}
+    readiness["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_convergence_ok"] = False
+    readiness["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_arrival_phases"] = [
+        "with_raw_audio"
+    ]
+    readiness["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_lineage"] = {
+        "turn_id": "wrong"
+    }
+    readiness["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_phase_lineage"] = {
+        "with_raw_audio": {"turn_id": "wrong"}
+    }
+    readiness["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_bundle_ids_by_phase"] = {
+        "before_raw_audio": "kame-evidence-a",
+        "with_raw_audio": "kame-evidence-b",
+    }
+    readiness["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_job_ids_by_phase"] = {
+        "before_raw_audio": "voice-oracle-a",
+        "with_raw_audio": "voice-oracle-b",
+    }
+    readiness["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_single_bundle"] = False
+    readiness["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_one_oracle_job"] = False
+    readiness["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_oracle_job_counts"] = {
+        "accepted": 2,
+        "started": 1,
+        "completed": 1,
+    }
+    readiness["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_no_duplicate_oracle_job"] = False
+    readiness["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_expected_merge_key"] = (
+        "kame-merge-wrong"
+    )
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_accepted_audio_gate_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["witness_arrival_phase"] = ["with_raw_audio"]
     readiness["proofs"]["async_oracle_jobs"]["raw_audio_interpreter_evidence_observed"] = False
@@ -713,6 +742,50 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_evidence_merge_keys_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_same_turn_convergence_ok_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_same_turn_arrival_phases_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_same_turn_lineage_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_same_turn_phase_lineage_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_same_turn_bundle_ids_by_phase_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_same_turn_job_ids_by_phase_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_same_turn_single_bundle_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_same_turn_one_oracle_job_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_same_turn_oracle_job_counts_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_same_turn_no_duplicate_oracle_job_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_same_turn_expected_merge_key_mismatch"
         in report["issues"]
     )
     assert (

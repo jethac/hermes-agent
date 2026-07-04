@@ -3808,6 +3808,18 @@ def build_voice_operator_report(
             "witness_fusion_same_turn_phase_lineage": dict(
                 async_oracle_smoke.get("witness_fusion_same_turn_phase_lineage") or {}
             ),
+            "witness_fusion_same_turn_bundle_ids_by_phase": dict(
+                async_oracle_smoke.get("witness_fusion_same_turn_bundle_ids_by_phase") or {}
+            ),
+            "witness_fusion_same_turn_job_ids_by_phase": dict(
+                async_oracle_smoke.get("witness_fusion_same_turn_job_ids_by_phase") or {}
+            ),
+            "witness_fusion_same_turn_single_bundle": bool(
+                async_oracle_smoke.get("witness_fusion_same_turn_single_bundle")
+            ),
+            "witness_fusion_same_turn_one_oracle_job": bool(
+                async_oracle_smoke.get("witness_fusion_same_turn_one_oracle_job")
+            ),
             "witness_fusion_same_turn_oracle_job_counts": dict(
                 async_oracle_smoke.get("witness_fusion_same_turn_oracle_job_counts") or {}
             ),
