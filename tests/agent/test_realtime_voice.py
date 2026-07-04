@@ -14119,6 +14119,9 @@ def test_external_kame_ask_brain_bridge_becomes_oracle_request():
         {
             "tool_name": "ask_brain",
             "tool_call_id": "call-voiceclaw-1",
+            "audit_id": "voiceclaw-audit-001",
+            "source_audit_id": "discord-audit-042",
+            "parent_audit_id": "discord-thread-root",
             "arguments": {
                 "query": "use my Stripe budget to prepare a VoIP provisioning plan",
                 "intent": "Prepare VoIP provisioning with a Stripe budget.",
@@ -14150,9 +14153,15 @@ def test_external_kame_ask_brain_bridge_becomes_oracle_request():
     assert request.conversation_summary == "The user is testing Discord voice to phone handoff."
     assert request.interface_input_source == "ask_brain"
     assert request.interface_tool_call_id == "call-voiceclaw-1"
+    assert request.audit_id == "voiceclaw-audit-001"
+    assert request.source_audit_id == "discord-audit-042"
+    assert request.parent_audit_id == "discord-thread-root"
     assert metadata["voice_architecture"] == "kame_frontend_oracle"
     assert metadata["kame_interface_input_source"] == "ask_brain"
     assert metadata["kame_interface_tool_call_id"] == "call-voiceclaw-1"
+    assert metadata["kame_audit_id"] == "voiceclaw-audit-001"
+    assert metadata["kame_source_audit_id"] == "discord-audit-042"
+    assert metadata["kame_parent_audit_id"] == "discord-thread-root"
     assert metadata["kame_raw_audio_available"] is False
     assert metadata["kame_evidence_bundle_status"] == "degraded_text_only"
     assert request.degraded_reason == "degraded_text_only"
@@ -14165,12 +14174,14 @@ def test_external_kame_ask_brain_bridge_becomes_oracle_request():
             "source": "reflex_audio",
             "text": "use my Stripe budget to prepare a VoIP provisioning plan",
             "authority": "reflex_hypothesis",
+            "tool_authority": False,
         },
         {
             "kind": "s2s_transcript_hypothesis",
             "source": "s2s",
             "text": "use my stripe budget to prepare a voip provisioning plan",
             "authority": "auxiliary_hypothesis",
+            "tool_authority": False,
         },
     )
     assert metadata["kame_evidence_authority"] == {
@@ -15056,6 +15067,9 @@ def test_session_client_interface_oracle_request_preserves_nested_evidence_bundl
                     "tool_call_id": "voiceclaw-call-1",
                     "source": "voiceclaw",
                     "turn_id": "voice-123:voiceclaw:7",
+                    "audit_id": "voiceclaw-audit-007",
+                    "source_audit_id": "discord-audit-042",
+                    "parent_audit_id": "discord-audit-041",
                     "arguments": {
                         "query": "prepare the phone handoff",
                         "transcript": "repair the phone handoff",
@@ -15094,6 +15108,9 @@ def test_session_client_interface_oracle_request_preserves_nested_evidence_bundl
         assert request.turn_id == "voice-123:voiceclaw:7"
         assert request.interface_input_source == "ask_brain"
         assert request.interface_tool_call_id == "voiceclaw-call-1"
+        assert request.audit_id == "voiceclaw-audit-007"
+        assert request.source_audit_id == "discord-audit-042"
+        assert request.parent_audit_id == "discord-audit-041"
         assert request.oracle_text == "prepare the phone handoff"
         assert request.transcript == ""
         assert request.audio_segment_ref == "artifact://voice/turn-7.wav"
@@ -15105,20 +15122,27 @@ def test_session_client_interface_oracle_request_preserves_nested_evidence_bundl
         assert request.auxiliary_transcript_hypotheses == (
             {
                 "source": "moshi",
+                "kind": "frontend_witness_hypothesis",
                 "text": "prepare phone hand off",
                 "authority": "hypothesis",
+                "tool_authority": False,
                 "confidence": 0.61,
             },
             {
                 "source": "voiceclaw",
+                "kind": "frontend_witness_hypothesis",
                 "text": "repair the phone handoff",
                 "authority": "hypothesis",
+                "tool_authority": False,
                 "confidence": 0.57,
             },
         )
         metadata = request.to_metadata()
         assert "tool_name" not in metadata
         assert "arguments" not in metadata
+        assert metadata["kame_audit_id"] == "voiceclaw-audit-007"
+        assert metadata["kame_source_audit_id"] == "discord-audit-042"
+        assert metadata["kame_parent_audit_id"] == "discord-audit-041"
 
         oracle_request = next(
             event
@@ -15131,6 +15155,9 @@ def test_session_client_interface_oracle_request_preserves_nested_evidence_bundl
         assert oracle_request.payload["turn_id"] == "voice-123:voiceclaw:7"
         assert oracle_request.payload["interface_input_source"] == "ask_brain"
         assert oracle_request.payload["interface_tool_call_id"] == "voiceclaw-call-1"
+        assert oracle_request.payload["audit_id"] == "voiceclaw-audit-007"
+        assert oracle_request.payload["source_audit_id"] == "discord-audit-042"
+        assert oracle_request.payload["parent_audit_id"] == "discord-audit-041"
         assert oracle_request.payload["raw_audio_available"] is True
         assert oracle_request.payload["evidence_bundle_status"] == "primary_audio"
         assert oracle_request.payload["audio_segment_ref"] == "artifact://voice/turn-7.wav"
@@ -15138,6 +15165,9 @@ def test_session_client_interface_oracle_request_preserves_nested_evidence_bundl
         tool_result = next(event for event in seen if event.type == VoiceEventType.TOOL_RESULT)
         assert tool_result.payload["tool_call_id"] == "voiceclaw-call-1"
         assert tool_result.payload["accepted"] is True
+        assert tool_result.payload["reflex_status"]["jobs"][0]["audit_id"] == "voiceclaw-audit-007"
+        assert tool_result.payload["reflex_status"]["jobs"][0]["source_audit_id"] == "discord-audit-042"
+        assert tool_result.payload["reflex_status"]["jobs"][0]["parent_audit_id"] == "discord-audit-041"
 
         oracle.release.set()
         async for event in session.events():
@@ -15145,11 +15175,18 @@ def test_session_client_interface_oracle_request_preserves_nested_evidence_bundl
             if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
                 break
         await session.close()
+        completed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_COMPLETED)
+        assert completed.payload["audit_id"] == "voiceclaw-audit-007"
+        assert completed.payload["source_audit_id"] == "discord-audit-042"
+        assert completed.payload["parent_audit_id"] == "discord-audit-041"
         durable_records = session.durable_oracle_records()
         serialized = json.dumps(durable_records, sort_keys=True)
         assert any(
             record["type"] == VoiceEventType.INTERFACE_ORACLE_REQUEST.value
             and record["payload"]["job_id"] == "voice-oracle-001"
+            and record["payload"]["audit_id"] == "voiceclaw-audit-007"
+            and record["payload"]["source_audit_id"] == "discord-audit-042"
+            and record["payload"]["parent_audit_id"] == "discord-audit-041"
             for record in durable_records
         )
         assert "Accepted job one" not in serialized

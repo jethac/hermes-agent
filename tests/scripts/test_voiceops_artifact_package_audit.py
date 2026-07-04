@@ -197,6 +197,9 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["shutdown_bounded_close_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["audit_scalar_payload_redacted"] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_terminal_correlation_observed"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_audit_id"] = "voiceclaw-audit-wrong"
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_source_audit_id"] = "discord-audit-wrong"
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_audit_id_continuity_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_completion_tool_call_id"] = "wrong-call"
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_provisional_request_summary"][
         "tool_authority"
@@ -252,6 +255,18 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_terminal_correlation_observed_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_audit_id_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_source_audit_id_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_audit_id_continuity_observed_mismatch"
         in report["issues"]
     )
     assert (

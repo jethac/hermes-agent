@@ -1350,6 +1350,9 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
                 "tool_call_id": "voiceclaw-call-1",
                 "provider": "voiceclaw",
                 "turn_id": "voice-smoke-external-frontend:voiceclaw:1",
+                "audit_id": "voiceclaw-audit-001",
+                "source_audit_id": "discord-audit-voice-001",
+                "parent_audit_id": "discord-audit-root-001",
                 "user_id": "jetha",
                 "text": "prepare an external KAME handoff",
                 "intent": "Prepare external KAME handoff",
@@ -1450,6 +1453,24 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         bool(external_tool_call_id)
         and completion_tool_call_id == external_tool_call_id
         and status_tool_call_id == external_tool_call_id
+    )
+    completed_payload = completed_event.payload if completed_event is not None else {}
+    audit_id = str(getattr(request, "audit_id", "") or "") if request is not None else ""
+    source_audit_id = str(getattr(request, "source_audit_id", "") or "") if request is not None else ""
+    parent_audit_id = str(getattr(request, "parent_audit_id", "") or "") if request is not None else ""
+    audit_id_continuity_observed = (
+        audit_id == "voiceclaw-audit-001"
+        and source_audit_id == "discord-audit-voice-001"
+        and parent_audit_id == "discord-audit-root-001"
+        and metadata.get("kame_audit_id") == audit_id
+        and metadata.get("kame_source_audit_id") == source_audit_id
+        and metadata.get("kame_parent_audit_id") == parent_audit_id
+        and status_job.get("audit_id") == audit_id
+        and status_job.get("source_audit_id") == source_audit_id
+        and status_job.get("parent_audit_id") == parent_audit_id
+        and completed_payload.get("audit_id") == audit_id
+        and completed_payload.get("source_audit_id") == source_audit_id
+        and completed_payload.get("parent_audit_id") == parent_audit_id
     )
     direct_tool_authority_exposed = any(
         forbidden in metadata_text
@@ -1567,6 +1588,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and evidence_bundle_single_turn
         and durable_hypothesis_not_promoted
         and terminal_correlation_observed
+        and audit_id_continuity_observed
         and not direct_tool_authority_exposed
         and status_job.get("state") == "completed",
         "external_frontend_request_accepted": tool_result.payload.get("accepted") is True,
@@ -1578,10 +1600,16 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         "external_frontend_completion_tool_call_id": completion_tool_call_id,
         "external_frontend_status_tool_call_id": status_tool_call_id,
         "external_frontend_terminal_correlation_observed": terminal_correlation_observed,
+        "external_frontend_audit_id": audit_id,
+        "external_frontend_source_audit_id": source_audit_id,
+        "external_frontend_parent_audit_id": parent_audit_id,
+        "external_frontend_audit_id_continuity_observed": audit_id_continuity_observed,
         "external_frontend_accepted_observed": accepted_observed,
         "external_frontend_started_observed": started_observed,
         "external_frontend_completion_observed": completed_observed,
         "external_frontend_status_state": str(status_job.get("state") or ""),
+        "external_frontend_status_audit_id": str(status_job.get("audit_id") or ""),
+        "external_frontend_completion_audit_id": str(completed_payload.get("audit_id") or ""),
         "external_frontend_source_reached_oracle": getattr(request, "source", "") == "voiceclaw"
         if request is not None
         else False,
@@ -4000,6 +4028,22 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "external_frontend_terminal_correlation_observed": external_frontend_bridge_smoke[
             "external_frontend_terminal_correlation_observed"
+        ],
+        "external_frontend_audit_id": external_frontend_bridge_smoke["external_frontend_audit_id"],
+        "external_frontend_source_audit_id": external_frontend_bridge_smoke[
+            "external_frontend_source_audit_id"
+        ],
+        "external_frontend_parent_audit_id": external_frontend_bridge_smoke[
+            "external_frontend_parent_audit_id"
+        ],
+        "external_frontend_status_audit_id": external_frontend_bridge_smoke[
+            "external_frontend_status_audit_id"
+        ],
+        "external_frontend_completion_audit_id": external_frontend_bridge_smoke[
+            "external_frontend_completion_audit_id"
+        ],
+        "external_frontend_audit_id_continuity_observed": external_frontend_bridge_smoke[
+            "external_frontend_audit_id_continuity_observed"
         ],
         "external_frontend_accepted_observed": external_frontend_bridge_smoke[
             "external_frontend_accepted_observed"

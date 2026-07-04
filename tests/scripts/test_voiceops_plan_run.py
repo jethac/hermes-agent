@@ -1299,6 +1299,22 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         is True
     )
     assert (
+        voice_result["details"]["async_oracle_smoke"]["external_frontend_audit_id"]
+        == "voiceclaw-audit-001"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["external_frontend_source_audit_id"]
+        == "discord-audit-voice-001"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["external_frontend_parent_audit_id"]
+        == "discord-audit-root-001"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["external_frontend_audit_id_continuity_observed"]
+        is True
+    )
+    assert (
         voice_result["details"]["async_oracle_smoke"]["external_frontend_hypothesis_not_durable_oracle_text"]
         is True
     )

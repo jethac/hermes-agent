@@ -433,6 +433,9 @@ class KameOracleRequest:
     interface_tool_call_id: str = ""
     interface_audio_input_fallback: bool = False
     reflex_provider: str = ""
+    audit_id: str = ""
+    source_audit_id: str = ""
+    parent_audit_id: str = ""
 
     def __post_init__(self) -> None:
         """Normalize witness hypotheses to the non-authoritative KAME contract."""
@@ -773,6 +776,12 @@ class KameOracleRequest:
             metadata["kame_interface_audio_input_fallback"] = True
         if self.reflex_provider:
             metadata["kame_reflex_provider"] = self.reflex_provider
+        if self.audit_id:
+            metadata["kame_audit_id"] = self.audit_id
+        if self.source_audit_id:
+            metadata["kame_source_audit_id"] = self.source_audit_id
+        if self.parent_audit_id:
+            metadata["kame_parent_audit_id"] = self.parent_audit_id
         prompt_packet = self.to_interpreter_prompt_packet()
         prompt_input_order = prompt_packet.get("prompt_input_order")
         if isinstance(prompt_input_order, list) and prompt_input_order:
@@ -944,6 +953,13 @@ class KameOracleRequest:
             ),
             interface_audio_input_fallback=_bool(payload.get("interface_audio_input_fallback"), default=False),
             reflex_provider=_optional_text(payload.get("reflex_provider")) or "",
+            audit_id=_correlation_id(payload.get("audit_id")),
+            source_audit_id=_correlation_id(
+                payload.get("source_audit_id")
+                or payload.get("inbound_audit_id")
+                or payload.get("origin_audit_id")
+            ),
+            parent_audit_id=_correlation_id(payload.get("parent_audit_id")),
         )
 
 
@@ -1020,6 +1036,9 @@ def kame_external_brain_request_to_oracle_request(
         normalized["speaker"] = raw["speaker"]
     if "channel" not in normalized and isinstance(raw.get("channel"), Mapping):
         normalized["channel"] = raw["channel"]
+    for key in ("audit_id", "source_audit_id", "parent_audit_id", "inbound_audit_id", "origin_audit_id"):
+        if key not in normalized and raw.get(key) is not None:
+            normalized[key] = raw[key]
     bridge_call_id = _frontend_bridge_call_id(raw)
     if bridge_call_id:
         normalized["interface_tool_call_id"] = bridge_call_id

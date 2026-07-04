@@ -1818,6 +1818,7 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("external_frontend_durable_user_messages_empty") is True
         and smoke.get("external_frontend_durable_oracle_text_absent") is True
         and smoke.get("external_frontend_terminal_correlation_observed") is True
+        and smoke.get("external_frontend_audit_id_continuity_observed") is True
         and smoke.get("external_frontend_direct_tool_authority_exposed") is False,
         "witness_fusion_timing_preserves_single_bundle": smoke.get("witness_fusion_timing_smoke_ok") is True
         and smoke.get("witness_fusion_early_single_bundle") is True
@@ -2650,6 +2651,22 @@ def build_voice_operator_report(
             ),
             "external_frontend_terminal_correlation_observed": bool(
                 async_oracle_smoke.get("external_frontend_terminal_correlation_observed")
+            ),
+            "external_frontend_audit_id": async_oracle_smoke.get("external_frontend_audit_id"),
+            "external_frontend_source_audit_id": async_oracle_smoke.get(
+                "external_frontend_source_audit_id"
+            ),
+            "external_frontend_parent_audit_id": async_oracle_smoke.get(
+                "external_frontend_parent_audit_id"
+            ),
+            "external_frontend_status_audit_id": async_oracle_smoke.get(
+                "external_frontend_status_audit_id"
+            ),
+            "external_frontend_completion_audit_id": async_oracle_smoke.get(
+                "external_frontend_completion_audit_id"
+            ),
+            "external_frontend_audit_id_continuity_observed": bool(
+                async_oracle_smoke.get("external_frontend_audit_id_continuity_observed")
             ),
             "external_frontend_accepted_observed": bool(
                 async_oracle_smoke.get("external_frontend_accepted_observed")

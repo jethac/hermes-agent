@@ -237,6 +237,15 @@ Moshi/OpenClaw/VoiceClaw bridge with ambiguous transcript-like text should fail
 the local package audit if that witness regresses from
 `frontend_witness_hypothesis` to the older `s2s_transcript_hypothesis` default.
 
+The same headless evidence path should preserve cross-surface audit continuity.
+External KAME frontend requests may carry `audit_id`, `source_audit_id`, and
+`parent_audit_id`; Hermes should keep those ids on the normalized
+`KameOracleRequest`, metadata, oracle job status, terminal job events, durable
+oracle records, VoiceOps readiness report, plan-run projection, and package
+audit. This lets Discord voice, VoiceClaw/OpenClaw-style frontends, and later
+phone/SIP handoffs prove they belong to the same VoiceOps task without treating
+the frontend transcript as authoritative user text.
+
 Witness-context rule: treat Moshi/OpenClaw/VoiceClaw transcript text as what the
 realtime frontend believed it heard. It should be preserved because Gemma can
 use it to compare against the waveform, recover clipped starts, catch

@@ -1782,6 +1782,18 @@ async def build_plan_run_async(
                     "external_frontend_terminal_correlation_observed": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_terminal_correlation_observed"],
+                    "external_frontend_audit_id": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_audit_id"
+                    ],
+                    "external_frontend_source_audit_id": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_source_audit_id"],
+                    "external_frontend_parent_audit_id": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_parent_audit_id"],
+                    "external_frontend_audit_id_continuity_observed": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_audit_id_continuity_observed"],
                     "external_frontend_accepted_observed": voice_operator["proofs"]["async_oracle_jobs"][
                         "external_frontend_accepted_observed"
                     ],

@@ -713,6 +713,9 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             {
                 "tool_name": tool,
                 "tool_call_id": str(payload.get("tool_call_id") or ""),
+                "audit_id": str(payload.get("audit_id") or ""),
+                "source_audit_id": str(payload.get("source_audit_id") or ""),
+                "parent_audit_id": str(payload.get("parent_audit_id") or ""),
                 "arguments": arguments,
             },
             turn_id=str(payload.get("turn_id") or ""),
@@ -3602,6 +3605,12 @@ def _oracle_job_payload(job: OracleJob) -> dict[str, Any]:
             payload["channel"] = dict(request.channel_metadata)
         if request.interface_tool_call_id:
             payload["interface_tool_call_id"] = request.interface_tool_call_id
+        if request.audit_id:
+            payload["audit_id"] = request.audit_id
+        if request.source_audit_id:
+            payload["source_audit_id"] = request.source_audit_id
+        if request.parent_audit_id:
+            payload["parent_audit_id"] = request.parent_audit_id
         if request.cancellation_token:
             payload["cancellation_token"] = request.cancellation_token
         if request.audio_segment_ref:
@@ -3887,6 +3896,12 @@ def _kame_interface_payload(request: KameOracleRequest, playback_generation: int
         payload["interface_input_source"] = request.interface_input_source
     if request.interface_tool_call_id:
         payload["interface_tool_call_id"] = request.interface_tool_call_id
+    if request.audit_id:
+        payload["audit_id"] = request.audit_id
+    if request.source_audit_id:
+        payload["source_audit_id"] = request.source_audit_id
+    if request.parent_audit_id:
+        payload["parent_audit_id"] = request.parent_audit_id
     if request.interface_audio_input_fallback:
         payload["interface_audio_input_fallback"] = True
     if request.reflex_provider:

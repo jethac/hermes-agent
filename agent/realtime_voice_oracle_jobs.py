@@ -120,6 +120,9 @@ class OracleJob:
     interpreter_disagreements: tuple[str, ...] = field(default_factory=tuple)
     interface_already_said: str = ""
     interface_tool_call_id: str = ""
+    audit_id: str = ""
+    source_audit_id: str = ""
+    parent_audit_id: str = ""
     requested_response_style: Mapping[str, Any] = field(default_factory=dict)
     metadata: Mapping[str, Any] = field(default_factory=dict)
     result_summary: str = ""
@@ -156,6 +159,12 @@ class OracleJob:
                 status["approval"] = _compact_approval_payload(self.approval)
         if self.interface_tool_call_id:
             status["interface_tool_call_id"] = self.interface_tool_call_id
+        if self.audit_id:
+            status["audit_id"] = self.audit_id
+        if self.source_audit_id:
+            status["source_audit_id"] = self.source_audit_id
+        if self.parent_audit_id:
+            status["parent_audit_id"] = self.parent_audit_id
         if self.request is not None:
             status["raw_audio_available"] = self.request.raw_audio_available
             status["evidence_bundle_status"] = self.request.evidence_bundle_status
@@ -694,6 +703,9 @@ class OracleJobManager:
             reflex_intent=request.intent,
             interface_already_said=request.interface_already_said,
             interface_tool_call_id=_compact_evidence_text(request.interface_tool_call_id, limit=160),
+            audit_id=_compact_evidence_text(request.audit_id, limit=160),
+            source_audit_id=_compact_evidence_text(request.source_audit_id, limit=160),
+            parent_audit_id=_compact_evidence_text(request.parent_audit_id, limit=160),
             audio_segment_ref=_compact_evidence_text(request.audio_segment_ref, limit=240),
             audio_time_range_ms=_audio_time_range_ms(request.audio_time_range_ms),
             reflex_transcript_hypothesis=_compact_evidence_text(
@@ -993,6 +1005,10 @@ def _reflex_job_status(job: Mapping[str, Any], *, ordinal_index: int) -> dict[st
     merge_key = _compact_evidence_text(job.get("evidence_merge_key"), limit=80)
     if merge_key:
         safe_job["evidence_merge_key"] = merge_key
+    for key in ("audit_id", "source_audit_id", "parent_audit_id"):
+        audit_ref = _compact_evidence_text(job.get(key), limit=160)
+        if audit_ref:
+            safe_job[key] = audit_ref
     degraded_reason = _compact_evidence_text(job.get("degraded_reason"), limit=120)
     if degraded_reason:
         safe_job["degraded_reason"] = degraded_reason

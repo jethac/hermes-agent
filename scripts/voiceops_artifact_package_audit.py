@@ -2024,6 +2024,12 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "external_frontend_terminal_correlation_observed": bool(
                 async_smoke.get("external_frontend_terminal_correlation_observed")
             ),
+            "external_frontend_audit_id": async_smoke.get("external_frontend_audit_id"),
+            "external_frontend_source_audit_id": async_smoke.get("external_frontend_source_audit_id"),
+            "external_frontend_parent_audit_id": async_smoke.get("external_frontend_parent_audit_id"),
+            "external_frontend_audit_id_continuity_observed": bool(
+                async_smoke.get("external_frontend_audit_id_continuity_observed")
+            ),
             "external_frontend_accepted_observed": bool(async_smoke.get("external_frontend_accepted_observed")),
             "external_frontend_started_observed": bool(async_smoke.get("external_frontend_started_observed")),
             "external_frontend_completion_observed": bool(async_smoke.get("external_frontend_completion_observed")),

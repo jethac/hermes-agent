@@ -241,6 +241,12 @@ def _async_oracle_smoke_payload() -> dict:
         "external_frontend_completion_tool_call_id": "voiceclaw-call-1",
         "external_frontend_status_tool_call_id": "voiceclaw-call-1",
         "external_frontend_terminal_correlation_observed": True,
+        "external_frontend_audit_id": "voiceclaw-audit-001",
+        "external_frontend_source_audit_id": "discord-audit-voice-001",
+        "external_frontend_parent_audit_id": "discord-audit-root-001",
+        "external_frontend_status_audit_id": "voiceclaw-audit-001",
+        "external_frontend_completion_audit_id": "voiceclaw-audit-001",
+        "external_frontend_audit_id_continuity_observed": True,
         "external_frontend_accepted_observed": True,
         "external_frontend_started_observed": True,
         "external_frontend_completion_observed": True,
@@ -944,6 +950,21 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         report["proofs"]["async_oracle_jobs"]["external_frontend_terminal_correlation_observed"]
         is True
     )
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_audit_id"] == "voiceclaw-audit-001"
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_source_audit_id"]
+        == "discord-audit-voice-001"
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_parent_audit_id"]
+        == "discord-audit-root-001"
+    )
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_status_audit_id"] == "voiceclaw-audit-001"
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_completion_audit_id"]
+        == "voiceclaw-audit-001"
+    )
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_audit_id_continuity_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_status_state"] == "completed"
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_source_reached_oracle"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_input_source"] == "ask_brain"
