@@ -1761,7 +1761,7 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
         "evidence_contract": {
             "schema_version": EVIDENCE_SCHEMA_VERSION,
             "preferred_local_oracle_candidate_id": PREFERRED_LOCAL_ORACLE_CANDIDATE_ID,
-            "preferred_local_oracle_model": PREFERRED_LOCAL_ORACLE_MODEL,
+            "preferred_local_oracle_candidate_model": PREFERRED_LOCAL_ORACLE_MODEL,
             "non_counting_fallback_oracle_models": list(NON_COUNTING_FALLBACK_ORACLE_MODELS),
             "source_artifacts_must_exist": True,
             "source_artifact_resolution": "absolute paths or paths relative to the supplied benchmark evidence file",

@@ -1109,7 +1109,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "memory",
         "project_context",
     ]
-    assert gates["local_spark_stack_matrix"]["evidence_contract"]["preferred_local_oracle_model"] == "Nemotron 3 Super"
+    assert (
+        gates["local_spark_stack_matrix"]["evidence_contract"]["preferred_local_oracle_candidate_model"]
+        == "Nemotron 3 Super"
+    )
+    assert "preferred_local_oracle_model" not in gates["local_spark_stack_matrix"]["evidence_contract"]
     assert gates["local_spark_stack_matrix"]["evidence_contract"]["non_counting_fallback_oracle_models"] == [
         "Nemotron 3 Ultra"
     ]

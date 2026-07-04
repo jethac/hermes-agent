@@ -220,6 +220,34 @@ accepted cut; Hermes should merge it into the same interpreter bundle in all
 three cases. The witness text must be labeled as hypothesis authority and must
 not create a second oracle job or durable user turn.
 
+Full KAME events should normalize toward this bundle shape:
+
+```json
+{
+  "turn_id": "...",
+  "audio_segment_ref": "artifact://voice/turn.wav",
+  "interpreter_input_order": ["raw_audio", "metadata", "reflex", "transcript_hypotheses"],
+  "audio": {"segment_ref": "artifact://voice/turn.wav", "authority": "primary_audio"},
+  "reflex": {"route": "oracle_direct", "acknowledgement_spoken": "I'm checking that."},
+  "transcript_hypotheses": [
+    {
+      "kind": "frontend_witness_hypothesis",
+      "source": "moshi",
+      "role": "witness_context",
+      "authority": "hypothesis",
+      "promotion_required": "interpreter_promoted_or_oracle_promoted",
+      "tool_authority": false
+    }
+  ]
+}
+```
+
+`transcript.partial` and `transcript.final` remain valid provider-bridge events
+for text-oracle fallback, captions, and comparison runs. In full KAME mode they
+must be normalized into `transcript_hypotheses[]` before they can influence the
+interpreter, and they must not directly populate `oracle_text` or durable user
+history.
+
 When Hermes forwards microphone chunks to a text-oracle sidecar, it adds a server-owned `input_generation` to each sidecar-bound `audio.input.chunk`. Sidecars should echo that value on `transcript.partial` and `transcript.final` events. Hermes uses it to ignore stale speech-recognition results after barge-in or after a newer utterance has started. Desktop clients do not set or rely on this field.
 
 Server events:
@@ -234,7 +262,7 @@ Server events:
 {"type":"oracle.hint","session_id":"...","sequence":7,"payload":{"text":"Use Hermes memory here","delta":"Use Hermes memory here","final":false,"source":"hermes","playback_generation":1}}
 ```
 
-Server events may include a `metrics` object in the payload. The session layer annotates events with monotonic timing data such as `session_elapsed_ms`, `audio_to_partial_transcript_ms`, `audio_to_final_transcript_ms`, `eou_to_final_transcript_ms`, `final_transcript_to_first_text_ms`, `final_transcript_to_first_audio_ms`, and `barge_in_ack_ms`. Engines and sidecars should preserve any existing metric fields they provide; the session appends Hermes-observed timings before forwarding the event to the desktop. The desktop hook keeps the latest valid metrics as a realtime session snapshot and the active voice controls surface a compact quality readout against the PRD latency targets.
+Server events may include a `metrics` object in the payload. The session layer annotates events with monotonic timing data such as `session_elapsed_ms`, `audio_to_partial_transcript_ms`, `audio_to_final_transcript_ms`, `eou_to_final_transcript_ms`, `final_transcript_to_first_text_ms`, `final_transcript_to_first_audio_ms`, and `barge_in_ack_ms`. In full KAME reports, transcript-named metrics are provider-comparison or hypothesis-arrival metrics unless the event has been normalized into `transcript_hypotheses[]`; primary KAME timing should also include speech-end-to-reflex-acknowledgement, accepted-audio-segment-ready, interpreter-start/final, oracle-job-accepted, oracle-first-token, first-TTS-audio, and first-Discord-playback spans. Engines and sidecars should preserve any existing metric fields they provide; the session appends Hermes-observed timings before forwarding the event to the desktop. The desktop hook keeps the latest valid metrics as a realtime session snapshot and the active voice controls surface a compact quality readout against the PRD latency targets.
 
 Hermes also annotates server events with `session_state` when the event implies a backend turn-state transition. Values mirror the session state machine (`listening`, `assistant_pending`, `speaking`, `closing`, `closed`) and are authoritative for desktop status display across text-oracle, remote sidecar, and native S2S engines. Desktop clients may still keep local playback state to avoid switching from speaking to listening while already-buffered audio is playing.
 

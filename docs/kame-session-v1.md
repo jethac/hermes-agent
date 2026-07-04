@@ -66,6 +66,29 @@ only under the same-cut witness contract. A Moshi/Open-S2S string is useful
 because it is a fast report of what the live interface believed it heard. It is
 not the user message, not a second STT conversation, and not a scheduler.
 
+The canonical interpreter envelope is therefore:
+
+```text
+accepted_speech_cut:
+  raw_audio: required when full KAME is claimed
+  metadata: VAD, energy, speaker, channel, transport, timing
+  reflex: route, acknowledgement, interruption/playback state
+  transcript_hypotheses: optional Moshi/Open-S2S/reflex/classic-ASR witnesses
+
+Gemma interpreter output:
+  interpreter_promoted: corrected transcript, intent, entities, confidence
+  witness_adjudications: accepted, corrected, or rejected hypothesis outcomes
+
+Hermes oracle input:
+  active /model receives promoted wording plus compact labeled evidence only
+```
+
+If the packet lacks `raw_audio`, it is degraded compatibility even when the
+frontend calls the text "STT." If the packet has `raw_audio`, every
+transcript-looking string must be attached after metadata and reflex state as a
+hypothesis. The implementation should never pick the earliest text field as the
+Hermes prompt just because it arrived before Gemma finished.
+
 The normal runtime should therefore build this packet:
 
 ```text

@@ -66,6 +66,14 @@ tool argument. Headless and live artifacts must prove that unpromoted witness
 text stayed out of those sinks even when it helped the interpreter produce
 promoted wording.
 
+Hackathon proof requirement: the demo package should include at least one
+same-turn witness-assisted voice request where raw audio, reflex state, and a
+Moshi/Open-S2S or equivalent witness hypothesis enter one Gemma interpreter
+bundle. The artifact should then show Gemma's promoted request, the active
+Hermes `/model` oracle job, and the downstream Stripe/NemoClaw/phone payloads
+using only promoted wording or compact labeled audit evidence. A separate
+degraded text-only case should remain visibly non-authoritative.
+
 ## Spark Model Strategy
 
 There are two related but distinct model strategies.

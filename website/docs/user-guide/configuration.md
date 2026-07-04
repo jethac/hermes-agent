@@ -1595,6 +1595,16 @@ voice:
     sidecar_base_url: ""        # Optional local/LAN/private-network voice sidecar URL
 ```
 
+For full KAME realtime voice, `voice.realtime` configures the voice interface
+roles, not Hermes' oracle model. The reflex/frontend provider controls live
+floor behavior and acknowledgement. Gemma-style interpreter settings control
+raw-audio evidence review. STT settings are legacy one-shot fallback or optional
+`transcript_hypotheses[]` witness evidence. Do not add an `oracle_model` voice
+setting; the oracle remains whatever Hermes has selected through the normal
+model configuration and `/model` flow. Full KAME readiness depends on reflex
+health, accepted raw-audio interpreter evidence, and active `/model` oracle
+routing, not transcript latency alone.
+
 Use `/voice on` in the CLI to enable microphone mode, `record_key` to start/stop recording, and `/voice tts` to toggle spoken replies. See [Voice Mode](/user-guide/features/voice-mode) for end-to-end setup and platform-specific behavior.
 
 ## Streaming

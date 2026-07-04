@@ -348,11 +348,17 @@ You must be in a voice channel before running `/voice join`. The bot joins the s
 
 ### How It Works
 
-The flow below describes the legacy Discord voice path. The realtime/full-KAME
-path is different: a fast reflex handles floor control and acknowledgement,
-Gemma or another interpreter reviews clipped raw audio plus transcript
-hypotheses, and Hermes's active `/model` remains the oracle for tools, memory,
-and durable work.
+Discord voice has two supported paths.
+
+**Classic STT fallback path:** the bot listens for an utterance, detects
+silence, transcribes the clip through Whisper-compatible STT, sends the
+transcript through the normal Hermes message pipeline, then speaks the reply
+through TTS. This remains useful for compatibility and degraded operation.
+
+**Realtime / full KAME path:** a fast reflex handles floor control, barge-in,
+and acknowledgement; Gemma or another direct-audio interpreter reviews the
+accepted raw-audio cut plus witness hypotheses; Hermes's active `/model`
+remains the oracle for tools, memory, approvals, and durable work.
 
 In the realtime/full-KAME path, Moshi/Open-S2S transcript-like text is not a
 second user message. If the frontend exposes both a clipped waveform and a text
@@ -362,7 +368,12 @@ interpreter recover clipped words, names, numbers, or code-switched phrases.
 Only promoted interpreter/oracle wording is committed to durable history or used
 for tool, spend, phone, memory, file, or external-message actions.
 
-When the bot joins a voice channel, it:
+Full KAME should not wait for STT before acknowledging the user or creating the
+raw-audio interpreter bundle. STT/Moshi/Open-S2S text is optional same-cut
+`transcript_hypotheses[]` context unless the session explicitly falls back to
+classic text-oracle mode.
+
+In the classic fallback path, when the bot joins a voice channel, it:
 
 1. **Listens** to each user's audio stream independently
 2. **Detects silence** — 1.5s of silence after at least 0.5s of speech triggers processing

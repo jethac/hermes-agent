@@ -2392,6 +2392,16 @@ Deliverables:
   beside raw audio, remains hypothesis authority, and cannot create a second
   oracle turn
 
+Acceptance tests for this phase should use the canonical envelope from
+`docs/kame-session-v1.md`: accepted raw-audio cut, metadata, reflex state, then
+`transcript_hypotheses[]`. The passing case must show Moshi/Open-S2S witness
+text helping Gemma produce `interpreter_promoted` wording while the raw witness
+string stays out of `oracle_text`, durable history, Stripe/NemoClaw reasons,
+phone payloads, files, memory, external messages, and direct tool arguments.
+The failing cases must cover witness-before-audio, witness-after-interpreter,
+text-only degraded compatibility, wrong speaker/channel, low-energy non-speech,
+and a hallucinated command from the witness source.
+
 ### Phase 4: Streaming Interface Behavior
 
 Let the interface observe VAD state, audio segment lifecycle, and playback state without committing partials. Partial transcripts are available only in debug or fallback modes.

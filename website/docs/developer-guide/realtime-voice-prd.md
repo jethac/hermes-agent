@@ -302,9 +302,29 @@ oracle jobs, durable transcript candidates, or high-risk action evidence.
 
 ## Success Metrics
 
-- Median first transcript or reflex hypothesis partial: under 300 ms on LAN.
-- Median first assistant text after final user speech: under 500 ms for simple responses.
-- Median first assistant audio after final user speech: under 900 ms for simple responses.
+Full KAME metrics:
+
+- Median speech-end to reflex acknowledgement: under 500 ms on LAN.
+- Accepted `audio_segment_ref` and evidence bundle are created before waiting
+  on Moshi/Open-S2S/classic-ASR transcript text.
+- Gemma direct-audio interpreter emits `interpreter_promoted` wording,
+  entities, intent, confidence, and witness adjudication for escalated turns.
+- Same-cut transcript witnesses carry `authority = "hypothesis"` and remain in
+  `transcript_hypotheses[]` until interpreter/oracle promotion.
+- Hermes oracle jobs use the active `/model`, not a realtime-voice
+  `oracle_model` setting.
+- Unpromoted witness text is absent from durable history, `oracle_text`,
+  Stripe/NemoClaw reasons, phone payloads, files, memory, external messages,
+  and direct tool arguments.
+
+Provider-bridge and fallback metrics:
+
+- Median first transcript or reflex hypothesis partial: under 300 ms on LAN
+  where transcript hypotheses are enabled.
+- Median first assistant text after final user speech: under 500 ms for simple
+  fallback responses.
+- Median first assistant audio after final user speech: under 900 ms for simple
+  fallback responses.
 - Barge-in stop latency: under 150 ms from detected speech to playback cancellation.
 - Realtime server events expose session latency metrics for transcript hypotheses, interpreter evidence, first-text, first-audio, and barge-in paths.
 - No durable transcript pollution from partial ASR, Moshi/S2S hypotheses, or abandoned assistant drafts.

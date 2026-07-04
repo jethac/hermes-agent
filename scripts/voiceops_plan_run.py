@@ -1413,7 +1413,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
                 "required_oracle_selection": "Hermes /model",
                 "required_oracle_authority_routes": ["tools", "files", "memory", "project_context"],
                 "preferred_local_oracle_candidate_id": "oracle-nemotron3-super-local",
-                "preferred_local_oracle_model": "Nemotron 3 Super",
+                "preferred_local_oracle_candidate_model": "Nemotron 3 Super",
                 "non_counting_fallback_oracle_models": ["Nemotron 3 Ultra"],
                 "required_stack_components": ["reflex", "interpreter", "oracle", "tts", "sidecar"],
                 "source_artifacts_must_exist": True,

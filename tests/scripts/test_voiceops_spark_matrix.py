@@ -384,7 +384,8 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
         ]
     )
     assert closure["evidence_contract"]["preferred_local_oracle_candidate_id"] == "oracle-nemotron3-super-local"
-    assert closure["evidence_contract"]["preferred_local_oracle_model"] == "Nemotron 3 Super"
+    assert closure["evidence_contract"]["preferred_local_oracle_candidate_model"] == "Nemotron 3 Super"
+    assert "preferred_local_oracle_model" not in closure["evidence_contract"]
     assert closure["evidence_contract"]["non_counting_fallback_oracle_models"] == ["Nemotron 3 Ultra"]
     assert closure["evidence_contract"]["source_artifacts_must_exist"] is True
     assert closure["evidence_contract"]["source_artifact_readable"] is True
