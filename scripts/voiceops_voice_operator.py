@@ -67,6 +67,16 @@ LIVE_EVIDENCE_VALID_ADJUDICATION_OUTCOMES = {
     "corrected_by_audio",
     "rejected_or_diagnostic_only",
 }
+LIVE_EVIDENCE_UNPROMOTED_WITNESS_SINKS = (
+    "spend",
+    "phone",
+    "nemoclaw",
+    "tool",
+    "memory",
+    "file",
+    "message",
+    "durable_history",
+)
 COLLECTOR_ATTESTATION_REQUIRED_FIELDS = (
     "collector_name",
     "collector_version",
@@ -984,6 +994,10 @@ def build_live_probe_evidence_example() -> dict[str, Any]:
                 "interpreter_corrected_transcript": "interpreter_promoted",
                 "interpreter_normalized_intent": "interpreter_promoted",
             },
+            "unpromoted_witness_sink_checks": {
+                f"{sink}_clean": True for sink in LIVE_EVIDENCE_UNPROMOTED_WITNESS_SINKS
+            },
+            "unpromoted_witness_sink_values": {},
             "assistant_audio_observed": True,
             "barge_in_observed": True,
             "spoken_reply_short": True,
@@ -1497,6 +1511,28 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
             for field in required_fields
         )
 
+    sink_checks = live_turn.get("unpromoted_witness_sink_checks")
+    valid_sink_checks_observed = False
+    if not isinstance(sink_checks, Mapping) or not sink_checks:
+        issues.append("live_turn:missing_unpromoted_witness_sink_checks")
+    else:
+        for sink in LIVE_EVIDENCE_UNPROMOTED_WITNESS_SINKS:
+            if sink_checks.get(f"{sink}_clean") is not True:
+                issues.append(f"live_turn:unpromoted_witness_sink_{sink}_not_clean")
+        valid_sink_checks_observed = all(
+            sink_checks.get(f"{sink}_clean") is True
+            for sink in LIVE_EVIDENCE_UNPROMOTED_WITNESS_SINKS
+        )
+
+    sink_values = live_turn.get("unpromoted_witness_sink_values")
+    valid_sink_values_observed = False
+    if not isinstance(sink_values, Mapping):
+        issues.append("live_turn:missing_unpromoted_witness_sink_values")
+    elif sink_values:
+        issues.append("live_turn:unpromoted_witness_sink_values_not_empty")
+    else:
+        valid_sink_values_observed = True
+
     return issues, {
         "witness_packet_observed": valid_hypothesis_observed and bool(declared_phases),
         "active_partial_absent": not active_partial_observed,
@@ -1505,6 +1541,9 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
         "interpreter_prompt_policy_observed": valid_prompt_policy_observed,
         "interpreter_adjudication_observed": valid_adjudication_observed,
         "promoted_evidence_observed": valid_promoted_authority_observed,
+        "unpromoted_witness_sinks_clean_observed": (
+            valid_sink_checks_observed and valid_sink_values_observed
+        ),
     }
 
 
@@ -4574,6 +4613,10 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
                     "interpreter_corrected_transcript": "interpreter_promoted",
                     "interpreter_normalized_intent": "interpreter_promoted",
                 },
+                "unpromoted_witness_sink_checks": {
+                    f"{sink}_clean": True for sink in LIVE_EVIDENCE_UNPROMOTED_WITNESS_SINKS
+                },
+                "unpromoted_witness_sink_values": {},
                 "assistant_audio_observed": True,
                 "barge_in_observed": True,
                 "spoken_reply_short": True,

@@ -937,6 +937,17 @@ def _complete_live_turn_fields(*, speech_end_to_first_audio_ms: int = 950, barge
             "interpreter_corrected_transcript": "interpreter_promoted",
             "interpreter_normalized_intent": "interpreter_promoted",
         },
+        "unpromoted_witness_sink_checks": {
+            "spend_clean": True,
+            "phone_clean": True,
+            "nemoclaw_clean": True,
+            "tool_clean": True,
+            "memory_clean": True,
+            "file_clean": True,
+            "message_clean": True,
+            "durable_history_clean": True,
+        },
+        "unpromoted_witness_sink_values": {},
         "assistant_audio_observed": True,
         "barge_in_observed": True,
         "spoken_reply_short": True,
@@ -2832,6 +2843,7 @@ def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing
     assert live_evidence["live_turn"]["interpreter_prompt_policy_observed"] is True
     assert live_evidence["live_turn"]["interpreter_adjudication_observed"] is True
     assert live_evidence["live_turn"]["promoted_evidence_observed"] is True
+    assert live_evidence["live_turn"]["unpromoted_witness_sinks_clean_observed"] is True
     assert not any("collector_attestation" in issue for issue in live_evidence["issues"])
 
 
@@ -3034,6 +3046,34 @@ def test_live_evidence_rejects_hypothesis_without_bound_adjudication():
     assert invalid_result["live_turn"]["transcript_hypothesis_adjudication_observed"] is False
     assert invalid_result["live_turn"]["witness_packet_observed"] is False
     assert invalid_result["live_turn"]["ok"] is False
+
+
+def test_live_evidence_rejects_unpromoted_hypothesis_without_sink_checks():
+    evidence = _complete_live_evidence()
+    evidence["live_turn"].pop("unpromoted_witness_sink_checks")
+    evidence["live_turn"].pop("unpromoted_witness_sink_values")
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert "live_turn:missing_unpromoted_witness_sink_checks" in live_evidence["issues"]
+    assert "live_turn:missing_unpromoted_witness_sink_values" in live_evidence["issues"]
+    assert live_evidence["live_turn"]["unpromoted_witness_sinks_clean_observed"] is False
+    assert live_evidence["live_turn"]["ok"] is False
+
+
+def test_live_evidence_rejects_unpromoted_hypothesis_sink_contamination():
+    evidence = _complete_live_evidence()
+    evidence["live_turn"]["unpromoted_witness_sink_checks"]["spend_clean"] = False
+    evidence["live_turn"]["unpromoted_witness_sink_values"] = {
+        "spend": "[redacted witness hypothesis]"
+    }
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert "live_turn:unpromoted_witness_sink_spend_not_clean" in live_evidence["issues"]
+    assert "live_turn:unpromoted_witness_sink_values_not_empty" in live_evidence["issues"]
+    assert live_evidence["live_turn"]["unpromoted_witness_sinks_clean_observed"] is False
+    assert live_evidence["live_turn"]["ok"] is False
 
 
 def test_live_evidence_rejects_stale_source_artifact_attestation_hash(tmp_path):
