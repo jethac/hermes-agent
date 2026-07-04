@@ -1386,6 +1386,7 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
         hypotheses = []
 
     valid_hypothesis_observed = False
+    active_partial_observed = False
     hypothesis_phases: list[str] = []
     for index, hypothesis in enumerate(hypotheses):
         if not isinstance(hypothesis, Mapping):
@@ -1405,6 +1406,9 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
             issues.append(f"live_turn:transcript_hypothesis_{index}_authority_not_hypothesis")
         if hypothesis.get("tool_authority") is not False:
             issues.append(f"live_turn:transcript_hypothesis_{index}_tool_authority_not_false")
+        if hypothesis.get("partial") is True:
+            active_partial_observed = True
+            issues.append(f"live_turn:transcript_hypothesis_{index}_active_partial_not_superseded")
         if not arrival_phase:
             issues.append(f"live_turn:transcript_hypothesis_{index}_missing_arrival_phase")
         elif arrival_phase not in LIVE_EVIDENCE_VALID_WITNESS_ARRIVAL_PHASES:
@@ -1460,6 +1464,7 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
 
     return issues, {
         "witness_packet_observed": valid_hypothesis_observed and bool(declared_phases),
+        "active_partial_absent": not active_partial_observed,
         "interpreter_input_order_observed": input_order == LIVE_EVIDENCE_REQUIRED_INTERPRETER_INPUT_ORDER,
         "interpreter_adjudication_observed": valid_adjudication_observed,
         "promoted_evidence_observed": valid_promoted_authority_observed,
@@ -4112,6 +4117,8 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
             item.get("authority") != "hypothesis" for item in hypotheses if isinstance(item, Mapping)
         ):
             issues.append("interpreter_request_packet:hypothesis_authority_mismatch")
+        if any(item.get("partial") is True for item in hypotheses if isinstance(item, Mapping)):
+            issues.append("interpreter_request_packet:active_partial_hypothesis_not_superseded")
         issues.extend(_mapping_kame_lineage_conflict_issues(packet, issue_prefix="interpreter_request_packet"))
         issues.extend(_mapping_witness_binding_conflict_issues(packet, issue_prefix="interpreter_request_packet"))
         promotion = packet.get("promotion") if isinstance(packet.get("promotion"), Mapping) else {}

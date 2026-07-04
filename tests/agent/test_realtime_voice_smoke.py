@@ -191,10 +191,21 @@ def test_session_turn_smoke_preserves_kame_witness_packet_fields(monkeypatch):
                     {
                         "kind": "frontend_witness_hypothesis",
                         "source": "moshi",
+                        "text": "redacted partial witness",
+                        "arrival_phase": "with_raw_audio",
+                        "authority": "hypothesis",
+                        "tool_authority": False,
+                        "partial": True,
+                        "adjudication": "corrected_by_audio",
+                    },
+                    {
+                        "kind": "frontend_witness_hypothesis",
+                        "source": "moshi",
                         "text": "[redacted witness hypothesis]",
                         "arrival_phase": "with_raw_audio",
                         "authority": "hypothesis",
                         "tool_authority": False,
+                        "partial": False,
                         "adjudication": "corrected_by_audio",
                         "speaker_guess": {
                             "platform": "discord",
@@ -243,7 +254,11 @@ def test_session_turn_smoke_preserves_kame_witness_packet_fields(monkeypatch):
     assert result.interpreter_adjudication_outcomes == ("corrected_by_audio",)
     assert result.speaker == {"platform": "discord", "channel_user_id": "jetha-redacted"}
     assert result.channel == {"transport": "discord_voice", "channel_id": "general-redacted"}
+    assert len(payload["transcript_hypotheses"]) == 1
     assert payload["transcript_hypotheses"][0]["authority"] == "hypothesis"
+    assert payload["transcript_hypotheses"][0]["partial"] is False
+    assert payload["transcript_hypotheses"][0]["superseded_partial_texts"] == ["redacted partial witness"]
+    assert payload["transcript_hypotheses"][0]["superseded_partial_count"] == 1
     assert payload["transcript_hypotheses"][0]["speaker_guess"]["channel_user_id"] == "jetha-redacted"
     assert payload["transcript_hypotheses"][0]["channel_guess"]["channel_id"] == "general-redacted"
     assert payload["speaker"]["channel_user_id"] == "jetha-redacted"

@@ -923,6 +923,7 @@ def _transcript_hypotheses_from_entries(entries: list[dict[str, Any]]) -> list[d
                     "kind",
                     "source",
                     "text",
+                    "audio_segment_ref",
                     "arrival_phase",
                     "authority",
                     "tool_authority",
@@ -941,6 +942,7 @@ def _transcript_hypotheses_from_entries(entries: list[dict[str, Any]]) -> list[d
                 identity = (
                     str(hypothesis.get("kind") or ""),
                     str(hypothesis.get("source") or ""),
+                    str(hypothesis.get("audio_segment_ref") or ""),
                     str(hypothesis.get("arrival_phase") or ""),
                     str(hypothesis.get("text") or ""),
                 )
@@ -948,7 +950,32 @@ def _transcript_hypotheses_from_entries(entries: list[dict[str, Any]]) -> list[d
                     continue
                 seen.add(identity)
                 hypotheses.append(hypothesis)
-    return hypotheses
+    return _collapse_superseded_partial_hypotheses(hypotheses)
+
+
+def _collapse_superseded_partial_hypotheses(hypotheses: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    collapsed: list[dict[str, Any]] = []
+    pending_partials: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for hypothesis in hypotheses:
+        key = (
+            str(hypothesis.get("kind") or ""),
+            str(hypothesis.get("source") or ""),
+            str(hypothesis.get("audio_segment_ref") or ""),
+        )
+        text = str(hypothesis.get("text") or "").strip()
+        if hypothesis.get("partial") is True:
+            if text:
+                pending_partials.setdefault(key, []).append(hypothesis)
+            continue
+        partials = pending_partials.pop(key, [])
+        if partials:
+            hypothesis = dict(hypothesis)
+            hypothesis["superseded_partial_texts"] = [str(partial.get("text") or "") for partial in partials]
+            hypothesis["superseded_partial_count"] = len(partials)
+        collapsed.append(hypothesis)
+    for partials in pending_partials.values():
+        collapsed.extend(partials)
+    return collapsed
 
 
 def _mapping_from_entries(entries: list[dict[str, Any]], key: str) -> dict[str, Any]:

@@ -1153,12 +1153,11 @@ def test_live_evidence_derivation_rejects_conflicting_kame_lineage(monkeypatch, 
 
     report = _alpha_realtime_voice_report(include_discord=True)
     for entry in report:
-        if entry.get("kind") != "session_turn":
+        if entry.get("kind") not in {"audio_session", "session_turn"}:
             continue
         hypotheses = entry.get("transcript_hypotheses")
         if isinstance(hypotheses, list) and hypotheses:
             hypotheses[0]["audio_segment_ref"] = "artifact://redacted/wrong-speaker-or-stale-cut.wav"
-            break
     report_path = _write_json(tmp_path / "realtime-voice-report.json", report)
     monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", unexpected_loopback)
     monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", unexpected_live)
@@ -1180,6 +1179,52 @@ def test_live_evidence_derivation_rejects_conflicting_kame_lineage(monkeypatch, 
     assert "live_turn" in result.strict_validation["missing_gates"]
     assert not (tmp_path / "bundle" / "live-turn.from-realtime-report.json").exists()
     assert "kame_lineage_conflict:audio_segment_ref" in validation["issues"]
+
+
+def test_live_evidence_derivation_collapses_superseded_partial_hypotheses(monkeypatch, tmp_path):
+    async def unexpected_loopback():
+        raise AssertionError("loopback probe should not run when deriving from an existing report")
+
+    async def unexpected_live(_args):
+        raise AssertionError("live Discord probe should not run when deriving from an existing report")
+
+    report = _alpha_realtime_voice_report(include_discord=True)
+    for entry in report:
+        if entry.get("kind") != "session_turn":
+            continue
+        hypotheses = entry.get("transcript_hypotheses")
+        if isinstance(hypotheses, list) and hypotheses:
+            hypotheses.insert(
+                0,
+                {
+                    **hypotheses[0],
+                    "text": "what is three to the",
+                    "partial": True,
+                },
+            )
+            hypotheses[1]["text"] = "what is three to the power of seventeen"
+            hypotheses[1]["partial"] = False
+    report_path = _write_json(tmp_path / "realtime-voice-report.json", report)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_loopback_smoke", unexpected_loopback)
+    monkeypatch.setattr(realtime_voice_live_evidence, "_run_discord_live_probe", unexpected_live)
+
+    args = realtime_voice_live_evidence.build_parser().parse_args(
+        [
+            "--output-dir",
+            str(tmp_path / "bundle"),
+            "--from-realtime-voice-report",
+            str(report_path),
+        ]
+    )
+    result = asyncio.run(realtime_voice_live_evidence.collect_realtime_voice_live_evidence(args))
+
+    live_turn = json.loads((tmp_path / "bundle" / "live-turn.from-realtime-report.json").read_text(encoding="utf-8"))
+    assert result.ok is True
+    assert len(live_turn["transcript_hypotheses"]) == 1
+    assert live_turn["transcript_hypotheses"][0]["partial"] is False
+    assert live_turn["transcript_hypotheses"][0]["text"] == "what is three to the power of seventeen"
+    assert live_turn["transcript_hypotheses"][0]["superseded_partial_texts"] == ["what is three to the"]
+    assert live_turn["transcript_hypotheses"][0]["superseded_partial_count"] == 1
 
 
 def test_live_evidence_derivation_does_not_infer_observation_from_kame_ids(monkeypatch, tmp_path):

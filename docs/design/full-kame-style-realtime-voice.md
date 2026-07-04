@@ -167,6 +167,15 @@ partials are retained only as superseded provenance. The acceptance proof must
 show witness-before-cut, witness-with-cut, and witness-after-cut cases without
 duplicate oracle jobs or durable user turns.
 
+2026-07-04 partial-supersession amendment: active partial hypotheses are not
+valid completed evidence. A partial such as a clipped "hey" may appear in
+streaming UI, telemetry, or latency traces while the cut is unstable, but it
+must be replaced in interpreter context when the final same-source/same-kind
+hypothesis arrives for the same speech cut. The final hypothesis should retain
+`superseded_partial_texts`/`superseded_partial_count` for auditability. VoiceOps
+and alpha evidence should reject completed packets that still expose active
+partials.
+
 2026-07-04 Moshi raw-voice join decision: yes, a Moshi/Open-S2S transcript may
 and should be provided to the interpreter alongside the raw voice when both
 refer to the same accepted speech cut. That transcript is not "STT evidence" in

@@ -712,6 +712,19 @@ def _validate_kame_witness_packet_evidence(
                 "; ".join(binding_issue_details[:3]),
             )
         ]
+    active_partial_details = []
+    for entry in routed_entries:
+        if _kame_witness_packet_has_active_partial(entry):
+            label = str(entry.get("text") or entry.get("fixture") or entry.get("kind") or "entry")
+            active_partial_details.append(f"{label}: active_partial_hypothesis_not_superseded")
+    if active_partial_details:
+        return [
+            RealtimeVoiceSmokeReportIssue(
+                "kame_witness_packet",
+                "missing concrete raw-audio witness/interpreter packet proof",
+                "; ".join(active_partial_details[:3]),
+            )
+        ]
     valid_entries = [entry for entry in routed_entries if _entry_has_complete_kame_witness_packet(entry)]
     if valid_entries:
         return []
@@ -734,6 +747,13 @@ def _validate_kame_witness_packet_evidence(
 
 def _entry_has_complete_kame_witness_packet(entry: Mapping[str, Any]) -> bool:
     return not _kame_witness_packet_missing_fields(entry)
+
+
+def _kame_witness_packet_has_active_partial(entry: Mapping[str, Any]) -> bool:
+    hypotheses = entry.get("transcript_hypotheses")
+    if not isinstance(hypotheses, Sequence) or isinstance(hypotheses, (str, bytes, bytearray)):
+        return False
+    return any(isinstance(item, Mapping) and item.get("partial") is True for item in hypotheses)
 
 
 def _kame_witness_packet_missing_fields(entry: Mapping[str, Any]) -> list[str]:
@@ -760,6 +780,8 @@ def _kame_witness_packet_missing_fields(entry: Mapping[str, Any]) -> list[str]:
         missing.append("transcript_hypotheses")
     elif not any(_transcript_hypothesis_has_hypothesis_authority(item) for item in hypotheses):
         missing.append("transcript_hypotheses_authority")
+    elif _kame_witness_packet_has_active_partial(entry):
+        missing.append("active_partial_hypothesis_not_superseded")
 
     outcomes = set(_sequence_field(entry.get("interpreter_adjudication_outcomes")))
     if not outcomes.intersection(_KAME_VALID_WITNESS_ADJUDICATION_OUTCOMES):

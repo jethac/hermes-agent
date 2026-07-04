@@ -729,6 +729,7 @@ def _capture_kame_evidence(target: dict[str, Any], payload: Mapping[str, Any]) -
                     "kind",
                     "source",
                     "text",
+                    "audio_segment_ref",
                     "arrival_phase",
                     "authority",
                     "tool_authority",
@@ -757,7 +758,7 @@ def _capture_kame_evidence(target: dict[str, Any], payload: Mapping[str, Any]) -
             if outcome and outcome not in outcomes:
                 outcomes.append(outcome)
         if compact:
-            target["transcript_hypotheses"] = tuple(compact)
+            target["transcript_hypotheses"] = tuple(_collapse_superseded_partial_hypotheses(compact))
             target["transcript_hypotheses_labeled"] = True
         if outcomes and not target.get("interpreter_adjudication_outcomes"):
             target["interpreter_adjudication_outcomes"] = tuple(outcomes)
@@ -790,6 +791,31 @@ def _capture_kame_evidence(target: dict[str, Any], payload: Mapping[str, Any]) -
                 for item_key, item_value in value.items()
                 if str(item_key or "").strip()
             }
+
+
+def _collapse_superseded_partial_hypotheses(hypotheses: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    collapsed: list[dict[str, Any]] = []
+    pending_partials: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for hypothesis in hypotheses:
+        key = (
+            str(hypothesis.get("kind") or ""),
+            str(hypothesis.get("source") or ""),
+            str(hypothesis.get("audio_segment_ref") or ""),
+        )
+        text = str(hypothesis.get("text") or "").strip()
+        if hypothesis.get("partial") is True:
+            if text:
+                pending_partials.setdefault(key, []).append(hypothesis)
+            continue
+        partials = pending_partials.pop(key, [])
+        if partials:
+            hypothesis = dict(hypothesis)
+            hypothesis["superseded_partial_texts"] = [str(partial.get("text") or "") for partial in partials]
+            hypothesis["superseded_partial_count"] = len(partials)
+        collapsed.append(hypothesis)
+    for partials in pending_partials.values():
+        collapsed.extend(partials)
+    return collapsed
 
 
 def _is_final_user_turn_event(event: VoiceEvent) -> bool:

@@ -171,6 +171,12 @@ Moshi/S2S and classic ASR text are evidence fields inside the interpreter
 bundle, not separate prompts racing the oracle and not a required precondition
 for acknowledging the user.
 
+Completed interpreter bundles should also collapse partial/final witness
+updates. Partial transcript-looking strings are useful for latency telemetry and
+debug UI while speech is unstable, but they must not survive as active
+interpreter context once a same-source, same-kind final for the same speech cut
+arrives. Preserve the partial only as superseded provenance on the final.
+
 The evidence bundle must preserve provenance:
 
 - raw audio reference: primary evidence

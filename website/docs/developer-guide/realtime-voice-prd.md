@@ -178,6 +178,14 @@ create a second oracle turn, overwrite `oracle_text`, satisfy a high-risk action
 approval, or become durable user history unless the interpreter or oracle emits
 promoted evidence.
 
+Partial hypotheses are transient. A partial from the reflex, Moshi/Open-S2S, or
+classic ASR may be used for UI/debug latency visibility while a speech cut is
+still unstable, but completed KAME interpreter packets must not keep active
+partials. Once a same-source, same-kind final hypothesis arrives for the same
+`turn_id` and `audio_segment_ref`, the final supersedes the partial in active
+interpreter context. The partial may survive only as provenance such as
+`superseded_partial_texts` and `superseded_partial_count`.
+
 Moshi-style transcript output is the canonical example. If the Moshi/frontend
 adapter has both the waveform and a transcript-looking string for the same
 speech cut, Hermes should send both to the Gemma interpreter in one evidence

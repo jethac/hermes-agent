@@ -2003,6 +2003,15 @@ def test_voice_operator_validation_rejects_conflicting_interpreter_packet_witnes
     assert "interpreter_request_packet:transcript_hypothesis_0_channel_mismatch" in issues
 
 
+def test_voice_operator_validation_rejects_active_partial_interpreter_packet_hypothesis():
+    report = _voice_operator_report()
+    report["interpreter_request_packet"]["transcript_hypotheses"][0]["partial"] = True
+
+    issues = validate_voice_operator_report(report)
+
+    assert "interpreter_request_packet:active_partial_hypothesis_not_superseded" in issues
+
+
 def test_voice_operator_validation_rejects_missing_core_coverage():
     smoke = _smoke_payload()
     smoke["events"] = ["audio.output.chunk"]
@@ -2743,6 +2752,7 @@ def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing
     assert live_evidence["live_turn"]["transcript_hypotheses_observed"] is True
     assert live_evidence["live_turn"]["transcript_only_witness_rejected_for_full_kame"] is False
     assert live_evidence["live_turn"]["witness_packet_observed"] is True
+    assert live_evidence["live_turn"]["active_partial_absent"] is True
     assert live_evidence["live_turn"]["interpreter_input_order_observed"] is True
     assert live_evidence["live_turn"]["interpreter_adjudication_observed"] is True
     assert live_evidence["live_turn"]["promoted_evidence_observed"] is True
@@ -2807,6 +2817,18 @@ def test_live_evidence_rejects_conflicting_witness_speaker_channel_binding():
     assert "live_turn:transcript_hypothesis_0_speaker_mismatch" in live_evidence["issues"]
     assert "live_turn:transcript_hypothesis_0_channel_mismatch" in live_evidence["issues"]
     assert live_evidence["live_turn"]["witness_binding_consistent"] is False
+    assert live_evidence["live_turn"]["ok"] is False
+
+
+def test_live_evidence_rejects_active_partial_witness_hypothesis():
+    evidence = _complete_live_evidence()
+    evidence["live_turn"]["transcript_hypotheses"][0]["partial"] = True
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert live_evidence["overall_status"] == "partial_live_evidence"
+    assert "live_turn:transcript_hypothesis_0_active_partial_not_superseded" in live_evidence["issues"]
+    assert live_evidence["live_turn"]["active_partial_absent"] is False
     assert live_evidence["live_turn"]["ok"] is False
 
 
