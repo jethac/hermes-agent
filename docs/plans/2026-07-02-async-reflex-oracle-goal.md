@@ -104,6 +104,20 @@ primary evidence and witness text remains `authority = "hypothesis"` until
 Gemma or the Hermes oracle promotes it. This is the shape to implement for both
 Discord and future phone/WhatsApp voice surfaces.
 
+Implementation directive: wire the runtime as raw-audio-first interpreter
+submission with witness attachment. When the speech gate accepts a cut, create
+the Gemma interpreter packet immediately from raw audio, metadata, and reflex
+state. If Moshi/Open-S2S, reflex captioning, or classic ASR has same-cut text,
+attach it as `transcript_hypotheses[]`; if it arrives later, merge it into the
+same evidence bundle and job. Do not block acknowledgement, interpreter
+submission, or provisional queue state on that text.
+
+The proof should be headless and sink-specific. It must show that Moshi-style
+text can improve interpreter output while remaining absent from `oracle_text`,
+durable history, Stripe/NemoClaw spend reasons, phone payloads, files, memory,
+external messages, and tool arguments until `interpreter_promoted` or
+`oracle_promoted` evidence exists.
+
 Design consolidation: do not model this as "reflex plus Gemma ASR plus oracle."
 The reflex is latency-biased and provisional. Gemma is the direct-audio
 interpreter that may emit corrected multilingual transcript text as

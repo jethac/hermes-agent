@@ -74,6 +74,16 @@ Hermes `/model` oracle job, and the downstream Stripe/NemoClaw/phone payloads
 using only promoted wording or compact labeled audit evidence. A separate
 degraded text-only case should remain visibly non-authoritative.
 
+Current implementation directive: treat Moshi/Open-S2S transcript output as
+interpreter context attached to the accepted raw-audio cut. It is useful
+because it gives Gemma a fast witness report of what the live frontend believed
+it heard. It is not the controlling transcript, not a required ASR gate, and
+not a fourth model role. The Discord demo should prove that the reflex can
+acknowledge immediately, the Gemma interpreter can receive raw audio plus
+Moshi/reflex/classic-ASR hypotheses in one packet, and Hermes' active `/model`
+only sees promoted wording, intent, entities, and compact audit evidence before
+doing Stripe, NemoClaw, phone, memory, file, message, or tool work.
+
 ## Spark Model Strategy
 
 There are two related but distinct model strategies.

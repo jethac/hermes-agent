@@ -59,6 +59,12 @@ after the interpreter has started, it must merge into the same bundle and job.
 If no raw audio exists, the turn is degraded compatibility mode and high-risk
 action gates fail closed.
 
+Implementation rule: prefer submitting the raw-audio interpreter packet over
+waiting for Moshi/Open-S2S text. Witness text is valuable context, but it is not
+the critical path for acknowledgement or interpreter scheduling. The adapter may
+attach witness text before, with, or after raw audio, provided the merge keys
+prove that every attachment belongs to the same accepted speech cut.
+
 ## Direct-Audio Interpreter Context Rule
 
 The answer to "can we provide Moshi STT as context with raw voice?" is yes, but

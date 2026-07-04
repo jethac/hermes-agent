@@ -118,6 +118,26 @@ asynchronously. It should not wait for Moshi/STT text before acknowledging or
 creating the interpreter bundle when raw audio, speech-gate evidence, and a
 reflex route are already available.
 
+### Current Implementation Directive
+
+The next implementation pass should treat Moshi/Open-S2S text as an optional
+witness attached to the direct-audio interpreter packet, not as the voice
+pipeline itself. The adapter should submit the accepted raw-audio cut to Gemma
+as soon as the speech gate closes, then include any same-cut Moshi/reflex/
+classic-ASR text under `transcript_hypotheses[]` when it is available.
+
+This makes Moshi useful without giving it authority. It can help Gemma recover
+clipped prefixes, names, numbers, code-switched phrases, and rough intent, but
+it cannot create a separate Hermes turn, populate `oracle_text`, or feed
+Stripe, NemoClaw, phone, file, memory, message, or tool payloads. Only
+`interpreter_promoted` or `oracle_promoted` fields may reach the active Hermes
+`/model`.
+
+Acceptance evidence for this directive should show one `turn_id`, one
+`audio_segment_ref`, one `evidence_bundle_id`, one `evidence_merge_key`, and
+one oracle job lifecycle across all witness arrival phases:
+`before_raw_audio`, `with_raw_audio`, and `after_interpreter_start`.
+
 2026-07-05 amendment: the intended shape is not "reflex plus STT plus oracle"
 and not "Gemma ASR in parallel." It is a three-tier sensor-fan-in loop:
 
