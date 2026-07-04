@@ -45,6 +45,14 @@ not a competing ASR result and not a prerequisite for acknowledgement. The
 interpreter owns the accept/correct/reject decision and emits the first wording
 that can become durable user text.
 
+2026-07-04 Moshi witness refinement: if the frontend calls the text "STT,"
+Hermes should still treat it as `transcript_hypotheses[]` beside the raw voice.
+The adapter may include Moshi text, reflex text, or classic ASR text in the
+same interpreter request, but all such fields are auxiliary witness claims. The
+Gemma interpreter receives the waveform first and decides whether any witness
+text should be accepted, corrected, rejected, or kept diagnostic-only. This is
+sensor fan-in, not an ASR race.
+
 2026-07-04 acceptance refinement: implementation evidence should prove the
 packet order and the promotion boundary. The interpreter input order is
 `raw_audio`, `metadata`, `reflex`, then `transcript_hypotheses`. Moshi/Open-S2S
@@ -142,8 +150,9 @@ driver.
 Moshi/S2S transcript evidence is the same kind of optional support signal. The
 interpreter should not wait for it before acknowledging the user or starting
 raw-audio interpretation. If it arrives late, the oracle job records it as late
-evidence and may use it only before irreversible tool, spend, memory, or file
-actions.
+evidence and may expose it only to interpreter/oracle promotion checks before
+irreversible tool, spend, memory, or file actions. Unpromoted late transcript
+evidence remains audit-only.
 
 2026-07-03 amendment: model this as evidence-bundle KAME. A Moshi/open-S2S
 transcript is allowed to accompany the raw audio, and should be preserved when
@@ -240,6 +249,14 @@ the waveform and the Moshi hypothesis together, then decides whether to accept,
 correct, reject, or downgrade the text to diagnostic-only evidence. This lets a
 fast reflex remain useful without turning Moshi into the durable transcript
 authority.
+
+Reflex-transcript corollary: if the fast interface model emits its own text for
+what it heard, that text follows the same witness path. It can support routing,
+latency analysis, and interpreter correction, but it cannot become the user's
+message of record merely because it came from the live reflex rather than a
+separate ASR component. The interpreter packet should make this obvious by
+placing reflex transcript text under `transcript_hypotheses[]` after raw audio,
+metadata, and reflex state.
 
 Sensor-fan-in corollary: this is not the old STT-first pipeline and not a
 separate parallel ASR conversation. The runtime may collect several observations

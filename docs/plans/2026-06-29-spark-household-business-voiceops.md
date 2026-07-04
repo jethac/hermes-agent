@@ -98,11 +98,11 @@ Target KAME layout:
   into durable user text or tool-critical arguments for the oracle to act on.
 - Degraded compatibility: if a VoiceClaw/OpenClaw/Moshi-style frontend can
   provide only text and no raw audio reference, Hermes may still draft,
-  clarify, or submit a low-risk compatibility request, but the turn must be
-  marked degraded. It cannot satisfy full KAME readiness, Stripe/NemoClaw/phone
-  action gates, or promoted transcript evidence without raw-audio-grounded
-  interpreter evidence. Oracle-only promotion of text-only witness content is
-  insufficient for irreversible action.
+  clarify, or produce status in degraded mode, but the turn must be marked
+  degraded. Text-only witness content must not become full-KAME durable user
+  text or any action source without raw-audio-grounded interpreter promotion.
+  It cannot satisfy full KAME readiness, Stripe/NemoClaw/phone action gates, or
+  promoted transcript evidence.
 - Merge point: the Gemma interpreter request is the normal merge point for raw
   audio plus transcript hypotheses. Moshi/S2S transcript output should be
   supplied as context beside the waveform, not as a replacement for the waveform
@@ -174,6 +174,11 @@ Target KAME layout:
   raw audio first and the Moshi/OpenClaw/VoiceClaw/classic-ASR strings as
   labeled `transcript_hypotheses[]`; the interpreter response should show which
   hypotheses were accepted, corrected, rejected, or kept diagnostic-only.
+- Reflex-witness rule: if the low-latency reflex model itself emits
+  transcript-looking text, treat it exactly like other witness text. It can
+  explain the reflex route and help Gemma repair clipped starts or code-switched
+  terms, but it is not durable user text and must not bypass the same raw-audio
+  interpreter promotion boundary.
 - Moshi-context acceptance rule: the artifact should prove that a Moshi/open-S2S
   transcript can be attached to the Gemma interpreter packet beside raw voice
   without becoming a second turn. Cover witness-before-cut, witness-with-cut,

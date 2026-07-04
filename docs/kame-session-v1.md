@@ -27,6 +27,13 @@ hypothesis to the interpreter." The hypothesis is useful context for Gemma, but
 it remains `authority = "hypothesis"` until the interpreter promotes
 raw-audio-grounded wording.
 
+For adapters that expose a Moshi-style "STT" field, the field name is
+misleading from Hermes' point of view. Hermes should normalize it as witness
+context for the same direct-audio interpreter packet, not as a separate ASR
+result and not as the user's prompt. The raw waveform, speech gate, speaker
+metadata, and reflex route are the authoritative inputs; the Moshi text is an
+auxiliary claim the interpreter can use, correct, or reject.
+
 ## Roles
 
 External frontends may provide:
@@ -77,8 +84,10 @@ Minimum external frontend evidence/job-envelope shape:
   "source_audit_id": "discord-audit-001",
   "parent_audit_id": "voiceops-root-001",
   "arguments": {
-    "query": "prepare the phone handoff",
-    "intent": "Prepare the phone handoff.",
+    "provisional_request_summary": "prepare the phone handoff",
+    "reflex_intent": "Prepare the phone handoff.",
+    "authority": "reflex_hypothesis",
+    "tool_authority": false,
     "interface_already_said": "I'm preparing the handoff.",
     "requested_response_style": {"spoken": true, "max_sentences": 1}
   },
@@ -128,11 +137,13 @@ is stable for the logical speech cut, including witness-before-audio and
 late-witness updates. `evidence_merge_key` is the audio-aware merge proof over
 the session, turn, and `audio_segment_ref`.
 
-`arguments.query` and `arguments.intent` are provisional frontend route/context
-fields for the job envelope. They are allowed to help create queue state or a
-spoken acknowledgement, but they are not durable user text, not `oracle_text`,
-and not tool/action authority. Oracle text and high-risk action text must come
-from `interpreter_promoted` or `oracle_promoted` evidence.
+`tool_name = "ask_brain"` is adapter-edge compatibility, not a direct Hermes
+tool grant. `arguments.provisional_request_summary` and
+`arguments.reflex_intent` are provisional frontend route/context fields for the
+job envelope. They are allowed to help create queue state or a spoken
+acknowledgement, but they are not durable user text, not `oracle_text`, and not
+tool/action authority. Oracle text and high-risk action text must come from
+`interpreter_promoted` or `oracle_promoted` evidence.
 
 If the adapter cannot prove whether transcript-looking text came from the live
 reflex model or a sibling caption/S2S lane, it must use
@@ -152,6 +163,13 @@ When raw audio exists, transcript hypotheses are attached to that same turn as
 interpreter context. They do not create a second Hermes turn, do not schedule a
 parallel oracle request, and do not become durable transcript text unless the
 interpreter or oracle explicitly promotes them.
+
+The same rule applies when the transcript-looking text is produced by the
+reflex model itself. A reflex transcript can explain why the interface routed a
+turn and can help the interpreter recover clipped starts, but it is still one
+entry in `transcript_hypotheses[]`. It does not outrank the waveform and must
+not be replayed as `arguments.query`, `oracle_text`, durable history, or a tool
+argument unless promoted by interpreter/oracle evidence.
 
 The interpreter request should preserve input ordering:
 

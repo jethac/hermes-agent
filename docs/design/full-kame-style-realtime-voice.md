@@ -1427,8 +1427,9 @@ Core input events:
 
 Auxiliary transcript/fallback evidence events:
 
-- `transcript.partial`
-- `transcript.final`
+- `transcript.partial` legacy provider-stream alias for a partial hypothesis
+- `transcript.final` legacy provider-stream alias for a provider-final
+  hypothesis
 - `reflex.transcript.hypothesis`
 
 Those names are legacy-compatible event names. In KAME mode they normalize into
@@ -1612,14 +1613,16 @@ authority. Irreversible tool, spend, provisioning, file, memory, message, or
 call actions must use `interpreter_promoted` or `oracle_promoted` evidence
 grounded in the raw-audio bundle.
 
-Queued interpreter evidence must be folded into the oracle request before the
-job starts. If the interpreter produces a corrected transcript or intent while a
-job is still queued, the scheduler should update the promoted `transcript`,
-`transcript_source`, `transcript_confidence`, `intent`, and relevant metadata
-before dispatch. The provisional summary may be retained only as labeled
-pre-promotion provenance. Late evidence for a running job should be delivered as a
-bounded update and audited before irreversible tool, spend, provisioning, or
-call actions rely on the earlier request.
+If promoted interpreter evidence is already available before dispatch, it must
+be folded into the oracle request before the job starts. The scheduler should
+not delay acknowledgement or ordinary low-risk job start solely to wait for
+transcript or interpreter evidence. If the interpreter produces a corrected
+transcript or intent while a job is still queued, the scheduler should update
+the promoted `transcript`, `transcript_source`, `transcript_confidence`,
+`intent`, and relevant metadata before dispatch. The provisional summary may be
+retained only as labeled pre-promotion provenance. Late evidence for a running
+job should be delivered as a bounded update and audited before irreversible
+tool, spend, provisioning, or call actions rely on the earlier request.
 
 The scheduler must distinguish promoted interpreter output from auxiliary
 hypotheses inside the same update envelope. A Moshi/OpenClaw/VoiceClaw/classic
@@ -1948,6 +1951,14 @@ normal KAME mode, the interpreter receives both raw audio and any Moshi-style
 text the live voice layer produced, then decides whether that text should be
 accepted, corrected, rejected, or left as diagnostic-only evidence.
 
+If a provider labels that text as "STT," Hermes still normalizes it as witness
+context. The field may be valuable because it captures what the live frontend
+believed it heard before Gemma has reviewed the waveform, but it is not the
+control path. The interpreter request must put raw audio and timing metadata
+first, then reflex state, then Moshi/OpenClaw/VoiceClaw/reflex/classic-ASR
+hypotheses. The first transcript-looking string to arrive is useful evidence,
+not the user message of record.
+
 If the same frontend can provide only text and no raw audio reference, it is a
 degraded compatibility input, not a full KAME turn. The system may preserve that
 text as witness context for audit or clarification, but high-risk approval
@@ -1966,6 +1977,9 @@ Deliverables:
 - tests proving the interpreter does not block reflex acknowledgement
 - evidence comparing oracle outcomes with reflex-only, interpreter, and
   interpreter-plus-auxiliary-transcript evidence
+- fixtures proving Moshi/reflex transcript text is supplied to the interpreter
+  beside raw audio, remains hypothesis authority, and cannot create a second
+  oracle turn
 
 ### Phase 4: Streaming Interface Behavior
 
@@ -2060,6 +2074,8 @@ Unit tests:
 - interpreter evidence schema validation
 - interpreter compares raw audio, reflex/Moshi transcript hypotheses, and ASR
   hypotheses without treating any one as automatic truth
+- Moshi/OpenClaw/VoiceClaw/reflex transcript text is normalized as
+  `transcript_hypotheses[]` even when the provider labels it "STT"
 - oracle request contains distinct reflex intent, interpreter evidence, and
   auxiliary transcript fields
 - reflex JSON schema validation
@@ -2121,6 +2137,9 @@ voice production review is not enough for this branch. Required KAME gates are:
 - Gemma 4 interpreter launch evidence from the target DGX Spark runtime
 - evidence that Gemma interpreter corrects or confirms reflex transcript
   hypotheses from raw audio before tool-critical oracle work
+- evidence that Moshi/OpenClaw/VoiceClaw transcript text, when present, is
+  attached to the same raw-audio interpreter packet as context rather than sent
+  as a second Hermes turn
 - Nemotron 3 Super evaluated as the preferred Spark-local oracle target selected
   through Hermes `/model`
 - `max_concurrent=4` measured against the Nemotron 3 Super endpoint, or
@@ -2205,6 +2224,8 @@ Remaining for full KAME production readiness:
 - Gemma 4 interpreter launch evidence from the actual DGX Spark runtime
 - direct-audio interpreter evidence showing raw audio first, metadata/reflex
   second, and Moshi/STT text only as optional `transcript_hypotheses[]`
+- witness-assisted direct-audio evidence showing Moshi/reflex text included in
+  Gemma context with raw voice, plus accepted/corrected/rejected adjudication
 - DGX Spark / Nemotron 3 Super `max_concurrent=4` capacity evidence
 - benchmark evidence comparing reflex-only, Gemma interpreter, and
   Gemma-plus-optional-auxiliary-transcript oracle outcomes

@@ -113,6 +113,13 @@ was useful, incomplete, wrong-speaker, stale, or hallucinated. The active Hermes
 oracle receives promoted transcript/intent/entities and compact labeled audit
 context; it does not receive unpromoted Moshi text as the durable user prompt.
 
+The same applies when the text came from the reflex itself. A reflex transcript
+is a useful witness and routing explanation, not a privileged transcript of
+record. The demo artifact should show raw voice, timing, speaker metadata,
+reflex route, and every Moshi/OpenClaw/VoiceClaw/reflex/classic-ASR text claim
+merged into one interpreter packet before any wording is promoted for Stripe,
+NemoClaw, phone, memory, files, or durable chat history.
+
 The open-model strategy is role-based. Moshi/PersonaPlex-class models are reflex
 candidates. Gemma 4 audio-multimodal is the interpreter candidate.
 Nemotron/Riva-style ASR is auxiliary evidence or fallback. Magpie/Riva,
@@ -253,9 +260,9 @@ The final voice architecture should separate low-latency conversational reflexes
   rough transcript hypotheses, and concise narration of what it is asking the
   oracle to do.
 - The **interpreter** model, preferably Gemma 4, reviews raw audio plus
-  frontend-witness/reflex/S2S/classic-ASR hypotheses and produces corrected
-  transcript, multilingual intent, entities, confidence, and oracle request
-  patches.
+  frontend-witness/reflex/S2S/classic-ASR transcript hypotheses and produces
+  corrected transcript, multilingual intent, entities, confidence, and oracle
+  request patches.
 - The **oracle** is Hermes' active model and handles tool use, memory, business logic, and longer reasoning.
 - **Heavy requests** go directly to Hermes' active oracle model. For the hackathon target, that is Nemotron 3 Super, not an MoA wrapper.
 - The reflex should produce real user-visible acknowledgements and status, with
