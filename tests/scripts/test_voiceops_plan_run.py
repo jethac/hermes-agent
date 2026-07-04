@@ -28,6 +28,34 @@ def _write_fake_bin(bin_dir: Path, name: str) -> None:
     path.chmod(0o755)
 
 
+def _witness_hypothesis(
+    source: str,
+    *,
+    kind: str,
+    digest_seed: str,
+    digest_prefix: bool = False,
+    phase: str = "with_raw_audio",
+    latency_ms: int = 140,
+    confidence: float | None = 0.78,
+) -> dict:
+    digest = hashlib.sha256(digest_seed.encode("utf-8")).hexdigest()
+    return {
+        "kind": kind,
+        "source": source,
+        "text_digest": f"sha256:{digest}" if digest_prefix else digest,
+        "role": "witness_context",
+        "arrival_phase": phase,
+        "adjudication": "accepted_as_supporting_evidence",
+        "authority": "hypothesis",
+        "promotion_required": "interpreter_promoted_or_oracle_promoted",
+        "tool_authority": False,
+        "latency_ms": latency_ms,
+        "confidence": confidence,
+        "speaker_or_actor_ref": "speaker:jetha",
+        "channel_or_surface_ref": "discord:general",
+    }
+
+
 def _collector_attestation(section_name: str, *, redacted_sha256: str | None = None) -> dict:
     return {
         "collector_name": "pytest.voiceops_plan_run_fixture",
@@ -52,6 +80,14 @@ def _live_payload_sha256(payload: dict) -> str:
 
 
 def _write_live_section(path: Path, section_name: str, payload: dict) -> Path:
+    source_payload = {
+        "schema_version": "voiceops.milestone1.redacted_live_source_artifact.v1",
+        "section": section_name,
+        "redacted": True,
+        "summary": f"redacted live rehearsal source for {section_name}",
+    }
+    source_path = _write_json(path.parent / "raw" / f"{section_name}.json", source_payload)
+    payload["source_artifact"] = f"raw/{source_path.name}"
     payload["collector_attestation"] = _collector_attestation(section_name)
     payload_sha256 = _live_payload_sha256(payload)
     payload["collector_attestation"]["raw_artifact_sha256"] = payload_sha256
@@ -135,13 +171,12 @@ def _write_live_voice_evidence(root: Path) -> Path:
             },
             "transcript_hypotheses": [
                 {
-                    "kind": "frontend_witness_hypothesis",
-                    "source": "moshi",
-                    "text": "[redacted witness hypothesis]",
-                    "arrival_phase": "with_raw_audio",
+                    **_witness_hypothesis(
+                        "moshi",
+                        kind="frontend_witness_hypothesis",
+                        digest_seed="redacted witness hypothesis",
+                    ),
                     "adjudication": "corrected_by_audio",
-                    "authority": "hypothesis",
-                    "tool_authority": False,
                 }
             ],
             "interpreter_adjudication_outcomes": ["corrected_by_audio"],
@@ -227,6 +262,7 @@ def _write_preflight_evidence(root: Path) -> Path:
             sources_dir / f"{section_name}-source.json",
             {
                 "schema_version": "voiceops.milestone2.redacted_source_artifact.v1",
+                "artifact_kind": "redacted_setup_evidence",
                 "section": section_name,
                 "redacted": True,
                 "redaction_policy": "references only; no raw secrets, tokens, cards, or full phone numbers",
@@ -497,12 +533,14 @@ def _write_spark_evidence(root: Path) -> Path:
                     "oracle_called": False,
                     "audio_segment_ref": "artifact://redacted/local-001.wav",
                     "audio_time_range_ms": [100, 900],
-                    "reflex_transcript_hypothesis": {
-                        "authority": "hypothesis",
-                        "source": "moshi",
-                        "text": "[redacted local hypothesis]",
-                    },
-                    "auxiliary_transcript_hypotheses": [],
+                    "transcript_hypotheses": [
+                        _witness_hypothesis(
+                            "moshi",
+                            kind="reflex_transcript_hypothesis",
+                            digest_seed="redacted local hypothesis",
+                            digest_prefix=True,
+                        )
+                    ],
                 },
                 {
                     "turn_id": "oracle-001",
@@ -511,17 +549,22 @@ def _write_spark_evidence(root: Path) -> Path:
                     "oracle_calls": 1,
                     "audio_segment_ref": "artifact://redacted/oracle-001.wav",
                     "audio_time_range_ms": [1200, 3300],
-                    "reflex_transcript_hypothesis": {
-                        "authority": "hypothesis",
-                        "source": "moshi",
-                        "text": "[redacted reflex hypothesis]",
-                    },
-                    "auxiliary_transcript_hypotheses": [
-                        {
-                            "authority": "hypothesis",
-                            "source": "classic_asr_fallback_optional",
-                            "text": "[redacted auxiliary hypothesis]",
-                        }
+                    "transcript_hypotheses": [
+                        _witness_hypothesis(
+                            "moshi",
+                            kind="reflex_transcript_hypothesis",
+                            digest_seed="redacted reflex hypothesis",
+                            digest_prefix=True,
+                        ),
+                        _witness_hypothesis(
+                            "classic_asr_fallback_optional",
+                            kind="classic_asr_hypothesis",
+                            digest_prefix=True,
+                            phase="after_interpreter_start",
+                            digest_seed="redacted auxiliary hypothesis",
+                            latency_ms=310,
+                            confidence=0.76,
+                        ),
                     ],
                     "interpreter_evidence": {
                         "source": "gemma_interpreter",

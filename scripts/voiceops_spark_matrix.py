@@ -827,10 +827,15 @@ def _stack_smoke_source_artifact_contract_issues(item: dict[str, Any]) -> list[s
             issues.add("source_artifact_kame_turn_missing_audio_segment_ref")
         if not _valid_audio_time_range_ms(raw_turn.get("audio_time_range_ms")):
             issues.add("source_artifact_kame_turn_missing_audio_time_range_ms")
-        if not _transcript_hypothesis_is_labeled(raw_turn.get("reflex_transcript_hypothesis")):
-            issues.add("source_artifact_reflex_transcript_not_hypothesis")
-        if not _auxiliary_transcript_hypotheses_are_labeled(raw_turn.get("auxiliary_transcript_hypotheses")):
-            issues.add("source_artifact_auxiliary_transcript_not_hypothesis")
+        canonical_hypotheses = raw_turn.get("transcript_hypotheses")
+        if canonical_hypotheses is not None:
+            canonical_issues = _canonical_transcript_hypotheses_issues(canonical_hypotheses)
+            issues.update(canonical_issues)
+        else:
+            if not _transcript_hypothesis_is_labeled(raw_turn.get("reflex_transcript_hypothesis")):
+                issues.add("source_artifact_reflex_transcript_not_hypothesis")
+            if not _auxiliary_transcript_hypotheses_are_labeled(raw_turn.get("auxiliary_transcript_hypotheses")):
+                issues.add("source_artifact_auxiliary_transcript_not_hypothesis")
 
         route = str(raw_turn.get("route") or raw_turn.get("path") or "").strip().lower()
         oracle_called = _turn_oracle_called(raw_turn)
@@ -914,6 +919,20 @@ def _auxiliary_transcript_hypotheses_are_labeled(value: Any) -> bool:
     if not isinstance(value, list):
         return False
     return all(_transcript_hypothesis_is_labeled(item) for item in value)
+
+
+def _canonical_transcript_hypotheses_issues(value: Any) -> set[str]:
+    if not isinstance(value, list) or not value:
+        return {"source_artifact_transcript_hypotheses_not_hypothesis"}
+    if not all(_transcript_hypothesis_is_labeled(item) for item in value):
+        return {"source_artifact_transcript_hypotheses_not_hypothesis"}
+    if not any(
+        isinstance(item, dict)
+        and str(item.get("kind") or "").strip() == "reflex_transcript_hypothesis"
+        for item in value
+    ):
+        return {"source_artifact_reflex_transcript_not_hypothesis"}
+    return set()
 
 
 def _turn_oracle_called(turn: dict[str, Any]) -> bool | None:

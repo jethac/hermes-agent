@@ -1500,6 +1500,33 @@ def test_spark_matrix_rejects_stack_smoke_source_with_unlabeled_transcript_and_m
     assert matrix["ready_for_one_spark_demo"] is False
 
 
+def test_spark_matrix_accepts_stack_smoke_source_with_canonical_transcript_hypotheses(tmp_path):
+    source_path = tmp_path / "artifacts/test/stack-smoke-canonical-turns.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_payload = _source_artifact_payload("artifacts/test/stack-smoke.json")
+    source_payload["source_key"] = "voiceops_spark_stack_smoke"
+    source_payload["source_keys"] = ["voiceops_spark_stack_smoke"]
+    for turn in source_payload["kame_turns"]:
+        hypotheses = [turn.pop("reflex_transcript_hypothesis")]
+        hypotheses.extend(turn.pop("auxiliary_transcript_hypotheses", []))
+        turn["transcript_hypotheses"] = hypotheses
+    source_path.write_text(json.dumps(source_payload, sort_keys=True), encoding="utf-8")
+    source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    evidence_path = tmp_path / "evidence.json"
+    stack_smoke = _stack_smoke()
+    stack_smoke["source_artifact"] = "artifacts/test/stack-smoke-canonical-turns.json"
+    stack_smoke["source_artifact_sha256"] = source_sha256
+    stack_smoke["collector_attestation"]["redacted_artifact_sha256"] = source_sha256
+    evidence_path.write_text(json.dumps({"evidence": [stack_smoke]}), encoding="utf-8")
+
+    matrix = build_matrix([evidence_path])
+
+    assert matrix["stack_smoke"]["status"] == "validated"
+    assert "source_artifact_reflex_transcript_not_hypothesis" not in matrix["stack_smoke"]["issues"]
+    assert "source_artifact_auxiliary_transcript_not_hypothesis" not in matrix["stack_smoke"]["issues"]
+    assert "source_artifact_transcript_hypotheses_not_hypothesis" not in matrix["stack_smoke"]["issues"]
+
+
 def test_spark_matrix_rejects_stack_smoke_source_with_incomplete_witness_contract(tmp_path):
     source_path = tmp_path / "artifacts/test/stack-smoke-incomplete-witness.json"
     source_path.parent.mkdir(parents=True, exist_ok=True)
