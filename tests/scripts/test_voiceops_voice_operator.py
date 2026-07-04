@@ -892,6 +892,47 @@ def _write_attested_section(path: Path, section: dict, section_name: str) -> Non
     path.write_text(json.dumps(section), encoding="utf-8")
 
 
+def _complete_live_turn_fields(*, speech_end_to_first_audio_ms: int = 950, barge_in_stop_ms: int = 80) -> dict:
+    return {
+        "turn_id": "voiceops-live-turn-budget",
+        "audio_segment_ref": "artifact://redacted/voiceops-live-turn-budget.wav",
+        "evidence_bundle_id": "kame-evidence-live-turn-budget",
+        "evidence_merge_key": "kame-merge-live-turn-budget",
+        "transcript_observed": True,
+        "audio_segment_ref_observed": True,
+        "interpreter_evidence_observed": True,
+        "transcript_hypotheses_labeled": True,
+        "witness_arrival_phases": ["with_raw_audio"],
+        "interpreter_input_order": [
+            "raw_audio",
+            "metadata",
+            "reflex",
+            "transcript_hypotheses",
+        ],
+        "transcript_hypotheses": [
+            {
+                "kind": "frontend_witness_hypothesis",
+                "source": "moshi",
+                "text": "[redacted witness hypothesis]",
+                "arrival_phase": "with_raw_audio",
+                "authority": "hypothesis",
+                "tool_authority": False,
+            }
+        ],
+        "interpreter_adjudication_outcomes": ["corrected_by_audio"],
+        "promoted_evidence_authority": {
+            "interpreter_corrected_transcript": "interpreter_promoted",
+            "interpreter_normalized_intent": "interpreter_promoted",
+        },
+        "assistant_audio_observed": True,
+        "barge_in_observed": True,
+        "spoken_reply_short": True,
+        "no_voice_denial_observed": True,
+        "speech_end_to_first_audio_ms": speech_end_to_first_audio_ms,
+        "barge_in_stop_ms": barge_in_stop_ms,
+    }
+
+
 def _complete_live_evidence() -> dict:
     evidence = build_live_probe_evidence_template()
     evidence["discord_live_probe"].update(
@@ -940,42 +981,7 @@ def _complete_live_evidence() -> dict:
     evidence["live_turn"].update(
         {
             "collector_attestation": _collector_attestation("live_turn"),
-            "turn_id": "voiceops-live-turn-budget",
-            "audio_segment_ref": "artifact://redacted/voiceops-live-turn-budget.wav",
-            "evidence_bundle_id": "kame-evidence-live-turn-budget",
-            "evidence_merge_key": "kame-merge-live-turn-budget",
-            "transcript_observed": True,
-            "audio_segment_ref_observed": True,
-            "interpreter_evidence_observed": True,
-            "transcript_hypotheses_labeled": True,
-            "witness_arrival_phases": ["with_raw_audio"],
-            "interpreter_input_order": [
-                "raw_audio",
-                "metadata",
-                "reflex",
-                "transcript_hypotheses",
-            ],
-            "transcript_hypotheses": [
-                {
-                    "kind": "frontend_witness_hypothesis",
-                    "source": "moshi",
-                    "text": "[redacted witness hypothesis]",
-                    "arrival_phase": "with_raw_audio",
-                    "authority": "hypothesis",
-                    "tool_authority": False,
-                }
-            ],
-            "interpreter_adjudication_outcomes": ["corrected_by_audio"],
-            "promoted_evidence_authority": {
-                "interpreter_corrected_transcript": "interpreter_promoted",
-                "interpreter_normalized_intent": "interpreter_promoted",
-            },
-            "assistant_audio_observed": True,
-            "barge_in_observed": True,
-            "spoken_reply_short": True,
-            "no_voice_denial_observed": True,
-            "speech_end_to_first_audio_ms": 900,
-            "barge_in_stop_ms": 90,
+            **_complete_live_turn_fields(speech_end_to_first_audio_ms=900, barge_in_stop_ms=90),
         }
     )
     return evidence
@@ -3247,20 +3253,7 @@ def test_voice_operator_ingests_realtime_live_evidence_manifest(tmp_path):
     live_turn = {
         "kind": "live_turn",
         "collector_attestation": _collector_attestation("live_turn"),
-        "turn_id": "voiceops-live-turn-budget",
-        "audio_segment_ref": "artifact://redacted/voiceops-live-turn-budget.wav",
-        "evidence_bundle_id": "kame-evidence-live-turn-budget",
-        "evidence_merge_key": "kame-merge-live-turn-budget",
-        "transcript_observed": True,
-        "audio_segment_ref_observed": True,
-        "interpreter_evidence_observed": True,
-        "transcript_hypotheses_labeled": True,
-        "assistant_audio_observed": True,
-        "barge_in_observed": True,
-        "spoken_reply_short": True,
-        "no_voice_denial_observed": True,
-        "speech_end_to_first_audio_ms": 950,
-        "barge_in_stop_ms": 80,
+        **_complete_live_turn_fields(),
     }
     _write_attested_section(tmp_path / "discord-live-probe.json", discord_probe, "discord_live_probe")
     _write_attested_section(tmp_path / "sidecar-session.json", sidecar, "sidecar_session")
@@ -3364,20 +3357,7 @@ def test_voice_operator_ingests_repeated_standalone_live_evidence_files(tmp_path
             "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
             "kind": "live_turn",
             "source_artifact": turn_path.name,
-            "turn_id": "voiceops-live-turn-budget",
-            "audio_segment_ref": "artifact://redacted/voiceops-live-turn-budget.wav",
-            "evidence_bundle_id": "kame-evidence-live-turn-budget",
-            "evidence_merge_key": "kame-merge-live-turn-budget",
-            "transcript_observed": True,
-            "audio_segment_ref_observed": True,
-            "interpreter_evidence_observed": True,
-            "transcript_hypotheses_labeled": True,
-            "assistant_audio_observed": True,
-            "barge_in_observed": True,
-            "spoken_reply_short": True,
-            "no_voice_denial_observed": True,
-            "speech_end_to_first_audio_ms": 950,
-            "barge_in_stop_ms": 80,
+            **_complete_live_turn_fields(),
         },
         "live_turn",
     )
@@ -3744,20 +3724,7 @@ def test_live_evidence_rejects_complete_payload_without_schema_and_source_artifa
     evidence["live_turn"].update(
         {
             "collector_attestation": _collector_attestation("live_turn"),
-            "turn_id": "voiceops-live-turn-budget",
-            "audio_segment_ref": "artifact://redacted/voiceops-live-turn-budget.wav",
-            "evidence_bundle_id": "kame-evidence-live-turn-budget",
-            "evidence_merge_key": "kame-merge-live-turn-budget",
-            "transcript_observed": True,
-            "audio_segment_ref_observed": True,
-            "interpreter_evidence_observed": True,
-            "transcript_hypotheses_labeled": True,
-            "assistant_audio_observed": True,
-            "barge_in_observed": True,
-            "spoken_reply_short": True,
-            "no_voice_denial_observed": True,
-            "speech_end_to_first_audio_ms": 900,
-            "barge_in_stop_ms": 90,
+            **_complete_live_turn_fields(speech_end_to_first_audio_ms=900, barge_in_stop_ms=90),
         }
     )
 

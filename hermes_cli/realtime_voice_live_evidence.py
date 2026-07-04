@@ -466,11 +466,18 @@ def _derive_live_evidence_from_realtime_voice_report(
     else:
         issues.append("realtime_voice_report: unable to derive sidecar_session evidence")
 
-    live_turn = _derive_live_turn_from_realtime_report(
-        entries,
-        resolved,
-        alpha_valid=not validation_issues,
-    )
+    kame_lineage_issues = _kame_lineage_conflict_issues(entries)
+    if kame_lineage_issues:
+        issues.extend(f"realtime_voice_report:{issue}" for issue in kame_lineage_issues)
+        validation_payload["issues"].extend(kame_lineage_issues)
+        validation_payload["issue_count"] = int(validation_payload["issue_count"]) + len(kame_lineage_issues)
+        live_turn = None
+    else:
+        live_turn = _derive_live_turn_from_realtime_report(
+            entries,
+            resolved,
+            alpha_valid=not validation_issues,
+        )
     if live_turn is not None:
         live_turn = _with_collector_attestation(
             live_turn,
@@ -810,6 +817,49 @@ def _first_non_empty_from_entries(entries: list[dict[str, Any]], *keys: str) -> 
             if _non_empty(value):
                 return str(value).strip()
     return ""
+
+
+_KAME_LINEAGE_FIELD_ALIASES = {
+    "turn_id": ("turn_id", "kame_turn_id"),
+    "audio_segment_ref": ("audio_segment_ref", "kame_audio_segment_ref", "audio_ref", "segment_ref"),
+    "evidence_bundle_id": ("evidence_bundle_id", "kame_evidence_bundle_id"),
+    "evidence_merge_key": ("evidence_merge_key", "kame_evidence_merge_key"),
+}
+
+
+def _kame_lineage_conflict_issues(entries: list[dict[str, Any]]) -> list[str]:
+    turn_entries = [
+        entry
+        for entry in entries
+        if str(entry.get("kind") or "") in {"session_turn", "audio_session"}
+    ]
+    issues: list[str] = []
+    for field, aliases in _KAME_LINEAGE_FIELD_ALIASES.items():
+        values = _kame_lineage_values(turn_entries, aliases)
+        if len(values) > 1:
+            issues.append(f"kame_lineage_conflict:{field}")
+    return issues
+
+
+def _kame_lineage_values(entries: list[dict[str, Any]], aliases: tuple[str, ...]) -> set[str]:
+    values: set[str] = set()
+    for entry in entries:
+        payloads: list[dict[str, Any]] = [entry]
+        metadata = entry.get("metadata")
+        if isinstance(metadata, dict):
+            payloads.append(metadata)
+        audio = entry.get("audio")
+        if isinstance(audio, dict):
+            payloads.append(audio)
+        hypotheses = entry.get("transcript_hypotheses")
+        if isinstance(hypotheses, list):
+            payloads.extend(hypothesis for hypothesis in hypotheses if isinstance(hypothesis, dict))
+        for payload in payloads:
+            for alias in aliases:
+                value = payload.get(alias)
+                if _non_empty(value):
+                    values.add(str(value).strip())
+    return values
 
 
 def _witness_arrival_phases_from_entries(entries: list[dict[str, Any]]) -> list[str]:
