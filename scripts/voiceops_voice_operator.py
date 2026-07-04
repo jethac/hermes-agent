@@ -4127,7 +4127,10 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
             )
             if isinstance(async_proof.get("witness_fusion_evidence_merge_keys"), Mapping)
             else None,
+            "interpreter_input_order": async_proof.get("witness_fusion_interpreter_prompt_input_order") or [],
             "prompt_input_order": async_proof.get("witness_fusion_interpreter_prompt_input_order") or [],
+            "interpreter_prompt_policy": async_proof.get("witness_fusion_interpreter_prompt_policy") or {},
+            "prompt_policy": async_proof.get("witness_fusion_interpreter_prompt_policy") or {},
         }
         for field, expected_value in packet_expectations.items():
             if packet.get(field) != expected_value:
@@ -4601,7 +4604,9 @@ def _interpreter_request_packet(report: Mapping[str, Any]) -> dict[str, Any]:
         "evidence_merge_key": proof.get("witness_fusion_evidence_merge_keys", {}).get("early")
         if isinstance(proof.get("witness_fusion_evidence_merge_keys"), Mapping)
         else None,
+        "interpreter_input_order": list(proof.get("witness_fusion_interpreter_prompt_input_order") or []),
         "prompt_input_order": list(proof.get("witness_fusion_interpreter_prompt_input_order") or []),
+        "interpreter_prompt_policy": dict(proof.get("witness_fusion_interpreter_prompt_policy") or {}),
         "prompt_policy": dict(proof.get("witness_fusion_interpreter_prompt_policy") or {}),
         "audio": {
             "segment_ref": proof.get("witness_fusion_audio_segment_refs", {}).get("early")

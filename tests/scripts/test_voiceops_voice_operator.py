@@ -1470,6 +1470,31 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         "raw_audio_compare_v1"
     )
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_interpreter_prompt_policy_visible"] is True
+    assert report["interpreter_request_packet"]["interpreter_input_order"] == [
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    ]
+    assert report["interpreter_request_packet"]["prompt_input_order"] == (
+        report["interpreter_request_packet"]["interpreter_input_order"]
+    )
+    assert report["interpreter_request_packet"]["interpreter_prompt_policy"] == {
+        "version": "raw_audio_compare_v1",
+        "primary_evidence": "raw_audio",
+        "transcript_hypotheses_authority": "non_authoritative_context",
+        "promotion_requirement": "compare_transcript_hypotheses_against_raw_audio_before_promotion",
+        "forbidden_direct_uses": (
+            "oracle_text",
+            "durable_transcript",
+            "spend_reason",
+            "phone_call_payload",
+            "tool_arguments",
+        ),
+    }
+    assert report["interpreter_request_packet"]["prompt_policy"] == (
+        report["interpreter_request_packet"]["interpreter_prompt_policy"]
+    )
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_with_single_bundle"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_late_initial_bundle_id"] == (
         report["proofs"]["async_oracle_jobs"]["witness_fusion_late_final_bundle_id"]
@@ -2004,6 +2029,22 @@ def test_voice_operator_validation_rejects_conflicting_interpreter_packet_hypoth
         issues = validate_voice_operator_report(report)
 
         assert f"interpreter_request_packet:kame_lineage_conflict_{field}" in issues
+
+
+def test_voice_operator_validation_rejects_interpreter_packet_prompt_policy_drift():
+    report = _voice_operator_report()
+    report["interpreter_request_packet"]["interpreter_input_order"] = [
+        "transcript_hypotheses",
+        "raw_audio",
+    ]
+    report["interpreter_request_packet"]["interpreter_prompt_policy"] = {
+        "version": "legacy_transcript_first"
+    }
+
+    issues = validate_voice_operator_report(report)
+
+    assert "interpreter_request_packet:interpreter_input_order_mismatch" in issues
+    assert "interpreter_request_packet:interpreter_prompt_policy_mismatch" in issues
 
 
 def test_voice_operator_validation_rejects_conflicting_interpreter_packet_witness_binding():
@@ -2591,6 +2632,9 @@ def test_write_voice_operator_report_artifacts(tmp_path):
         "reflex",
         "transcript_hypotheses",
     ]
+    assert interpreter_request_packet["interpreter_input_order"] == interpreter_request_packet["prompt_input_order"]
+    assert interpreter_request_packet["interpreter_prompt_policy"]["version"] == "raw_audio_compare_v1"
+    assert interpreter_request_packet["prompt_policy"] == interpreter_request_packet["interpreter_prompt_policy"]
     assert interpreter_request_packet["audio"]["authority"] == "primary_audio"
     assert interpreter_request_packet["transcript_hypotheses"][0]["authority"] == "hypothesis"
     assert interpreter_request_packet["transcript_hypotheses"][0]["tool_authority"] is False
