@@ -150,6 +150,26 @@ REQUIRED_KAME_LINEAGE_FIELDS = {
 }
 REQUIRED_KAME_PROMOTED_AUTHORITIES = {"interpreter_promoted", "oracle_promoted"}
 REQUIRED_KAME_INPUT_ORDER = ["raw_audio", "metadata", "reflex", "transcript_hypotheses"]
+REQUIRED_TRANSCRIPT_HYPOTHESIS_FIELDS = {
+    "kind",
+    "source",
+    "text_digest",
+    "role",
+    "authority",
+    "promotion_required",
+    "tool_authority",
+    "arrival_phase",
+    "latency_ms",
+    "confidence",
+    "speaker_or_actor_ref",
+    "channel_or_surface_ref",
+}
+REQUIRED_TRANSCRIPT_HYPOTHESIS_CONTRACT = {
+    "role": "witness_context",
+    "authority": "hypothesis",
+    "promotion_required": "interpreter_promoted_or_oracle_promoted",
+    "tool_authority": False,
+}
 REQUIRED_UNPROMOTED_WITNESS_SINK_CHECKS = {
     "spend_clean",
     "phone_clean",
@@ -547,6 +567,27 @@ def build_channel_policy() -> dict[str, Any]:
             "accepted_promoted_authorities": ["interpreter_promoted", "oracle_promoted"],
             "transcript_hypotheses_authority": "hypothesis",
             "transcript_hypotheses_tool_authority": False,
+            "required_transcript_hypothesis_fields": [
+                "kind",
+                "source",
+                "text_digest",
+                "role",
+                "authority",
+                "promotion_required",
+                "tool_authority",
+                "arrival_phase",
+                "latency_ms",
+                "confidence",
+                "speaker_or_actor_ref",
+                "channel_or_surface_ref",
+            ],
+            "transcript_hypothesis_contract": {
+                "role": "witness_context",
+                "authority": "hypothesis",
+                "promotion_required": "interpreter_promoted_or_oracle_promoted",
+                "tool_authority": False,
+            },
+            "raw_transcript_text_allowed_in_channel_egress": False,
             "required_interpreter_input_order": REQUIRED_KAME_INPUT_ORDER,
             "requires_witness_adjudication": True,
             "requires_unpromoted_witness_sink_checks": {
@@ -610,6 +651,7 @@ def build_review_packet(policy: dict[str, Any]) -> dict[str, Any]:
                     "Confirm channel owner and operator-on-call identities.",
                     "Confirm inbound source_audit_id is present before drafting outbound content.",
                     "Confirm outbound payloads cite interpreter_promoted or oracle_promoted KAME evidence.",
+                    "Confirm transcript hypotheses carry source, text_digest, arrival_phase, latency, confidence when available, and speaker/channel binding.",
                     "Confirm unpromoted witness transcript text is absent from action payload sinks.",
                     "Confirm redaction rules are applied before display, persistence, or handoff.",
                     "Confirm approval route before any customer-visible send or call.",
@@ -670,6 +712,7 @@ def build_review_packet(policy: dict[str, Any]) -> dict[str, Any]:
             "Payment, provisioning, credential, and account mutation intents must use spend_provisioning_or_credential and deny/escalate by default.",
             "Discord, WhatsApp, SMS, and phone sends must have a post-action receipt or blocked-action audit event.",
             "Every outbound Discord, WhatsApp, SMS, phone, spend, provisioning, memory, file, or external-message payload must cite interpreter_promoted or oracle_promoted evidence.",
+            "Transcript hypotheses may be referenced only by source, text_digest, arrival_phase, latency, confidence, speaker/channel binding, and adjudication metadata; raw witness text must not be used as outbound payload content.",
             "Unpromoted Moshi/Open-S2S, VoiceClaw/OpenClaw, reflex, or classic-ASR witness text must be absent from spend, phone, NemoClaw, tool, memory, file, message, and durable-history sinks.",
         ],
         "operator_must_not": [
@@ -880,6 +923,24 @@ def validate_policy(policy: dict[str, Any]) -> list[str]:
             issues.append("kame_gate_transcript_hypotheses_authority_not_hypothesis")
         if kame_gate.get("transcript_hypotheses_tool_authority") is not False:
             issues.append("kame_gate_transcript_hypotheses_tool_authority_not_false")
+        missing_hypothesis_fields = REQUIRED_TRANSCRIPT_HYPOTHESIS_FIELDS - set(
+            kame_gate.get("required_transcript_hypothesis_fields") or []
+        )
+        if missing_hypothesis_fields:
+            issues.append(
+                "kame_gate_missing_transcript_hypothesis_fields:"
+                + ",".join(sorted(missing_hypothesis_fields))
+            )
+        hypothesis_contract = (
+            kame_gate.get("transcript_hypothesis_contract")
+            if isinstance(kame_gate.get("transcript_hypothesis_contract"), dict)
+            else {}
+        )
+        for field, expected_value in sorted(REQUIRED_TRANSCRIPT_HYPOTHESIS_CONTRACT.items()):
+            if hypothesis_contract.get(field) != expected_value:
+                issues.append(f"kame_gate_transcript_hypothesis_contract_mismatch:{field}")
+        if kame_gate.get("raw_transcript_text_allowed_in_channel_egress") is not False:
+            issues.append("kame_gate_raw_transcript_text_allowed_in_channel_egress")
         if kame_gate.get("required_interpreter_input_order") != REQUIRED_KAME_INPUT_ORDER:
             issues.append("kame_gate_interpreter_input_order_mismatch")
         if kame_gate.get("requires_witness_adjudication") is not True:
@@ -1001,7 +1062,9 @@ def _markdown(policy: dict[str, Any]) -> str:
     lines.append(f"- Required routes: {', '.join(gate['required_for_routes'])}")
     lines.append(f"- Accepted promoted authorities: {', '.join(gate['accepted_promoted_authorities'])}")
     lines.append(f"- Required interpreter input order: {', '.join(gate['required_interpreter_input_order'])}")
+    lines.append(f"- Required transcript hypothesis fields: {', '.join(gate['required_transcript_hypothesis_fields'])}")
     lines.append("- Transcript hypotheses remain `authority = hypothesis` and `tool_authority = false`.")
+    lines.append("- Channel egress may reference transcript hypotheses by metadata/digest only; raw witness text is not allowed as outbound payload content.")
     lines.append("- Unpromoted witness text must be clean for spend, phone, NemoClaw, tool, memory, file, message, and durable history sinks.")
     lines.extend(["", "## Audit ID Continuity", ""])
     lines.append(f"- Format: `{policy['audit_id_continuity']['audit_id_format']}`")
@@ -1068,7 +1131,9 @@ def _review_markdown(review: dict[str, Any]) -> str:
     lines.append(f"- Accepted promoted authorities: {', '.join(kame_gate['accepted_promoted_authorities'])}")
     lines.append(f"- Required lineage fields: {', '.join(kame_gate['required_lineage_fields'])}")
     lines.append(f"- Required interpreter input order: {', '.join(kame_gate['required_interpreter_input_order'])}")
+    lines.append(f"- Required transcript hypothesis fields: {', '.join(kame_gate['required_transcript_hypothesis_fields'])}")
     lines.append("- Transcript hypotheses are reviewable context only; they cannot authorize channel egress.")
+    lines.append("- Raw witness text is not allowed in channel egress; use source, digest, timing, confidence, binding, and adjudication metadata.")
     lines.extend(["", "## Operator Must Not", ""])
     for item in review["operator_must_not"]:
         lines.append(f"- {item}")

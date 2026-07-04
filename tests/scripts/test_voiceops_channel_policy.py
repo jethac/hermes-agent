@@ -9,6 +9,8 @@ from pathlib import Path
 from scripts.voiceops_channel_policy import (
     DEFAULT_OUTPUT_DIR,
     REQUIRED_KAME_INPUT_ORDER,
+    REQUIRED_TRANSCRIPT_HYPOTHESIS_CONTRACT,
+    REQUIRED_TRANSCRIPT_HYPOTHESIS_FIELDS,
     apply_redactions,
     build_channel_policy,
     build_review_packet,
@@ -82,6 +84,9 @@ def test_channel_policy_contains_approval_escalation_audit_and_redaction_rules()
     assert set(gate["accepted_promoted_authorities"]) == {"interpreter_promoted", "oracle_promoted"}
     assert gate["transcript_hypotheses_authority"] == "hypothesis"
     assert gate["transcript_hypotheses_tool_authority"] is False
+    assert set(gate["required_transcript_hypothesis_fields"]) >= REQUIRED_TRANSCRIPT_HYPOTHESIS_FIELDS
+    assert gate["transcript_hypothesis_contract"] == REQUIRED_TRANSCRIPT_HYPOTHESIS_CONTRACT
+    assert gate["raw_transcript_text_allowed_in_channel_egress"] is False
     assert gate["required_interpreter_input_order"] == REQUIRED_KAME_INPUT_ORDER
     assert gate["degraded_text_only_allowed_for_action"] is False
     assert gate["unpromoted_witness_may_enter_payloads"] is False
@@ -185,6 +190,11 @@ def test_channel_policy_validates_kame_action_evidence_gate():
     gate["accepted_promoted_authorities"] = ["interpreter_promoted"]
     gate["transcript_hypotheses_authority"] = "verified"
     gate["transcript_hypotheses_tool_authority"] = True
+    gate["required_transcript_hypothesis_fields"].remove("text_digest")
+    gate["required_transcript_hypothesis_fields"].remove("arrival_phase")
+    gate["transcript_hypothesis_contract"]["role"] = "verified_transcript"
+    gate["transcript_hypothesis_contract"]["tool_authority"] = True
+    gate["raw_transcript_text_allowed_in_channel_egress"] = True
     gate["required_interpreter_input_order"] = ["transcript_hypotheses", "raw_audio"]
     gate["requires_witness_adjudication"] = False
     gate["requires_unpromoted_witness_sink_checks"]["phone_clean"] = False
@@ -197,6 +207,10 @@ def test_channel_policy_validates_kame_action_evidence_gate():
         "kame_gate_promoted_authorities_mismatch",
         "kame_gate_transcript_hypotheses_authority_not_hypothesis",
         "kame_gate_transcript_hypotheses_tool_authority_not_false",
+        "kame_gate_missing_transcript_hypothesis_fields:arrival_phase,text_digest",
+        "kame_gate_transcript_hypothesis_contract_mismatch:role",
+        "kame_gate_transcript_hypothesis_contract_mismatch:tool_authority",
+        "kame_gate_raw_transcript_text_allowed_in_channel_egress",
         "kame_gate_interpreter_input_order_mismatch",
         "kame_gate_missing_witness_adjudication",
         "kame_gate_missing_unpromoted_sink_checks:phone_clean",
@@ -465,6 +479,14 @@ def test_write_channel_policy_artifacts(tmp_path):
         "interpreter_promoted",
         "oracle_promoted",
     ]
+    assert set(review_payload["kame_action_evidence_gate"]["required_transcript_hypothesis_fields"]) >= (
+        REQUIRED_TRANSCRIPT_HYPOTHESIS_FIELDS
+    )
+    assert (
+        review_payload["kame_action_evidence_gate"]["transcript_hypothesis_contract"]
+        == REQUIRED_TRANSCRIPT_HYPOTHESIS_CONTRACT
+    )
+    assert review_payload["kame_action_evidence_gate"]["raw_transcript_text_allowed_in_channel_egress"] is False
     assert "approve_live_egress_after_external_credentials_are_bound" in review_payload["decision_options"]
     assert {signoff["role"] for signoff in review_payload["required_signoffs"]} == {
         "business_owner",
@@ -484,6 +506,7 @@ def test_write_channel_policy_artifacts(tmp_path):
     assert any("source_audit_id" in gate for gate in review_payload["egress_enablement_gates"])
     assert any("interpreter_promoted or oracle_promoted" in gate for gate in review_payload["egress_enablement_gates"])
     assert any("Unpromoted Moshi/Open-S2S" in gate for gate in review_payload["egress_enablement_gates"])
+    assert any("text_digest" in gate and "raw witness text" in gate for gate in review_payload["egress_enablement_gates"])
     assert any("mark real_egress_enabled true" in item for item in review_payload["operator_must_not"])
     assert any("--package-audit" in command for command in review_payload["review_commands"])
     assert "VoiceOps Milestone 3 Channel Policy" in markdown
@@ -491,11 +514,15 @@ def test_write_channel_policy_artifacts(tmp_path):
     assert "Channel Authorization" in markdown
     assert "Audit ID Continuity" in markdown
     assert "KAME Action Evidence Gate" in markdown
+    assert "Required transcript hypothesis fields" in markdown
+    assert "raw witness text is not allowed as outbound payload content" in markdown
     assert "Redaction Rules" in markdown
     assert "VoiceOps Milestone 3 Channel Policy Review" in review_markdown
     assert "Required Signoffs" in review_markdown
     assert "Per-Channel Review" in review_markdown
     assert "KAME Action Evidence Gate" in review_markdown
+    assert "Required transcript hypothesis fields" in review_markdown
+    assert "Raw witness text is not allowed in channel egress" in review_markdown
     assert "Operator Must Not" in review_markdown
 
 

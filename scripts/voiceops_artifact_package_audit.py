@@ -27,6 +27,8 @@ from scripts.voiceops_channel_policy import (
     REQUIRED_KAME_INPUT_ORDER,
     REQUIRED_KAME_LINEAGE_FIELDS,
     REQUIRED_KAME_PROMOTED_AUTHORITIES,
+    REQUIRED_TRANSCRIPT_HYPOTHESIS_CONTRACT,
+    REQUIRED_TRANSCRIPT_HYPOTHESIS_FIELDS,
     REQUIRED_UNPROMOTED_WITNESS_SINK_CHECKS,
     validate_policy,
 )
@@ -1645,6 +1647,24 @@ def _audit_channel_policy(policy: Mapping[str, Any], review: Mapping[str, Any], 
             issues.append("channel_policy_review:kame_gate_promoted_authorities_mismatch")
         if review_kame_gate.get("required_interpreter_input_order") != REQUIRED_KAME_INPUT_ORDER:
             issues.append("channel_policy_review:kame_gate_input_order_mismatch")
+        missing_hypothesis_fields = REQUIRED_TRANSCRIPT_HYPOTHESIS_FIELDS - set(
+            review_kame_gate.get("required_transcript_hypothesis_fields") or []
+        )
+        if missing_hypothesis_fields:
+            issues.append(
+                "channel_policy_review:kame_gate_missing_transcript_hypothesis_fields:"
+                + ",".join(sorted(missing_hypothesis_fields))
+            )
+        hypothesis_contract = (
+            review_kame_gate.get("transcript_hypothesis_contract")
+            if isinstance(review_kame_gate.get("transcript_hypothesis_contract"), Mapping)
+            else {}
+        )
+        for field, expected_value in sorted(REQUIRED_TRANSCRIPT_HYPOTHESIS_CONTRACT.items()):
+            if hypothesis_contract.get(field) != expected_value:
+                issues.append(f"channel_policy_review:kame_gate_transcript_hypothesis_contract_mismatch:{field}")
+        if review_kame_gate.get("raw_transcript_text_allowed_in_channel_egress") is not False:
+            issues.append("channel_policy_review:kame_gate_raw_transcript_text_allowed_in_channel_egress")
         missing_lineage = REQUIRED_KAME_LINEAGE_FIELDS - set(review_kame_gate.get("required_lineage_fields") or [])
         if missing_lineage:
             issues.append(f"channel_policy_review:kame_gate_missing_lineage:{','.join(sorted(missing_lineage))}")
@@ -1689,6 +1709,14 @@ def _audit_channel_policy(policy: Mapping[str, Any], review: Mapping[str, Any], 
         checklist = [str(item).lower() for item in channel.get("checklist") or []]
         if not any("interpreter_promoted" in item and "oracle_promoted" in item for item in checklist):
             issues.append(f"channel_policy_review:{channel_id}:missing_promoted_evidence_checklist")
+        if not any(
+            "transcript hypotheses" in item
+            and "source" in item
+            and "text_digest" in item
+            and "arrival_phase" in item
+            for item in checklist
+        ):
+            issues.append(f"channel_policy_review:{channel_id}:missing_transcript_hypothesis_metadata_checklist")
         if not any("unpromoted witness" in item and "absent" in item for item in checklist):
             issues.append(f"channel_policy_review:{channel_id}:missing_unpromoted_witness_checklist")
         if set(channel.get("blocked_capabilities_to_confirm") or []) != set(policy_channel.get("prohibited_actions") or []):
@@ -3057,6 +3085,8 @@ def _audit_markdown_consistency(
             "missing_approval_routing": "## Approval Routing",
             "missing_customer_visible_route": "customer_visible_outbound",
             "missing_phone_handoff_route": "approved_phone_handoff_call",
+            "missing_transcript_hypothesis_fields": "Required transcript hypothesis fields",
+            "missing_raw_witness_text_ban": "raw witness text is not allowed as outbound payload content",
             "missing_audit_id_continuity": "Never overwrite an existing audit_id",
             "missing_phone_redaction": "phone_number: `<redacted-phone>`",
         },
@@ -3071,6 +3101,8 @@ def _audit_markdown_consistency(
             "missing_operator_must_not_send": "send Discord, WhatsApp, SMS, or phone traffic from this generated packet",
             "missing_package_audit_flag": "--package-audit",
             "missing_phone_handoff_route": "approved_phone_handoff_call",
+            "missing_transcript_hypothesis_fields": "Required transcript hypothesis fields",
+            "missing_raw_witness_text_ban": "Raw witness text is not allowed in channel egress",
         },
         issues,
     )

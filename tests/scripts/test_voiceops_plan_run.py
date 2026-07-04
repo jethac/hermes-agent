@@ -2108,6 +2108,16 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert channel_result["details"]["review_packet_status"] == "pending_human_review"
     assert channel_result["details"]["review_packet_artifact_only"] is True
     assert channel_result["details"]["review_packet_changes_policy"] is False
+    assert {"source", "text_digest", "arrival_phase", "latency_ms", "tool_authority"} <= set(
+        channel_result["details"]["kame_required_transcript_hypothesis_fields"]
+    )
+    assert channel_result["details"]["kame_transcript_hypothesis_contract"] == {
+        "authority": "hypothesis",
+        "promotion_required": "interpreter_promoted_or_oracle_promoted",
+        "role": "witness_context",
+        "tool_authority": False,
+    }
+    assert channel_result["details"]["raw_transcript_text_allowed_in_channel_egress"] is False
     assert Path(channel_result["artifacts"]["review_json"]).exists()
     assert Path(channel_result["artifacts"]["review_markdown"]).exists()
     assert "milestone_3_multi_channel_policy" not in summary["readiness_gaps"]

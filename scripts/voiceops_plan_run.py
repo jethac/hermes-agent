@@ -2913,6 +2913,15 @@ async def build_plan_run_async(
                 "review_packet_status": channel_review["review_status"],
                 "review_packet_artifact_only": channel_review["artifact_only"],
                 "review_packet_changes_policy": channel_review["changes_policy"],
+                "kame_required_transcript_hypothesis_fields": list(
+                    channel_policy["kame_action_evidence_gate"]["required_transcript_hypothesis_fields"]
+                ),
+                "kame_transcript_hypothesis_contract": dict(
+                    channel_policy["kame_action_evidence_gate"]["transcript_hypothesis_contract"]
+                ),
+                "raw_transcript_text_allowed_in_channel_egress": channel_policy[
+                    "kame_action_evidence_gate"
+                ]["raw_transcript_text_allowed_in_channel_egress"],
             },
         )
     )

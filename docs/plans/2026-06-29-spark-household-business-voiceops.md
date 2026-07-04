@@ -1193,6 +1193,12 @@ The command writes:
 
 The policy artifacts are static and headless. They read no secrets, perform no network I/O, send no Discord/WhatsApp/SMS messages, and place no calls. They define channel authorization, approval routing, escalation levels, audit ID continuity, redaction rules, and a pending human review packet for Discord, WhatsApp, and phone/SMS before those surfaces are used for real operations. The review packet does not enable egress; it records the signoffs and gates that must be satisfied before a separate runtime approval can do that.
 
+The policy review must carry the same KAME witness contract as Discord voice:
+transcript hypotheses are referenced by source, digest, arrival phase, latency,
+confidence, speaker/channel binding, and adjudication metadata. Raw witness
+text is not allowed as WhatsApp/SMS/phone/Discord egress content, and
+hypothesis-only wording cannot satisfy the promoted-evidence gate.
+
 ## Milestone 4: Local Deployment Evidence
 
 Prove the three KAME roles on the selected local runtime, with one DGX Spark as
