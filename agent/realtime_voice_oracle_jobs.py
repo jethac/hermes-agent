@@ -986,9 +986,13 @@ def _reflex_status_view(
         safe_job = _reflex_job_status(job, ordinal_index=index)
         if safe_job:
             safe_jobs.append(safe_job)
+    hidden_job_count = max(0, len(ordered_jobs) - len(safe_jobs))
     return {
         "capacity": safe_capacity,
         "jobs": safe_jobs,
+        "visible_job_count": len(safe_jobs),
+        "hidden_job_count": hidden_job_count,
+        "more_spoken_status": f"+{hidden_job_count} more" if hidden_job_count else "",
     }
 
 

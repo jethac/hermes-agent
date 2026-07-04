@@ -974,6 +974,7 @@ async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witn
             "authority": "hypothesis",
             "tool_authority": False,
             "kind": "frontend_witness_hypothesis",
+            "arrival_phase": "with_raw_audio",
             "speaker": {"channel_user_id": "other-user", "display_name": "guest", "ambiguous": True},
             "channel": {"guild_id": "guild-1", "channel_id": "general"},
             "audio_time_range_ms": (1100, 1800),
@@ -986,6 +987,7 @@ async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witn
             "authority": "hypothesis",
             "tool_authority": False,
             "kind": "frontend_witness_hypothesis",
+            "arrival_phase": "with_raw_audio",
             "speaker": {"channel_user_id": "42", "display_name": "jetha"},
             "channel": {"guild_id": "guild-1", "channel_id": "general"},
             "audio_time_range_ms": (100, 600),
@@ -998,6 +1000,7 @@ async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witn
             "authority": "hypothesis",
             "tool_authority": False,
             "kind": "frontend_witness_hypothesis",
+            "arrival_phase": "with_raw_audio",
             "speaker": {"channel_user_id": "42", "display_name": "jetha"},
             "channel": {"guild_id": "guild-1", "channel_id": "other-room"},
             "audio_time_range_ms": (1200, 1900),
@@ -1469,6 +1472,36 @@ async def test_reflex_status_prioritizes_active_jobs_over_terminal_history():
     assert [job["job_id"] for job in status["reflex"]["jobs"][:5]] == [
         job.job_id for job in active_jobs
     ]
+
+    release.set()
+    await manager.wait_for_idle()
+
+
+@pytest.mark.asyncio
+async def test_reflex_status_exposes_bounded_more_summary_for_hidden_jobs():
+    release = asyncio.Event()
+
+    async def runner(job):
+        await release.wait()
+        return {"result_summary": f"done {job.job_id}"}
+
+    manager = OracleJobManager(max_concurrent=4, runner=runner)
+
+    for index in range(10):
+        await manager.submit(_request(f"active or queued {index}"))
+    await asyncio.sleep(0)
+
+    status = await manager.status_view()
+
+    assert len(status["reflex"]["jobs"]) == 8
+    assert status["reflex"]["visible_job_count"] == 8
+    assert status["reflex"]["hidden_job_count"] == 2
+    assert status["reflex"]["more_spoken_status"] == "+2 more"
+    assert status["reflex"]["jobs"][-1]["ordinal"] == 8
+    assert status["reflex"]["jobs"][-1]["ordinal_label"] == "job eight"
+    assert {job["job_id"] for job in status["reflex"]["jobs"]}.isdisjoint(
+        {"voice-oracle-009", "voice-oracle-010"}
+    )
 
     release.set()
     await manager.wait_for_idle()
