@@ -204,11 +204,42 @@ def _add_kame_route_evidence(report):
         "audio_session": iter(("local", "oracle_direct")),
         "session_turn": iter(("defer", "reject_or_clarify")),
     }
+    turn_index = 0
     for entry in report:
         if entry.get("kind") in route_by_kind:
+            turn_index += 1
             entry["route"] = next(route_by_kind[entry["kind"]])
             entry["interface_input_source"] = "native_audio"
             entry["reflex_provider"] = "vllm"
+            entry["turn_id"] = f"voiceops-report-turn-{turn_index:03d}"
+            entry["audio_segment_ref"] = f"artifact://redacted/voiceops-report-turn-{turn_index:03d}.wav"
+            entry["evidence_bundle_id"] = f"kame-evidence-voiceops-report-turn-{turn_index:03d}"
+            entry["evidence_merge_key"] = f"kame-merge-voiceops-report-turn-{turn_index:03d}"
+            entry["audio_segment_ref_observed"] = True
+            entry["interpreter_evidence_observed"] = True
+            entry["transcript_hypotheses_labeled"] = True
+            entry["witness_arrival_phases"] = ["with_raw_audio"]
+            entry["interpreter_input_order"] = [
+                "raw_audio",
+                "metadata",
+                "reflex",
+                "transcript_hypotheses",
+            ]
+            entry["transcript_hypotheses"] = [
+                {
+                    "kind": "frontend_witness_hypothesis",
+                    "source": "moshi",
+                    "text": "[redacted witness hypothesis]",
+                    "arrival_phase": "with_raw_audio",
+                    "authority": "hypothesis",
+                    "tool_authority": False,
+                }
+            ]
+            entry["interpreter_adjudication_outcomes"] = ["corrected_by_audio"]
+            entry["promoted_evidence_authority"] = {
+                "interpreter_corrected_transcript": "interpreter_promoted",
+                "interpreter_normalized_intent": "interpreter_promoted",
+            }
     return report
 
 
@@ -625,6 +656,60 @@ def test_realtime_voice_alpha_report_rejects_malformed_kame_reflex_route_evidenc
     assert any(
         "KAME route evidence includes malformed reflex output" in issue.format()
         and "invalid_json=1" in issue.format()
+        for issue in issues
+    )
+
+
+def test_realtime_voice_alpha_report_requires_kame_witness_packet_proof():
+    manifest = _valid_manifest()
+    manifest["engine"] = "kame_interface_oracle"
+    manifest["frontend_provider"] = "gemma4"
+    manifest["frontend_model"] = "gemma-4-E2B-it"
+    manifest["interface_audio_input"] = "native_audio"
+    manifest["asr_mode"] = "on_escalation"
+    manifest["conversation_quality"] = {
+        "live_like": True,
+        "mode": "kame_reflex",
+        "reason": "audio_reflex_tts",
+        "sidecar_verified": True,
+    }
+    manifest["sidecar"]["health"]["frontend"] = {
+        "provider": "vllm",
+        "model": "gemma-4-E2B-it",
+    }
+    manifest["sidecar"]["health"]["capabilities"] = {
+        "utterance_stt": True,
+        "streaming_stt": False,
+        "tts": True,
+        "native_s2s": False,
+        "vllm_audio_frontend": True,
+        "output_languages": ["en", "ja"],
+    }
+    report = _add_kame_route_evidence([manifest, *_valid_alpha_report()[1:]])
+    for entry in report:
+        if entry.get("kind") in {"audio_session", "session_turn"}:
+            for key in (
+                "turn_id",
+                "audio_segment_ref",
+                "evidence_bundle_id",
+                "evidence_merge_key",
+                "audio_segment_ref_observed",
+                "interpreter_evidence_observed",
+                "transcript_hypotheses_labeled",
+                "witness_arrival_phases",
+                "interpreter_input_order",
+                "transcript_hypotheses",
+                "interpreter_adjudication_outcomes",
+                "promoted_evidence_authority",
+            ):
+                entry.pop(key, None)
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any(
+        "kame_witness_packet: missing concrete raw-audio witness/interpreter packet proof" in issue.format()
+        and "turn_id" in issue.format()
+        and "interpreter_evidence_observed" in issue.format()
         for issue in issues
     )
 

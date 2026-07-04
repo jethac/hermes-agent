@@ -457,6 +457,7 @@ def validate_realtime_voice_smoke_report(
         kame_route_entries = [*session_turn_entries, *audio_session_entries]
         issues.extend(_validate_kame_route_evidence(kame_route_entries))
         issues.extend(_validate_kame_reflex_provenance(kame_route_entries))
+        issues.extend(_validate_kame_witness_packet_evidence(kame_route_entries))
         issues.extend(_validate_kame_capability_honesty(entries))
     if require_async_oracle_smoke and not async_oracle_entries:
         issues.append(
@@ -657,6 +658,105 @@ def _validate_kame_reflex_provenance(entries: Sequence[Mapping[str, Any]]) -> li
             )
         )
     return issues
+
+
+_KAME_REQUIRED_INTERPRETER_INPUT_ORDER = ("raw_audio", "metadata", "reflex", "transcript_hypotheses")
+_KAME_VALID_WITNESS_ADJUDICATION_OUTCOMES = {
+    "accepted_as_supporting_evidence",
+    "corrected_by_audio",
+    "rejected_or_diagnostic_only",
+}
+
+
+def _validate_kame_witness_packet_evidence(
+    entries: Sequence[Mapping[str, Any]],
+) -> list[RealtimeVoiceSmokeReportIssue]:
+    routed_entries = [
+        entry
+        for entry in entries
+        if str(entry.get("route") or "").strip().lower() in KAME_ROUTE_LABELS
+    ]
+    if not routed_entries:
+        return []
+    valid_entries = [entry for entry in routed_entries if _entry_has_complete_kame_witness_packet(entry)]
+    if valid_entries:
+        return []
+
+    issue_details: list[str] = []
+    for entry in routed_entries:
+        missing = _kame_witness_packet_missing_fields(entry)
+        if missing:
+            label = str(entry.get("text") or entry.get("fixture") or entry.get("kind") or "entry")
+            issue_details.append(f"{label}: {','.join(missing[:6])}")
+    detail = "; ".join(issue_details[:3]) or "no routed KAME entry carried witness packet proof"
+    return [
+        RealtimeVoiceSmokeReportIssue(
+            "kame_witness_packet",
+            "missing concrete raw-audio witness/interpreter packet proof",
+            detail,
+        )
+    ]
+
+
+def _entry_has_complete_kame_witness_packet(entry: Mapping[str, Any]) -> bool:
+    return not _kame_witness_packet_missing_fields(entry)
+
+
+def _kame_witness_packet_missing_fields(entry: Mapping[str, Any]) -> list[str]:
+    missing: list[str] = []
+    for key in ("turn_id", "audio_segment_ref", "evidence_bundle_id", "evidence_merge_key"):
+        if not str(entry.get(key) or "").strip():
+            missing.append(key)
+    for key in ("audio_segment_ref_observed", "interpreter_evidence_observed", "transcript_hypotheses_labeled"):
+        if entry.get(key) is not True:
+            missing.append(key)
+
+    input_order = tuple(str(item) for item in _sequence_field(entry.get("interpreter_input_order")))
+    if input_order != _KAME_REQUIRED_INTERPRETER_INPUT_ORDER:
+        missing.append("interpreter_input_order")
+
+    phases = _sequence_field(entry.get("witness_arrival_phases"))
+    if not phases:
+        missing.append("witness_arrival_phases")
+
+    hypotheses = entry.get("transcript_hypotheses")
+    if not isinstance(hypotheses, Sequence) or isinstance(hypotheses, (str, bytes, bytearray)) or not hypotheses:
+        missing.append("transcript_hypotheses")
+    elif not any(_transcript_hypothesis_has_hypothesis_authority(item) for item in hypotheses):
+        missing.append("transcript_hypotheses_authority")
+
+    outcomes = set(_sequence_field(entry.get("interpreter_adjudication_outcomes")))
+    if not outcomes.intersection(_KAME_VALID_WITNESS_ADJUDICATION_OUTCOMES):
+        missing.append("interpreter_adjudication_outcomes")
+
+    promoted = entry.get("promoted_evidence_authority")
+    if not isinstance(promoted, Mapping):
+        missing.append("promoted_evidence_authority")
+    else:
+        for key in ("interpreter_corrected_transcript", "interpreter_normalized_intent"):
+            if str(promoted.get(key) or "").strip() != "interpreter_promoted":
+                missing.append(f"promoted_evidence_authority.{key}")
+    return missing
+
+
+def _sequence_field(value: Any) -> tuple[str, ...]:
+    if isinstance(value, str):
+        return (value.strip(),) if value.strip() else ()
+    if not isinstance(value, Sequence) or isinstance(value, (bytes, bytearray)):
+        return ()
+    return tuple(str(item).strip() for item in value if str(item or "").strip())
+
+
+def _transcript_hypothesis_has_hypothesis_authority(value: Any) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    return (
+        str(value.get("kind") or "").strip()
+        and str(value.get("source") or "").strip()
+        and str(value.get("arrival_phase") or "").strip()
+        and str(value.get("authority") or "").strip() == "hypothesis"
+        and value.get("tool_authority") is False
+    )
 
 
 def _kame_reflex_error_summary(entries: Sequence[Mapping[str, Any]]) -> str:
