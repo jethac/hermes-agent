@@ -79,11 +79,11 @@ def test_show_status_reports_realtime_voice_live_like(monkeypatch, capsys, tmp_p
                             "fallback_only": False,
                         },
                         "latency_by_stack": {
-                            "kame_interface_oracle|vllm|gemma-4-E2B-it|gemma-4-26B-A4B-it|cartesia|sonic-2": {
+                            "kame_interface_oracle|vllm|gemma-4-E2B-it|Hermes_model|cartesia|sonic-2": {
                                 "stack": {
                                     "frontend_provider": "vllm",
                                     "frontend_model": "gemma-4-E2B-it",
-                                    "preferred_local_oracle_model": "gemma-4-26B-A4B-it",
+                                    "oracle_authority": "Hermes /model",
                                     "tts_provider": "cartesia",
                                     "tts_model": "sonic-2",
                                 },
@@ -157,9 +157,9 @@ def test_show_status_reports_realtime_voice_live_like(monkeypatch, capsys, tmp_p
     assert "local=4 defer=3 oracle_direct=4 reject_or_clarify=1" in output
     assert "kame_reflex total=12 native_audio=10 vllm=10 fallback=2" in output
     assert "sources native_audio=10 streaming_stt=2 providers streaming_stt=2 vllm=10" in output
-    assert "stack kame_interface_oracle|vllm|gemma-4-E2B-it|gemma-4-26B-A4B-it|cartesia|sonic-2" in output
+    assert "stack kame_interface_oracle|vllm|gemma-4-E2B-it|Hermes_model|cartesia|sonic-2" in output
     assert "kame_audio p50=170ms p90=230ms p95=260ms max=300ms" in output
-    assert "frontend=vllm/gemma-4-E2B-it oracle=gemma-4-26B-A4B-it tts=cartesia/sonic-2" in output
+    assert "frontend=vllm/gemma-4-E2B-it oracle=Hermes /model tts=cartesia/sonic-2" in output
     assert "Review:" in output
     assert "passed (2026-06-08T00:00:00Z)" in output
     assert "Require live: yes" in output

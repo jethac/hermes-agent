@@ -163,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
                     "  stack "
                     f"{stack_key}: frontend={stack.get('frontend_provider') or 'unknown'}/"
                     f"{stack.get('frontend_model') or 'unknown'} "
-                    f"oracle={stack.get('preferred_local_oracle_model') or 'active_hermes_model'} "
+                    f"oracle={stack.get('oracle_authority') or 'Hermes /model'} "
                     f"tts={stack.get('tts_provider') or 'unknown'}/{stack.get('tts_model') or 'unknown'}"
                 )
                 for label, metric in sorted(stack_latency.items()):

@@ -270,11 +270,7 @@ def _realtime_voice_stack_latency_summary_parts(summary: Any) -> list[str]:
             continue
         stack = stack_summary.get("stack") if isinstance(stack_summary.get("stack"), Mapping) else {}
         frontend = _stack_label(stack, "frontend_provider", "frontend_model", default="unknown_frontend")
-        oracle = (
-            str(stack.get("preferred_local_oracle_model") or "").strip()
-            if isinstance(stack, Mapping)
-            else ""
-        )
+        oracle = str(stack.get("oracle_authority") or "Hermes /model").strip() if isinstance(stack, Mapping) else ""
         tts = _stack_label(stack, "tts_provider", "tts_model", default="unknown_tts")
         stack_id = str(stack_key or "unknown_stack")
         provenance = _realtime_voice_kame_reflex_provenance_part(stack_summary.get("kame_reflex_provenance"))

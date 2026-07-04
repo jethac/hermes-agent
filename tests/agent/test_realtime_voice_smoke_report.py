@@ -1273,7 +1273,7 @@ def test_realtime_voice_report_cli_validates_alpha_report(tmp_path, capsys):
     assert "kame_routes: total=4 oracle_avoided=2 oracle_required=2 avoidance=50.0%" in output
     assert "local=1 defer=1 oracle_direct=1 reject_or_clarify=1" in output
     assert "kame_reflex: total=4 native_audio=4 vllm=4 fallback=0 sources native_audio=4 providers vllm=4" in output
-    assert "stack unknown_engine|unknown_frontend|unknown_model|unknown_oracle|unknown_tts|unknown_tts_model" in output
+    assert "stack unknown_engine|unknown_frontend|unknown_model|Hermes_model|unknown_tts|unknown_tts_model" in output
 
 
 def test_realtime_voice_report_cli_requires_async_oracle_smoke_when_requested(tmp_path, capsys):
@@ -1663,7 +1663,7 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
         "fallback_only": False,
     }
     stack_summary = summary["latency_by_stack"][
-        "unknown_engine|unknown_frontend|unknown_model|unknown_oracle|unknown_tts|unknown_tts_model"
+        "unknown_engine|unknown_frontend|unknown_model|Hermes_model|unknown_tts|unknown_tts_model"
     ]
     assert stack_summary["runs"] == 3
     assert len(stack_summary["report_labels"]) == 3
@@ -1675,7 +1675,7 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
         "asr_mode": "",
         "asr_provider": "",
         "asr_model": "",
-        "preferred_local_oracle_model": "",
+        "oracle_authority": "Hermes /model",
         "tts_provider": "",
         "tts_model": "",
         "tts_voice": "",
@@ -1687,6 +1687,21 @@ def test_realtime_voice_report_run_summary_counts_latency_distributions(tmp_path
     assert stack_summary["kame_routes"]["oracle_required"] == 6
     assert stack_summary["kame_reflex_provenance"]["native_audio"] == 9
     assert stack_summary["kame_reflex_provenance"]["fallback"] == 3
+
+
+def test_realtime_voice_report_stack_summary_ignores_legacy_oracle_selector():
+    report = _valid_alpha_report()
+    manifest = report[0]
+    manifest["preferred_local_oracle_model"] = "legacy-voice-scoped-oracle"
+
+    summary = summarize_realtime_voice_smoke_report_runs([("legacy", report)])
+
+    assert list(summary["latency_by_stack"]) == [
+        "unknown_engine|unknown_frontend|unknown_model|Hermes_model|unknown_tts|unknown_tts_model"
+    ]
+    stack = next(iter(summary["latency_by_stack"].values()))["stack"]
+    assert stack["oracle_authority"] == "Hermes /model"
+    assert "preferred_local_oracle_model" not in stack
 
 
 def test_realtime_voice_report_cli_returns_nonzero_for_failed_report(tmp_path, capsys):
