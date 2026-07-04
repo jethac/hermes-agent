@@ -10,6 +10,41 @@ Preferred local reflex: fastest stable floor-control model, such as Moshi/Person
 Preferred local interpreter: Gemma 4 E2B/E4B/12B audio-multimodal, consuming bounded raw-audio cuts plus witness hypotheses
 Preferred local oracle target: Hermes active `/model`, with Nemotron 3 Super as the first Spark-local NVIDIA target to measure before readiness claims
 
+## Source Of Truth
+
+The current architecture is **reflex -> interpreter -> oracle**.
+
+- The reflex is the low-latency live interface. It owns VAD-adjacent timing,
+  barge-in, acknowledgement, provisional route, and short narration.
+- The interpreter is Gemma-style direct-audio adjudication. It receives the
+  clipped waveform first, then timing/speaker/channel metadata, then reflex
+  state, then any transcript-looking witness text.
+- The oracle is Hermes' active `/model`. Voice config must not introduce a
+  separate `oracle_model`; the existing Hermes model selector remains the
+  business/action brain.
+
+Moshi/Open-S2S output is allowed and useful, but it is not the control path.
+When a Moshi-like frontend can provide both raw voice and an STT-looking string
+for the same accepted speech cut, Hermes should send both to Gemma in one
+interpreter bundle. The text is `frontend_witness_hypothesis` or a narrower
+source-specific hypothesis. It tells Gemma what the realtime frontend believed
+it heard; it does not become durable user text, `oracle_text`, a tool argument,
+spend reason, phone payload, memory/file content, or external message unless
+Gemma or the Hermes oracle promotes it.
+
+Classic ASR is retained only as fallback, diagnostics, captions, or explicit
+literal-evidence support. The normal KAME path must not wait for ASR before
+acknowledging the user, creating the raw-audio interpreter request, or queuing a
+provisional oracle job from the reflex route. Missing ASR evidence is not a
+normal-path failure when raw audio, speech-gate evidence, and reflex route are
+available.
+
+The evidence proof for this design is one `turn_id`, one `audio_segment_ref`,
+one `evidence_bundle_id`, and one oracle job per accepted speech cut. Early,
+inline, and late Moshi/Open-S2S/VoiceClaw/OpenClaw/reflex/classic-ASR text must
+merge into that same bundle as witness evidence. It must never fork a second
+Hermes turn.
+
 ## Current Decision Record
 
 Date: 2026-07-04

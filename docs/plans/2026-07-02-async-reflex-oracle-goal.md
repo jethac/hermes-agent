@@ -15,9 +15,9 @@ The KAME voice branch has the right authority boundary: the human talks to a
 fast reflex/interface model, a non-blocking direct-audio interpreter stage turns
 raw audio plus optional transcript hypotheses into corrected multilingual
 evidence, and Hermes' active model owns oracle work: tools, memory, files,
-approvals, planning, and durable outcomes. This is allowed to be
-three-tier-ish in implementation, because transcript side channels can arrive
-before, during, or after the interpreter request. Raw audio is the primary
+approvals, planning, and durable outcomes. This is a three-tier sensor-fan-in
+implementation, because transcript side channels can arrive before, during, or
+after the interpreter request. Raw audio is the primary
 interpreter input; transcript hypotheses are optional context, or
 fallback/diagnostic context only in explicitly degraded mode.
 
@@ -29,6 +29,15 @@ transcript hypothesis in one evidence bundle. Hermes' active `/model` is the
 oracle. There is no separate `oracle_model`, no second Hermes turn from Moshi
 text, and no ASR proof requirement before acknowledgement or job creation when
 raw audio is available.
+
+The current concrete target is same-cut raw-audio plus witness context. If a
+Moshi/Open-S2S frontend emits an STT-looking string for the same accepted
+speech cut as the waveform, the adapter should include that string in
+`transcript_hypotheses[]` for the Gemma interpreter. It should not start a
+separate ASR-first Hermes turn, patch `oracle_text`, or block the reflex while
+waiting for the string. The acceptance proof is one `turn_id`, one
+`audio_segment_ref`, one `evidence_bundle_id`, one `evidence_merge_key`, and
+one oracle job lifecycle.
 
 Implementation pivot: the runtime should stop treating provider STT as the
 primary voice path. The normal path is raw audio plus optional witness context
@@ -224,11 +233,12 @@ It consumes the clipped waveform, reflex route, spoken acknowledgement,
 speaker/channel/timing metadata, and any transcript hypotheses, then promotes
 corrected wording only when confidence and provenance justify it.
 
-This means the architecture is three-tier-ish, but not three independent
-conversations. The reflex owns live floor control, the Gemma-style interpreter
-adjudicates the cut waveform and may promote a corrected transcript candidate,
-and the active Hermes model selected through existing `/model` and config flows
-owns oracle action. Voice config must not add a separate `oracle_model` setting.
+This means the architecture is three-tier sensor fan-in, but not three
+independent conversations. The reflex owns live floor control, the Gemma-style
+interpreter adjudicates the cut waveform and may promote a corrected transcript
+candidate, and the active Hermes model selected through existing `/model` and
+config flows owns oracle action. Voice config must not add a separate
+`oracle_model` setting.
 Moshi/S2S and classic ASR text are evidence fields inside the interpreter
 bundle, not separate prompts racing the oracle and not a required precondition
 for acknowledging the user.

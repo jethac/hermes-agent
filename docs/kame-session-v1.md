@@ -20,6 +20,12 @@ preferred packet contains the clipped waveform plus all same-cut witness text:
 4. transcript hypotheses from Moshi/open-S2S, VoiceClaw/OpenClaw, reflex text,
    or classic ASR
 
+In other words: yes, a Moshi/Open-S2S "STT" string can travel beside the raw
+voice. It is interpreter context, not the user's message. A full-KAME packet
+with both signals must preserve the same speech-cut identity for the waveform
+and the witness string, then ask the interpreter to accept, correct, or reject
+the witness before any durable/actionable field is produced.
+
 This allows a Moshi-style frontend to provide both audio and an STT-looking
 string without making the string authoritative. The string is a witness claim:
 what that frontend believed it heard. It is sent to the Gemma interpreter as

@@ -74,6 +74,12 @@ The design decisions are:
 
 ## Environment
 
+Setup warning: ElevenLabs STT is a fallback/comparison transcript source. These
+commands can validate provider connectivity and degraded text-only behavior,
+but they do not prove full KAME readiness unless a reflex path, raw-audio Gemma
+interpreter bundle, Hermes `/model` oracle routing, and non-authoritative
+transcript handling are also present.
+
 Required:
 
 ```powershell

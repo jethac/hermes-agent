@@ -16,6 +16,13 @@ durable prompt. This lets the video show fast acknowledgement without implying
 that the first transcript-like string gets to spend money, provision services,
 place calls, or write memory.
 
+The simplest demo phrasing is: "Hermes sends raw voice plus what the realtime
+frontend thought it heard to Gemma; only Gemma's promoted interpretation reaches
+the active Hermes model." That is the safety story. It keeps Moshi/Open-S2S text
+useful for clipped starts, names, numbers, and code-switches without making it
+the transcript of record or the thing that authorizes Stripe, NemoClaw, phone,
+memory, files, tools, or external messages.
+
 The user then gives Hermes a spending budget. Hermes uses Stripe-backed spending controls and skills to provision a service it needs, such as a VoIP provider account or phone-number-capable communications service.
 
 Once provisioned, Hermes calls the user's phone and continues with the same context from Discord. The handoff demonstrates that Hermes is not just a chatbot in one channel; it is an operating agent that can acquire tools, pay for services, and act across real communication surfaces.
@@ -409,9 +416,10 @@ closed by external evidence gates:
   witness quality, but it cannot promote its own transcript into spend,
   provisioning, phone, memory, file, durable history, or tool arguments.
 - Open S2S and STT/TTS alternatives must be described by role in the demo plan:
-  reflex, interpreter, auxiliary transcript evidence, outbound TTS, or degraded
-  fallback. A fast transcript is not enough to authorize spending, provisioning,
-  phone calls, memory writes, files, or durable user history.
+  reflex, interpreter, optional witness/fallback transcript evidence, outbound
+  TTS, or degraded fallback. A fast transcript is not enough to authorize
+  spending, provisioning, phone calls, memory writes, files, or durable user
+  history.
 - External frontend `ask_brain` bridges should still create a normalized
   Hermes oracle-request boundary after acceptance. Placeholders and safe status
   packets are transport state only. Durable session history may keep job ids,
@@ -441,7 +449,7 @@ closed by external evidence gates:
 10. Prove the noise gate rejects low-energy witness text without triggering
    barge-in, interpreter requests, oracle jobs, or durable transcripts.
 11. Add role-based provider comparison output so the artifact can say which
-   component was used for reflex, interpreter, auxiliary transcript evidence,
-   outbound TTS, and degraded fallback in the recorded run.
+   component was used for reflex, interpreter, optional witness/fallback
+   transcript evidence, outbound TTS, and degraded fallback in the recorded run.
 12. Implement the phone call handoff with context transfer from the Discord session.
 13. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.

@@ -1,6 +1,6 @@
 # Voice Ops Competitive Landscape
 
-Date: 2026-07-01
+Date: 2026-07-04
 
 Scope: Hermes voice-related PRs and issues visible in `NousResearch/hermes-agent`, compared with the current `wip/hackathon-voiceops-business-agent` branch and Sakana AI's KAME architecture.
 
@@ -41,6 +41,14 @@ The target KAME contract is raw-audio-primary: Moshi/open-S2S/classic-ASR text
 is useful witness context for the interpreter, but it is not durable user text,
 not a scheduler, and not tool authority until raw-audio-grounded interpreter or
 oracle promotion.
+
+The current decision is stricter than "thin voice layer on an agent." Hermes
+uses a three-tier voice system: reflex, Gemma direct-audio interpreter, and
+Hermes active `/model` oracle. VoiceClaw/OpenClaw/Moshi-style text can be a good
+witness for what the realtime frontend believed it heard, but the raw waveform
+and speech-gate metadata remain primary. The first transcript-like string to
+arrive must not become the user prompt, spend reason, phone payload, memory/file
+write, or tool argument just because it is fast.
 
 The current Hermes branch is an applied agent-system version of that pattern, not a literal trained S2S oracle-token model. Its KAME-like elements are:
 

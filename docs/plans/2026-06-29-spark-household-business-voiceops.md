@@ -66,6 +66,12 @@ For the long-term household/business appliance, Nemotron 3 Super is the preferre
 
 Target KAME layout:
 
+- Source of truth: the voice architecture is reflex -> Gemma interpreter ->
+  Hermes active `/model` oracle. Moshi/Open-S2S transcript-looking output may
+  be sent to Gemma beside the raw voice as witness context, but it is not the
+  user's durable message and not an action-authority source. Classic ASR is a
+  fallback/diagnostic/literal-evidence support lane, not a required normal-path
+  gate.
 - Reflex/interface: the fastest stable always-warm live-audio path available,
   such as Moshi/PersonaPlex-class S2S or an even smaller timing/noise-gated
   classifier path, optimized for turn-taking, barge-in, immediate
@@ -1131,7 +1137,7 @@ the preferred evidence target:
 - local Hermes oracle endpoint registered through normal `/model` selection
 - Nemotron 3 Super evaluated as the preferred local NVIDIA brain
 - local TTS bridge evidence
-- optional auxiliary transcript evidence only for fallback, diagnostics,
+- optional witness/fallback transcript evidence only for fallback, diagnostics,
   captions, or comparison runs
 - all-local smoke with oracle, reflex, raw-audio interpreter, TTS, and sidecar
   together

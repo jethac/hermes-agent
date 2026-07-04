@@ -41,7 +41,7 @@ Recent DGX Spark reports suggest this ranking for Hermes:
 | Local oracle | Nemotron 3 Super via Hermes `/model` to a local Spark endpoint | Sponsor-aligned serious reasoning target with an explicit Spark-local deployment path; must be benchmarked before one-Spark readiness is claimed. | Serving image/version and memory profile details matter. |
 | Oracle comparison | Gemma 4 26B-A4B via vLLM | Reported around 24-40 decode tok/s, with strong prefill and workable memory use on single Spark. | Comparison target, not the primary VoiceOps brain. |
 | Cloud voice baseline | Cartesia bridge | Good for proving transport, playback, outbound TTS, and degraded/provider-comparison behavior while local speech work proceeds. Any provider transcript output is optional hypothesis evidence, not the KAME control path. | Cloud dependency; not a local-only answer. |
-| Local auxiliary transcript/TTS fallback | Nemotron Speech or Riva-like ASR + Magpie/Riva TTS | Pipecat/Nemotron/Magpie is the only well-instrumented Spark speech-services stack found, around 1.2s server-side voice-to-voice in reported runs. In Hermes KAME, ASR output is an optional `classic_asr_hypothesis` for diagnostics, captions, or fallback, not the normal reflex control path. | Need a Hermes-compatible bridge; full Riva setup reports include install pain. |
+| Local optional witness/TTS fallback | Nemotron Speech or Riva-like ASR + Magpie/Riva TTS | Pipecat/Nemotron/Magpie is the only well-instrumented Spark speech-services stack found, around 1.2s server-side voice-to-voice in reported runs. In Hermes KAME, ASR output is an optional `classic_asr_hypothesis` for diagnostics, captions, or fallback, not the normal reflex control path. | Need a Hermes-compatible bridge; full Riva setup reports include install pain. |
 | Reflex/floor-control S2S | Moshi/PersonaPlex-class models | Useful architecture fit for immediate acknowledgement and rough transcript hypotheses; Spark reports mention choppy/unusable full-duplex audio in some deployments. | Candidate for reflex only after stable audio/noise-gate validation; transcript output is evidence, not truth. |
 | Direct speech LLM | Ultravox | No confirmed DGX Spark deployment numbers found. | Watchlist only. |
 | Any-to-any multimodal S2S | Qwen Omni-class models | Potentially useful for combined speech input/output and multimodal perception. | Watchlist until serving complexity, latency, and authority-boundary behavior are measured locally. |
@@ -84,7 +84,7 @@ winning the system:
 | --- | --- | --- |
 | Reflex | speech-end to acknowledgement, barge-in stop time, noise-gate behavior, duplicate/hallucinated command rate | Requires a full transcript before acknowledging, or schedules oracle work from transcript text alone |
 | Interpreter | raw-audio evidence quality, multilingual/name/number recovery, disagreement reporting, late-evidence behavior | Treats Moshi/S2S/ASR text as verified user wording without checking raw audio |
-| Auxiliary transcript evidence | useful corrections, timing/confidence metadata, speaker/channel attribution | Blocks acknowledgement or creates a second Hermes turn |
+| Optional witness/fallback transcript evidence | useful corrections, timing/confidence metadata, speaker/channel attribution | Blocks acknowledgement or creates a second Hermes turn |
 | Outbound TTS | first-audio latency, audio quality, interruption behavior, local operability | Forces a cloud dependency in a claimed local-only run |
 | Degraded fallback | clear labeling, graceful failure, no high-risk action authority | Counts text-only operation as full KAME readiness |
 
@@ -98,7 +98,7 @@ actually served in a run:
 - `reflex`: live floor control, barge-in, acknowledgement, and optional witness
   transcript generation.
 - `interpreter`: raw-audio evidence adjudication and promoted wording.
-- `auxiliary_transcript_evidence`: Moshi/open-S2S/classic-ASR witness text
+- `optional_witness_transcript_evidence`: Moshi/open-S2S/classic-ASR witness text
   attached to the same raw-audio bundle.
 - `outbound_tts`: audio rendering only.
 - `oracle`: Hermes' active `/model`, selected through normal Hermes model

@@ -33,6 +33,11 @@ the June 9 reliability requirements while adding the reflex/interpreter/oracle
 split. The reflex owns floor control, the interpreter promotes raw-audio
 evidence, and Hermes' active `/model` remains the oracle.
 
+Legacy Whisper/STT/TTS paths in this document are historical failure evidence
+and fallback/comparison mechanisms. Under the successor design, provider
+transcripts are optional witness/fallback context for the Gemma interpreter, not
+the required realtime path and not full-KAME action evidence by themselves.
+
 ---
 
 ## June 9 Evidence
