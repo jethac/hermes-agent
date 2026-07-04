@@ -302,6 +302,152 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
 
 
 @pytest.mark.asyncio
+async def test_submit_coalesces_duplicate_evidence_bundle_when_raw_audio_arrives_late():
+    release = asyncio.Event()
+    events = []
+
+    async def runner(job):
+        await release.wait()
+        return {"result_summary": f"done {job.oracle_text}"}
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
+    first_request = KameOracleRequest(
+        session_id="voice-session-1",
+        turn_id="turn:dupe-1",
+        source="voiceclaw",
+        user_id="42",
+        intent="prepare the phone handoff",
+        route=KameRoute.DEFER,
+        interface_input_source="ask_brain",
+        interface_audio_input_fallback=True,
+        auxiliary_transcript_hypotheses=(
+            {
+                "source": "moshi",
+                "text": "prepare phone handoff",
+                "confidence": 0.64,
+                "arrival_phase": "before_raw_audio",
+            },
+        ),
+    )
+    second_request = KameOracleRequest(
+        session_id="voice-session-1",
+        turn_id="turn:dupe-1",
+        source="discord_voice",
+        user_id="42",
+        intent="prepare the phone handoff",
+        route=KameRoute.DEFER,
+        audio_segment_ref="artifact://voice/dupe-1.wav",
+        audio_time_range_ms=(100, 1200),
+        audio_metadata={
+            "codec": "pcm_s16le",
+            "sample_rate_hz": 16000,
+            "channels": 1,
+            "vad": {"accepted": True, "speech_start_ms": 100, "speech_end_ms": 1200},
+        },
+        auxiliary_transcript_hypotheses=(
+            {
+                "source": "asr",
+                "text": "prepare the phone handoff",
+                "confidence": 0.91,
+                "arrival_phase": "with_raw_audio",
+            },
+        ),
+    )
+
+    first = await manager.submit(first_request)
+    resolved = await manager.find_by_evidence_key(
+        turn_id="turn:dupe-1",
+        audio_segment_ref="artifact://voice/dupe-1.wav",
+    )
+    second = await manager.submit(second_request)
+
+    assert resolved.job_id == first.job_id
+    assert second.job_id == first.job_id
+    assert [event["type"] for event in events].count("oracle.job.accepted") == 1
+    assert any(
+        event["type"] == "oracle.job.progress"
+        and event["payload"].get("operation") == "evidence_bundle_merge"
+        and event["payload"].get("duplicate_submit_suppressed") is True
+        for event in events
+    )
+
+    status = await manager.status_view()
+    assert len(status["jobs"]) == 1
+    job_status = status["jobs"][0]
+    assert job_status["job_id"] == first.job_id
+    assert job_status["raw_audio_available"] is True
+    assert job_status["evidence_bundle_status"] == "primary_audio"
+    assert job_status["audio_segment_ref"] == "artifact://voice/dupe-1.wav"
+    assert job_status["audio_time_range_ms"] == (100, 1200)
+    assert job_status["evidence_bundle_id"] == first_request.evidence_bundle_id
+    assert job_status["evidence_bundle_id"] == second_request.evidence_bundle_id
+    assert job_status["evidence_merge_key"] == second_request.evidence_merge_key
+    assert job_status["witness_arrival_phases"] == ("before_raw_audio", "with_raw_audio")
+    assert job_status["auxiliary_transcript_hypotheses_count"] == 2
+    assert job_status["evidence_bundle"]["raw_audio_available"] is True
+    assert job_status["evidence_bundle"]["status"] == "primary_audio"
+    assert job_status["evidence_bundle"]["transcript_hypotheses_count"] == 2
+
+    release.set()
+    await manager.wait_for_idle()
+    completed = await manager.get(first.job_id)
+    assert completed.state == OracleJobState.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_submit_does_not_coalesce_same_turn_with_conflicting_audio_refs():
+    release = asyncio.Event()
+    events = []
+
+    async def runner(job):
+        await release.wait()
+        return "done"
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
+    first_request = KameOracleRequest(
+        session_id="voice-session-1",
+        turn_id="turn:conflicting-audio",
+        source="discord_voice",
+        user_id="42",
+        intent="first cut",
+        route=KameRoute.DEFER,
+        audio_segment_ref="artifact://voice/first.wav",
+    )
+    second_request = KameOracleRequest(
+        session_id="voice-session-1",
+        turn_id="turn:conflicting-audio",
+        source="discord_voice",
+        user_id="42",
+        intent="second cut",
+        route=KameRoute.DEFER,
+        audio_segment_ref="artifact://voice/second.wav",
+    )
+
+    first = await manager.submit(first_request)
+    second = await manager.submit(second_request)
+
+    assert second.job_id != first.job_id
+    assert [event["type"] for event in events].count("oracle.job.accepted") == 2
+    status = await manager.status_view()
+    assert len(status["jobs"]) == 2
+    assert {job["audio_segment_ref"] for job in status["jobs"]} == {
+        "artifact://voice/first.wav",
+        "artifact://voice/second.wav",
+    }
+
+    release.set()
+    await manager.wait_for_idle()
+
+
+@pytest.mark.asyncio
 async def test_max_concurrent_one_queues_second_job():
     started = []
     release_first = asyncio.Event()

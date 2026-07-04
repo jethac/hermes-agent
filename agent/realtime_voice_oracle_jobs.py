@@ -354,6 +354,20 @@ class OracleJobManager:
             raise ValueError("OracleJobManager requires a runner to submit jobs")
 
         async with self._lock:
+            existing = self._find_existing_evidence_bundle_job_locked(request)
+            if existing is not None:
+                self._merge_request_into_job_locked(existing, request)
+                await self._emit_locked(
+                    OracleJobEventType.PROGRESS,
+                    existing,
+                    payload={
+                        **existing.to_status(),
+                        "operation": "evidence_bundle_merge",
+                        "duplicate_submit_suppressed": True,
+                    },
+                )
+                return existing
+
             active_count = self._active_count_locked()
             if self.overflow_policy == "reject" and active_count >= self.max_concurrent:
                 raise OracleJobQueueFullError("oracle job queue is full")
@@ -669,7 +683,7 @@ class OracleJobManager:
                 turn_matches = bool(turn_id and job_turn_id == turn_id)
                 audio_matches = bool(audio_segment_ref and job_audio_ref == audio_segment_ref)
                 if turn_id and audio_segment_ref:
-                    if turn_matches and audio_matches:
+                    if turn_matches and (audio_matches or not job_audio_ref):
                         matches.append(job)
                 elif turn_matches or audio_matches:
                     matches.append(job)
@@ -751,6 +765,81 @@ class OracleJobManager:
             metadata=request.to_metadata(),
             request=_request_with_compact_auxiliary_hypotheses(request),
         )
+
+    def _find_existing_evidence_bundle_job_locked(self, request: KameOracleRequest) -> Optional[OracleJob]:
+        session_id = _compact_evidence_text(request.session_id, limit=160)
+        turn_id = _compact_evidence_text(request.turn_id, limit=160)
+        if not session_id or not turn_id:
+            return None
+        bundle_id = request.evidence_bundle_id
+        for job in self._jobs.values():
+            if job.state in TERMINAL_STATES:
+                continue
+            job_request = job.request
+            if job_request is None:
+                continue
+            if _compact_evidence_text(job_request.session_id, limit=160) != session_id:
+                continue
+            if _compact_evidence_text(job_request.turn_id, limit=160) != turn_id:
+                continue
+            if job_request.evidence_bundle_id == bundle_id:
+                if not _compatible_audio_refs(
+                    request.audio_segment_ref,
+                    job.audio_segment_ref or job_request.audio_segment_ref,
+                ):
+                    continue
+                return job
+        return None
+
+    def _merge_request_into_job_locked(self, job: OracleJob, request: KameOracleRequest) -> None:
+        existing = job.request or request
+        base = request if request.raw_audio_available or not existing.raw_audio_available else existing
+        merged_request = dataclasses.replace(
+            base,
+            auxiliary_transcript_hypotheses=(
+                tuple(existing.auxiliary_transcript_hypotheses)
+                + tuple(request.auxiliary_transcript_hypotheses)
+            ),
+        )
+        merged_request = _request_with_compact_auxiliary_hypotheses(merged_request)
+
+        job.request = merged_request
+        job.session_id = merged_request.session_id
+        job.route = merged_request.route.value
+        job.oracle_text = merged_request.oracle_text
+        job.reflex_intent = merged_request.intent
+        job.interface_already_said = merged_request.interface_already_said
+        job.interface_tool_call_id = _compact_evidence_text(merged_request.interface_tool_call_id, limit=160)
+        job.audit_id = _compact_evidence_text(merged_request.audit_id, limit=160)
+        job.source_audit_id = _compact_evidence_text(merged_request.source_audit_id, limit=160)
+        job.parent_audit_id = _compact_evidence_text(merged_request.parent_audit_id, limit=160)
+        job.audio_segment_ref = _compact_evidence_text(merged_request.audio_segment_ref, limit=240)
+        job.audio_time_range_ms = _audio_time_range_ms(merged_request.audio_time_range_ms)
+        job.audio_metadata = _compact_audio_metadata(merged_request.audio_metadata)
+        job.speaker_metadata = _compact_speaker_metadata(merged_request.speaker_metadata)
+        job.channel_metadata = _compact_channel_metadata(merged_request.channel_metadata)
+        job.reflex_transcript_hypothesis = _compact_evidence_text(
+            merged_request.reflex_transcript_hypothesis
+            or (merged_request.transcript if merged_request.transcript_source == "reflex_audio" else ""),
+            limit=500,
+        )
+        job.reflex_transcript_source = _compact_evidence_text(
+            merged_request.reflex_transcript_source
+            or ("reflex_audio" if merged_request.reflex_transcript_hypothesis else ""),
+            limit=40,
+        )
+        job.reflex_transcript_confidence = _compact_confidence(
+            merged_request.reflex_transcript_confidence
+            if merged_request.reflex_transcript_confidence is not None
+            else (merged_request.transcript_confidence if merged_request.transcript_source == "reflex_audio" else None)
+        )
+        job.reflex_transcript_arrival_phase = _request_reflex_transcript_arrival_phase(merged_request)
+        job.auxiliary_transcript_hypotheses = _compact_auxiliary_transcript_hypotheses(
+            merged_request.auxiliary_transcript_hypotheses
+        )
+        job.requested_response_style = dict(merged_request.requested_response_style or {})
+        job.metadata = merged_request.to_metadata()
+        job.updated_at = self._clock()
 
     def _start_job_locked(self, job: OracleJob, runner: OracleJobRunner) -> None:
         job.state = OracleJobState.RUNNING
@@ -1130,6 +1219,12 @@ def _job_evidence_bundle_status(job: OracleJob) -> str:
     if job.request is not None:
         return job.request.evidence_bundle_status
     return "degraded_no_raw_audio"
+
+
+def _compatible_audio_refs(left: object, right: object) -> bool:
+    left_ref = _compact_evidence_text(left, limit=240)
+    right_ref = _compact_evidence_text(right, limit=240)
+    return not left_ref or not right_ref or left_ref == right_ref
 
 
 def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
