@@ -1445,6 +1445,28 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         voice_result["details"]["async_oracle_smoke"]["witness_fusion_interpreter_prompt_policy_visible"]
         is True
     )
+    assert voice_result["details"]["async_oracle_smoke"]["energy_gate_smoke_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["energy_gate_policy"] == {
+        "min_rms": 350,
+        "min_speech_ms": 120,
+    }
+    assert voice_result["details"]["async_oracle_smoke"]["energy_gate_ignored_packet_rms"] == 80
+    assert voice_result["details"]["async_oracle_smoke"]["energy_gate_ignored_packet_duration_ms"] == 200
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["energy_gate_ignored_packet_speech_confirmed"]
+        is False
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["energy_gate_ignored_packet_vad_speech"] is False
+    assert voice_result["details"]["async_oracle_smoke"]["energy_gate_ignored_non_speech_packets"] >= 2
+    assert voice_result["details"]["async_oracle_smoke"]["energy_gate_barge_in_events"] == 0
+    assert voice_result["details"]["async_oracle_smoke"]["energy_gate_interpreter_requests"] == 0
+    assert voice_result["details"]["async_oracle_smoke"]["energy_gate_oracle_work_events"] == 0
+    assert voice_result["details"]["async_oracle_smoke"]["energy_gate_oracle_requests"] == 0
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["energy_gate_raw_packet_buffered_without_turn"]
+        is True
+    )
+    assert "barge_in.detected" not in voice_result["details"]["async_oracle_smoke"]["energy_gate_event_types"]
     assert voice_result["details"]["async_oracle_smoke"]["kame_ack_latency_metrics_smoke_ok"] is True
     assert (
         voice_result["details"]["async_oracle_smoke"]["kame_defer_ack_first_audio_metrics_visible"]

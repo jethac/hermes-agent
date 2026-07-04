@@ -2136,6 +2136,29 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "witness_fusion_accepted_counts": async_smoke.get("witness_fusion_accepted_counts") or {},
             "witness_fusion_started_counts": async_smoke.get("witness_fusion_started_counts") or {},
             "witness_fusion_completed_counts": async_smoke.get("witness_fusion_completed_counts") or {},
+            "energy_gate_smoke_ok": bool(async_smoke.get("energy_gate_smoke_ok")),
+            "energy_gate_policy": async_smoke.get("energy_gate_policy") or {},
+            "energy_gate_ignored_packet_rms": async_smoke.get("energy_gate_ignored_packet_rms"),
+            "energy_gate_ignored_packet_duration_ms": async_smoke.get(
+                "energy_gate_ignored_packet_duration_ms"
+            ),
+            "energy_gate_ignored_packet_speech_confirmed": async_smoke.get(
+                "energy_gate_ignored_packet_speech_confirmed"
+            ),
+            "energy_gate_ignored_packet_vad_speech": async_smoke.get(
+                "energy_gate_ignored_packet_vad_speech"
+            ),
+            "energy_gate_ignored_non_speech_packets": async_smoke.get(
+                "energy_gate_ignored_non_speech_packets"
+            ),
+            "energy_gate_barge_in_events": async_smoke.get("energy_gate_barge_in_events"),
+            "energy_gate_interpreter_requests": async_smoke.get("energy_gate_interpreter_requests"),
+            "energy_gate_oracle_work_events": async_smoke.get("energy_gate_oracle_work_events"),
+            "energy_gate_oracle_requests": async_smoke.get("energy_gate_oracle_requests"),
+            "energy_gate_raw_packet_buffered_without_turn": bool(
+                async_smoke.get("energy_gate_raw_packet_buffered_without_turn")
+            ),
+            "energy_gate_event_types": async_smoke.get("energy_gate_event_types") or [],
             "runtime_kame_action_gate_smoke_ok": bool(async_smoke.get("runtime_kame_action_gate_smoke_ok")),
             "runtime_kame_action_gate_waiting_events": async_smoke.get("runtime_kame_action_gate_waiting_events"),
             "runtime_kame_action_gate_hypothesis_only_ok": async_smoke.get(

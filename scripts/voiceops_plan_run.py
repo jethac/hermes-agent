@@ -1951,6 +1951,45 @@ async def build_plan_run_async(
                     "witness_fusion_interpreter_prompt_policy_visible": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["witness_fusion_interpreter_prompt_policy_visible"],
+                    "energy_gate_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
+                        "energy_gate_smoke_ok"
+                    ],
+                    "energy_gate_policy": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"]["energy_gate_policy"]
+                    ),
+                    "energy_gate_ignored_packet_rms": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["energy_gate_ignored_packet_rms"],
+                    "energy_gate_ignored_packet_duration_ms": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["energy_gate_ignored_packet_duration_ms"],
+                    "energy_gate_ignored_packet_speech_confirmed": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["energy_gate_ignored_packet_speech_confirmed"],
+                    "energy_gate_ignored_packet_vad_speech": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["energy_gate_ignored_packet_vad_speech"],
+                    "energy_gate_ignored_non_speech_packets": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["energy_gate_ignored_non_speech_packets"],
+                    "energy_gate_barge_in_events": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["energy_gate_barge_in_events"],
+                    "energy_gate_interpreter_requests": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["energy_gate_interpreter_requests"],
+                    "energy_gate_oracle_work_events": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["energy_gate_oracle_work_events"],
+                    "energy_gate_oracle_requests": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["energy_gate_oracle_requests"],
+                    "energy_gate_raw_packet_buffered_without_turn": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["energy_gate_raw_packet_buffered_without_turn"],
+                    "energy_gate_event_types": list(
+                        voice_operator["proofs"]["async_oracle_jobs"]["energy_gate_event_types"]
+                    ),
                     "kame_ack_latency_metrics_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
                         "kame_ack_latency_metrics_smoke_ok"
                     ],

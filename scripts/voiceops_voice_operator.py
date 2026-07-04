@@ -154,6 +154,11 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice.py::test_kame_engine_supersedes_partial_frontend_witness_with_final_before_start",
         "tests/agent/test_realtime_voice_async_oracle_smoke.py::test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation",
     ],
+    "energy_gate": [
+        "tests/agent/test_realtime_voice.py::test_text_engine_raw_audio_without_confirmed_speech_does_not_barge_in",
+        "tests/agent/test_realtime_voice.py::test_text_engine_speech_energy_barge_in_requires_rms_and_duration",
+        "tests/agent/test_realtime_voice_async_oracle_smoke.py::test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation",
+    ],
     "runtime_action_gate": [
         "tests/agent/test_realtime_voice.py::test_oracle_job_approval_marks_hypothesis_only_action_gate_unsafe",
         "tests/agent/test_realtime_voice.py::test_oracle_job_approval_accepts_consumed_promoted_interpreter_evidence",
@@ -1887,6 +1892,15 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         == "non_authoritative_context"
         and smoke["witness_fusion_interpreter_prompt_policy"].get("promotion_requirement")
         == "compare_transcript_hypotheses_against_raw_audio_before_promotion",
+        "energy_gate_ignores_non_speech_without_work": smoke.get("energy_gate_smoke_ok") is True
+        and smoke.get("energy_gate_ignored_packet_speech_confirmed") is False
+        and smoke.get("energy_gate_ignored_packet_vad_speech") is False
+        and int(smoke.get("energy_gate_ignored_non_speech_packets") or 0) >= 2
+        and int(smoke.get("energy_gate_barge_in_events", -1)) == 0
+        and int(smoke.get("energy_gate_interpreter_requests", -1)) == 0
+        and int(smoke.get("energy_gate_oracle_work_events", -1)) == 0
+        and int(smoke.get("energy_gate_oracle_requests", -1)) == 0
+        and smoke.get("energy_gate_raw_packet_buffered_without_turn") is True,
         "kame_ack_latency_metrics_visible": smoke.get("kame_ack_latency_metrics_smoke_ok") is True
         and smoke.get("kame_defer_ack_first_audio_metrics_visible") is True
         and smoke.get("kame_local_first_audio_metrics_visible") is True
@@ -2180,6 +2194,13 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             ok=smoke_ok and bool(async_oracle_coverage.get("interpreter_prompt_policy_visible")),
             evidence="async_oracle_smoke_plus_interpreter_prompt_policy_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["witness_fusion"],
+            verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "energy_gate_ignores_non_speech_without_work": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("energy_gate_ignores_non_speech_without_work")),
+            evidence="async_oracle_smoke_plus_energy_gate_tests",
+            test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["energy_gate"],
             verification_mode="loopback_smoke_plus_focused_tests",
             runtime_verified_by_this_report=True,
         ),
@@ -2836,6 +2857,31 @@ def build_voice_operator_report(
             "unpromoted_hypothesis_update_summary": async_oracle_smoke.get(
                 "unpromoted_hypothesis_update_summary"
             ),
+            "energy_gate_smoke_ok": bool(async_oracle_smoke.get("energy_gate_smoke_ok")),
+            "energy_gate_policy": dict(async_oracle_smoke.get("energy_gate_policy") or {}),
+            "energy_gate_ignored_packet_rms": async_oracle_smoke.get("energy_gate_ignored_packet_rms"),
+            "energy_gate_ignored_packet_duration_ms": async_oracle_smoke.get(
+                "energy_gate_ignored_packet_duration_ms"
+            ),
+            "energy_gate_ignored_packet_speech_confirmed": async_oracle_smoke.get(
+                "energy_gate_ignored_packet_speech_confirmed"
+            ),
+            "energy_gate_ignored_packet_vad_speech": async_oracle_smoke.get(
+                "energy_gate_ignored_packet_vad_speech"
+            ),
+            "energy_gate_ignored_non_speech_packets": async_oracle_smoke.get(
+                "energy_gate_ignored_non_speech_packets"
+            ),
+            "energy_gate_barge_in_events": async_oracle_smoke.get("energy_gate_barge_in_events"),
+            "energy_gate_interpreter_requests": async_oracle_smoke.get(
+                "energy_gate_interpreter_requests"
+            ),
+            "energy_gate_oracle_work_events": async_oracle_smoke.get("energy_gate_oracle_work_events"),
+            "energy_gate_oracle_requests": async_oracle_smoke.get("energy_gate_oracle_requests"),
+            "energy_gate_raw_packet_buffered_without_turn": bool(
+                async_oracle_smoke.get("energy_gate_raw_packet_buffered_without_turn")
+            ),
+            "energy_gate_event_types": list(async_oracle_smoke.get("energy_gate_event_types") or []),
             "witness_fusion_timing_smoke_ok": bool(
                 async_oracle_smoke.get("witness_fusion_timing_smoke_ok")
             ),
@@ -3215,6 +3261,9 @@ def build_voice_operator_report(
             "async_oracle_interpreter_prompt_policy_visible": async_oracle_coverage[
                 "interpreter_prompt_policy_visible"
             ],
+            "async_oracle_energy_gate_ignores_non_speech": async_oracle_coverage[
+                "energy_gate_ignores_non_speech_without_work"
+            ],
             "async_oracle_kame_ack_latency_metrics_visible": async_oracle_coverage[
                 "kame_ack_latency_metrics_visible"
             ],
@@ -3357,6 +3406,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "witness_fusion_adjudicates_frontend_text",
         "interpreter_prompt_input_order_visible",
         "interpreter_prompt_policy_visible",
+        "energy_gate_ignores_non_speech_without_work",
         "kame_ack_latency_metrics_visible",
         "runtime_kame_action_gate_enforced",
         "unflagged_high_risk_tool_event_fails_closed",

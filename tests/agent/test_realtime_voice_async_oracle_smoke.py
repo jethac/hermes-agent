@@ -228,6 +228,19 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["unpromoted_hypothesis_not_message_payload"] is True
     assert report["unpromoted_hypothesis_update_observed"] is True
     assert report["unpromoted_hypothesis_update_summary"] == "interpreter evidence: auxiliary_hypotheses=1"
+    assert report["energy_gate_smoke_ok"] is True
+    assert report["energy_gate_policy"] == {"min_rms": 350, "min_speech_ms": 120}
+    assert report["energy_gate_ignored_packet_rms"] == 80
+    assert report["energy_gate_ignored_packet_duration_ms"] == 200
+    assert report["energy_gate_ignored_packet_speech_confirmed"] is False
+    assert report["energy_gate_ignored_packet_vad_speech"] is False
+    assert report["energy_gate_ignored_non_speech_packets"] >= 2
+    assert report["energy_gate_barge_in_events"] == 0
+    assert report["energy_gate_interpreter_requests"] == 0
+    assert report["energy_gate_oracle_work_events"] == 0
+    assert report["energy_gate_oracle_requests"] == 0
+    assert report["energy_gate_raw_packet_buffered_without_turn"] is True
+    assert "barge_in.detected" not in report["energy_gate_event_types"]
     assert report["witness_fusion_timing_smoke_ok"] is True
     assert report["witness_fusion_arrival_phases"] == [
         "before_raw_audio",

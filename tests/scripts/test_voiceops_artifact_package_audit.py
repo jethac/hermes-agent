@@ -228,6 +228,9 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     ] = True
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_rejection_reasons"] = {"late": ["wrong_channel"]}
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_adjudication_outcomes_observed"] = False
+    readiness["proofs"]["async_oracle_jobs"]["energy_gate_barge_in_events"] = 1
+    readiness["proofs"]["async_oracle_jobs"]["energy_gate_raw_packet_buffered_without_turn"] = False
+    readiness["proofs"]["async_oracle_jobs"]["energy_gate_policy"] = {"min_rms": 0}
     readiness["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_smoke_ok"] = False
     readiness["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_degraded_text_only_status"] = (
         "primary_audio"
@@ -347,6 +350,18 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_adjudication_outcomes_observed_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.energy_gate_barge_in_events_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.energy_gate_raw_packet_buffered_without_turn_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.energy_gate_policy_mismatch"
         in report["issues"]
     )
     assert (

@@ -19,6 +19,7 @@ from agent.realtime_voice import (
     AudioChunk,
     RealtimeVoiceEngineKind,
     RealtimeVoiceSessionConfig,
+    VoiceAudioCodec,
     VoiceEvent,
     VoiceEventType,
 )
@@ -346,6 +347,126 @@ async def _run_queued_cancel_smoke() -> dict[str, Any]:
         "queued_cancel_reason": cancelled_reason,
         "queued_cancel_target_job_id": target_job_id,
         "queued_cancel_running_completed": running_completed,
+    }
+
+
+async def _run_energy_gate_smoke() -> dict[str, Any]:
+    oracle = SmokeOracle()
+    engine = SmokeEngine(oracle=oracle)
+    recorder = EventRecorder(engine)
+    await engine.start(
+        RealtimeVoiceSessionConfig(
+            session_id="voice-smoke-energy-gate",
+            engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+            oracle_jobs={
+                "enabled": True,
+                "max_concurrent": 1,
+                "queue_limit": 4,
+                "speak_terminal_results": True,
+                "shutdown_timeout_seconds": 0.01,
+            },
+            barge_in_policy={"min_rms": 350, "min_speech_ms": 120},
+            metadata={"transport": "smoke"},
+        )
+    )
+    collector = asyncio.create_task(recorder.run())
+
+    await engine.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.PLAYBACK_STARTED,
+            session_id="voice-smoke-energy-gate",
+            sequence=1,
+            payload={"playback_generation": 1},
+        )
+    )
+    await engine.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.SPEECH_START,
+            session_id="voice-smoke-energy-gate",
+            sequence=2,
+            payload={"user_id": "noise-user"},
+        )
+    )
+    await engine.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.SPEECH_ENERGY,
+            session_id="voice-smoke-energy-gate",
+            sequence=3,
+            payload={"user_id": "noise-user", "rms": 80, "duration_ms": 200},
+        )
+    )
+    await engine.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.AUDIO_INPUT_CHUNK,
+            session_id="voice-smoke-energy-gate",
+            sequence=4,
+            payload={
+                **AudioChunk(codec=VoiceAudioCodec.PCM16, data=b"\0" * 320).to_payload(),
+                "speech_confirmed": False,
+                "vad_speech": False,
+                "rms": 80,
+                "duration_ms": 20,
+                "end_of_utterance": False,
+            },
+        )
+    )
+    await asyncio.sleep(0)
+    raw_packet_buffered = engine._inbound_audio == [b"\0" * 320]
+    await engine.close()
+    collector.cancel()
+    try:
+        await collector
+    except asyncio.CancelledError:
+        pass
+
+    event_types = [event.type for event in recorder.events]
+    barge_in_events = [event for event in recorder.events if event.type == VoiceEventType.BARGE_IN]
+    oracle_work_events = [
+        event
+        for event in recorder.events
+        if event.type
+        in {
+            VoiceEventType.INTERFACE_ORACLE_REQUEST,
+            VoiceEventType.ORACLE_JOB_ACCEPTED,
+            VoiceEventType.ORACLE_JOB_QUEUED,
+            VoiceEventType.ORACLE_JOB_STARTED,
+            VoiceEventType.ORACLE_JOB_COMPLETED,
+            VoiceEventType.ORACLE_JOB_WAITING_FOR_APPROVAL,
+        }
+    ]
+    interpreter_events = [
+        event
+        for event in recorder.events
+        if event.type
+        in {
+            VoiceEventType.INTERFACE_INTENT_FINAL,
+            VoiceEventType.INTERFACE_ORACLE_REQUEST,
+            VoiceEventType.TRANSCRIPT_FINAL,
+        }
+    ]
+    return {
+        "ok": not barge_in_events
+        and not oracle_work_events
+        and not interpreter_events
+        and len(oracle.requests) == 0
+        and raw_packet_buffered,
+        "energy_gate_smoke_ok": not barge_in_events
+        and not oracle_work_events
+        and not interpreter_events
+        and len(oracle.requests) == 0
+        and raw_packet_buffered,
+        "energy_gate_policy": {"min_rms": 350, "min_speech_ms": 120},
+        "energy_gate_ignored_packet_rms": 80,
+        "energy_gate_ignored_packet_duration_ms": 200,
+        "energy_gate_ignored_packet_speech_confirmed": False,
+        "energy_gate_ignored_packet_vad_speech": False,
+        "energy_gate_ignored_non_speech_packets": 2,
+        "energy_gate_barge_in_events": len(barge_in_events),
+        "energy_gate_interpreter_requests": len(interpreter_events),
+        "energy_gate_oracle_work_events": len(oracle_work_events),
+        "energy_gate_oracle_requests": len(oracle.requests),
+        "energy_gate_raw_packet_buffered_without_turn": raw_packet_buffered,
+        "energy_gate_event_types": [event_type.value for event_type in event_types],
     }
 
 
@@ -3418,6 +3539,7 @@ async def run_smoke() -> dict[str, Any]:
     sidecar_control_smoke = await _run_sidecar_control_smoke()
     external_frontend_bridge_smoke = await _run_external_frontend_bridge_smoke()
     unpromoted_hypothesis_smoke = await _run_unpromoted_transcript_hypothesis_smoke()
+    energy_gate_smoke = await _run_energy_gate_smoke()
     kame_first_audio_latency_smoke = await _run_kame_first_audio_latency_smoke()
     witness_fusion_timing_smoke = await _run_witness_fusion_timing_smoke()
     runtime_kame_action_gate_smoke = await _run_runtime_kame_action_gate_smoke()
@@ -3838,6 +3960,7 @@ async def run_smoke() -> dict[str, Any]:
             and sidecar_control_smoke["ok"]
             and external_frontend_bridge_smoke["ok"]
             and unpromoted_hypothesis_smoke["ok"]
+            and energy_gate_smoke["ok"]
             and kame_first_audio_latency_smoke["ok"]
             and witness_fusion_timing_smoke["ok"]
             and runtime_kame_action_gate_smoke["ok"]
@@ -4215,6 +4338,29 @@ async def run_smoke() -> dict[str, Any]:
         "unpromoted_hypothesis_update_summary": unpromoted_hypothesis_smoke[
             "unpromoted_hypothesis_update_summary"
         ],
+        "energy_gate_smoke_ok": energy_gate_smoke["energy_gate_smoke_ok"],
+        "energy_gate_policy": energy_gate_smoke["energy_gate_policy"],
+        "energy_gate_ignored_packet_rms": energy_gate_smoke["energy_gate_ignored_packet_rms"],
+        "energy_gate_ignored_packet_duration_ms": energy_gate_smoke[
+            "energy_gate_ignored_packet_duration_ms"
+        ],
+        "energy_gate_ignored_packet_speech_confirmed": energy_gate_smoke[
+            "energy_gate_ignored_packet_speech_confirmed"
+        ],
+        "energy_gate_ignored_packet_vad_speech": energy_gate_smoke[
+            "energy_gate_ignored_packet_vad_speech"
+        ],
+        "energy_gate_ignored_non_speech_packets": energy_gate_smoke[
+            "energy_gate_ignored_non_speech_packets"
+        ],
+        "energy_gate_barge_in_events": energy_gate_smoke["energy_gate_barge_in_events"],
+        "energy_gate_interpreter_requests": energy_gate_smoke["energy_gate_interpreter_requests"],
+        "energy_gate_oracle_work_events": energy_gate_smoke["energy_gate_oracle_work_events"],
+        "energy_gate_oracle_requests": energy_gate_smoke["energy_gate_oracle_requests"],
+        "energy_gate_raw_packet_buffered_without_turn": energy_gate_smoke[
+            "energy_gate_raw_packet_buffered_without_turn"
+        ],
+        "energy_gate_event_types": energy_gate_smoke["energy_gate_event_types"],
         "kame_ack_latency_metrics_smoke_ok": kame_first_audio_latency_smoke[
             "kame_ack_latency_metrics_smoke_ok"
         ],

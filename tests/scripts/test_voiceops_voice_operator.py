@@ -414,6 +414,24 @@ def _async_oracle_smoke_payload() -> dict:
         },
         "witness_fusion_interpreter_prompt_policy_version": "raw_audio_compare_v1",
         "witness_fusion_interpreter_prompt_policy_visible": True,
+        "energy_gate_smoke_ok": True,
+        "energy_gate_policy": {"min_rms": 350, "min_speech_ms": 120},
+        "energy_gate_ignored_packet_rms": 80,
+        "energy_gate_ignored_packet_duration_ms": 200,
+        "energy_gate_ignored_packet_speech_confirmed": False,
+        "energy_gate_ignored_packet_vad_speech": False,
+        "energy_gate_ignored_non_speech_packets": 2,
+        "energy_gate_barge_in_events": 0,
+        "energy_gate_interpreter_requests": 0,
+        "energy_gate_oracle_work_events": 0,
+        "energy_gate_oracle_requests": 0,
+        "energy_gate_raw_packet_buffered_without_turn": True,
+        "energy_gate_event_types": [
+            "playback.started",
+            "speech.start",
+            "speech.energy",
+            "audio.input.chunk",
+        ],
         "kame_ack_latency_metrics_smoke_ok": True,
         "kame_defer_ack_first_audio_metrics_visible": True,
         "kame_local_first_audio_metrics_visible": True,
@@ -1182,6 +1200,33 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert prompt_policy["ok"] is True
     assert prompt_policy["evidence"] == "async_oracle_smoke_plus_interpreter_prompt_policy_tests"
     assert report["requirements"]["async_oracle_interpreter_prompt_policy_visible"] is True
+    assert report["requirements"]["async_oracle_energy_gate_ignores_non_speech"] is True
+    assert report["async_oracle_coverage"]["energy_gate_ignores_non_speech_without_work"] is True
+    energy_gate = report["async_oracle_acceptance"]["energy_gate_ignores_non_speech_without_work"]
+    assert energy_gate["ok"] is True
+    assert energy_gate["evidence"] == "async_oracle_smoke_plus_energy_gate_tests"
+    assert energy_gate["verification_mode"] == "loopback_smoke_plus_focused_tests"
+    assert energy_gate["runtime_verified_by_this_report"] is True
+    assert (
+        "tests/agent/test_realtime_voice.py::test_text_engine_raw_audio_without_confirmed_speech_does_not_barge_in"
+        in energy_gate["test_refs"]
+    )
+    assert report["proofs"]["async_oracle_jobs"]["energy_gate_smoke_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["energy_gate_policy"] == {
+        "min_rms": 350,
+        "min_speech_ms": 120,
+    }
+    assert report["proofs"]["async_oracle_jobs"]["energy_gate_ignored_packet_rms"] == 80
+    assert report["proofs"]["async_oracle_jobs"]["energy_gate_ignored_packet_duration_ms"] == 200
+    assert report["proofs"]["async_oracle_jobs"]["energy_gate_ignored_packet_speech_confirmed"] is False
+    assert report["proofs"]["async_oracle_jobs"]["energy_gate_ignored_packet_vad_speech"] is False
+    assert report["proofs"]["async_oracle_jobs"]["energy_gate_ignored_non_speech_packets"] >= 2
+    assert report["proofs"]["async_oracle_jobs"]["energy_gate_barge_in_events"] == 0
+    assert report["proofs"]["async_oracle_jobs"]["energy_gate_interpreter_requests"] == 0
+    assert report["proofs"]["async_oracle_jobs"]["energy_gate_oracle_work_events"] == 0
+    assert report["proofs"]["async_oracle_jobs"]["energy_gate_oracle_requests"] == 0
+    assert report["proofs"]["async_oracle_jobs"]["energy_gate_raw_packet_buffered_without_turn"] is True
+    assert "barge_in.detected" not in report["proofs"]["async_oracle_jobs"]["energy_gate_event_types"]
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_smoke_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_waiting_events"] == 5
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_hypothesis_only_ok"] is False
@@ -1540,6 +1585,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:transcript_hypotheses_remain_unpromoted" in issues
     assert "missing_async_oracle_coverage:witness_fusion_timing_preserves_single_bundle" in issues
     assert "missing_async_oracle_coverage:witness_fusion_partial_superseded_by_final" in issues
+    assert "missing_async_oracle_coverage:energy_gate_ignores_non_speech_without_work" in issues
     assert "missing_async_oracle_coverage:runtime_kame_action_gate_enforced" in issues
     assert "missing_async_oracle_coverage:result_handling_bounded_and_durable" in issues
     assert "missing_async_oracle_coverage:discord_session_cleanup_preserves_oracle_state" in issues
@@ -1552,6 +1598,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_acceptance:transcript_hypotheses_stay_non_authoritative" in issues
     assert "missing_async_oracle_acceptance:witness_fusion_timing_preserves_single_bundle" in issues
     assert "missing_async_oracle_acceptance:witness_fusion_supersedes_partial_witness" in issues
+    assert "missing_async_oracle_acceptance:energy_gate_ignores_non_speech_without_work" in issues
     assert "missing_async_oracle_acceptance:runtime_kame_action_gate_enforces_promoted_evidence" in issues
     assert "missing_async_oracle_acceptance:discord_session_cleanup_preserves_oracle_state" in issues
     assert "missing_async_oracle_acceptance:sidecar_fail_closed_send_failure_cancels_active_job" in issues
@@ -1623,6 +1670,18 @@ def test_voice_operator_validation_rejects_promoted_transcript_hypothesis():
     assert "missing_async_oracle_coverage:transcript_hypotheses_remain_unpromoted" in issues
     assert "stale_async_oracle_coverage:transcript_hypotheses_remain_unpromoted" in issues
     assert "missing_async_oracle_acceptance:transcript_hypotheses_stay_non_authoritative" in issues
+
+
+def test_voice_operator_validation_rejects_energy_gate_work_from_noise():
+    report = _voice_operator_report()
+    report["async_oracle_smoke"]["energy_gate_barge_in_events"] = 1
+    report["async_oracle_smoke"]["energy_gate_raw_packet_buffered_without_turn"] = False
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_coverage:energy_gate_ignores_non_speech_without_work" in issues
+    assert "stale_async_oracle_coverage:energy_gate_ignores_non_speech_without_work" in issues
+    assert "missing_async_oracle_acceptance:energy_gate_ignores_non_speech_without_work" in issues
 
 
 def test_voice_operator_validation_rejects_async_approval_secret_leak():
