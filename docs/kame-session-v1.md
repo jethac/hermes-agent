@@ -34,6 +34,13 @@ create a second Hermes turn or second oracle job. If raw audio is missing, the
 packet is degraded text-only compatibility mode and cannot satisfy full KAME or
 high-risk action gates.
 
+Same-turn convergence is required even when the first packet was text-only and
+the raw audio arrives moments later. The first packet may create provisional
+queue state, but a later packet for the same accepted speech cut must update
+that existing job through the evidence bundle instead of emitting a second
+oracle request. In event terms, Hermes should expose the late/raw-audio merge
+as a bounded job update, not as another `INTERFACE_ORACLE_REQUEST`.
+
 The canonical voice turn is one raw-audio evidence bundle with optional sensor
 attachments. A Moshi/open-S2S transcript, VoiceClaw/OpenClaw text, or classic
 ASR string is a witness attached to that bundle. It is not a separate Hermes
@@ -123,6 +130,12 @@ All three cases must converge on the same `turn_id`, `audio_segment_ref`,
 `evidence_bundle_id`, and `evidence_merge_key`. Early witness text is held on a
 pending bundle. Late witness text is appended as late evidence on the existing
 bundle. Neither case may create a duplicate oracle job or durable user turn.
+If a provisional external `ask_brain` envelope has already started an oracle job
+for that speech cut, later raw-audio or Moshi/Open-S2S witness evidence must
+coalesce into the running job and refresh the request metadata used by the
+oracle. The externally visible proof is one accepted/started/completed oracle
+job, one durable request record, and a follow-up update marked as an evidence
+bundle merge.
 
 Minimum external frontend evidence/job-envelope shape:
 

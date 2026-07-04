@@ -200,6 +200,13 @@ Target KAME layout:
   ambiguous-speaker, stale, wrong-speaker, wrong-channel, or low-energy Moshi
   text rejected and absent from spend, phone, NemoClaw, tool, memory, file,
   external-message, and durable-history sinks.
+- Same-turn convergence rule: if a Moshi/OpenClaw/VoiceClaw/reflex packet
+  creates provisional queue state before the raw voice artifact is ready, the
+  later raw-audio packet must update that same job rather than submit a second
+  oracle request. The proof should show one durable KAME request, one
+  accepted/started/completed oracle lifecycle, a raw-audio-aware
+  `evidence_merge_key`, and an update event identifying the evidence-bundle
+  merge.
 - Oracle-context rule: the active Hermes `/model` should receive promoted
   transcript/intent/entities plus compact labeled audit context. It should not
   receive unpromoted Moshi/STT witness strings as if they were the durable user
@@ -517,6 +524,13 @@ witness-with-cut, and witness-after-cut. In each case, the same `turn_id`,
 survive, partial text should be superseded by same-source final text in active
 interpreter context, and no duplicate oracle job or durable user message should
 be created from the witness alone.
+
+The proof should also cover text-first/raw-audio-later convergence for the same
+speech cut. A provisional external frontend or reflex envelope may start
+background work, but the raw-audio evidence and Moshi/Open-S2S witness update
+must coalesce into the running job. A second `INTERFACE_ORACLE_REQUEST` for the
+same `turn_id` is a failure because it forks the oracle context and defeats the
+single-bundle KAME trust model.
 
 ### Interpreter
 

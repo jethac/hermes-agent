@@ -108,6 +108,15 @@ after the interpreter has started. All three cases must attach to one
 text on the pending bundle and append late witness text to the existing bundle;
 witness text itself must not schedule jobs or durable turns.
 
+Same-turn convergence is now an acceptance requirement for the async bridge.
+If the first reflex/frontend packet is degraded text-only and a later packet
+provides the accepted raw-audio cut plus Moshi/Open-S2S witness text for the
+same `turn_id`, Hermes must coalesce the later evidence into the existing job.
+The proof should show one `INTERFACE_ORACLE_REQUEST`, one oracle
+accepted/started/completed lifecycle, updated oracle request metadata that now
+contains the raw-audio ref, and a bounded `INTERFACE_ORACLE_UPDATE` marked as
+an evidence-bundle merge.
+
 Runtime decision: every attached witness hypothesis should retain an
 `arrival_phase` of `before_raw_audio`, `with_raw_audio`, or
 `after_interpreter_start` when the adapter can infer it. That phase must be

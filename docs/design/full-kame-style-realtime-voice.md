@@ -235,6 +235,17 @@ partials are retained only as superseded provenance. The acceptance proof must
 show witness-before-cut, witness-with-cut, and witness-after-cut cases without
 duplicate oracle jobs or durable user turns.
 
+2026-07-04 same-turn convergence amendment: the strongest Moshi/Open-S2S shape
+is raw voice plus witness text in one interpreter bundle, but adapters are
+allowed to discover those pieces in different orders. If a text-only reflex or
+frontend packet creates provisional queue state before the raw waveform is
+ready, the later raw-audio packet must update that same job, not submit a new
+Hermes turn. The runtime proof is one oracle job lifecycle for the speech cut,
+one `INTERFACE_ORACLE_REQUEST` durable record, and an
+`INTERFACE_ORACLE_UPDATE` carrying the merged raw-audio/witness evidence. This
+keeps Moshi-style "STT" useful as context without letting it race the waveform
+or fork the oracle.
+
 2026-07-04 partial-supersession amendment: active partial hypotheses are not
 valid completed evidence. A partial such as a clipped "hey" may appear in
 streaming UI, telemetry, or latency traces while the cut is unstable, but it
