@@ -1533,6 +1533,8 @@ def test_package_audit_rejects_weakened_channel_policy_kame_gate(tmp_path):
         "raw_audio",
     ]
     review["kame_action_evidence_gate"]["required_transcript_hypothesis_fields"].remove("text_digest")
+    review["kame_action_evidence_gate"]["required_transcript_hypothesis_fields"].remove("adjudication")
+    review["kame_action_evidence_gate"]["required_transcript_hypothesis_fields"].remove("rejection_reasons")
     review["kame_action_evidence_gate"]["transcript_hypothesis_contract"]["role"] = "verified_transcript"
     review["kame_action_evidence_gate"]["raw_transcript_text_allowed_in_channel_egress"] = True
     review["kame_action_evidence_gate"]["required_lineage_fields"].remove("evidence_merge_key")
@@ -1549,7 +1551,10 @@ def test_package_audit_rejects_weakened_channel_policy_kame_gate(tmp_path):
     assert "channel_policy_review:kame_action_evidence_gate_mismatch" in report["issues"]
     assert "channel_policy_review:kame_gate_promoted_authorities_mismatch" in report["issues"]
     assert "channel_policy_review:kame_gate_input_order_mismatch" in report["issues"]
-    assert "channel_policy_review:kame_gate_missing_transcript_hypothesis_fields:text_digest" in report["issues"]
+    assert (
+        "channel_policy_review:kame_gate_missing_transcript_hypothesis_fields:"
+        "adjudication,rejection_reasons,text_digest"
+    ) in report["issues"]
     assert "channel_policy_review:kame_gate_transcript_hypothesis_contract_mismatch:role" in report["issues"]
     assert "channel_policy_review:kame_gate_raw_transcript_text_allowed_in_channel_egress" in report["issues"]
     assert "channel_policy_review:kame_gate_missing_lineage:evidence_merge_key" in report["issues"]

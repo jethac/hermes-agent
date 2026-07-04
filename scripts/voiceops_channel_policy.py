@@ -176,6 +176,8 @@ REQUIRED_TRANSCRIPT_HYPOTHESIS_FIELDS = {
     "confidence",
     "speaker_or_actor_ref",
     "channel_or_surface_ref",
+    "adjudication",
+    "rejection_reasons",
 }
 REQUIRED_TRANSCRIPT_HYPOTHESIS_CONTRACT = {
     "role": "witness_context",
@@ -623,6 +625,8 @@ def build_channel_policy() -> dict[str, Any]:
                 "confidence",
                 "speaker_or_actor_ref",
                 "channel_or_surface_ref",
+                "adjudication",
+                "rejection_reasons",
             ],
             "transcript_hypothesis_contract": {
                 "role": "witness_context",
@@ -700,7 +704,7 @@ def build_review_packet(policy: dict[str, Any]) -> dict[str, Any]:
                     "Confirm inbound source_audit_id is present before drafting outbound content.",
                     "Confirm outbound payloads cite interpreter_promoted or oracle_promoted KAME evidence.",
                     "Confirm route payload classes match the approved payload policy before any egress.",
-                    "Confirm transcript hypotheses carry source, text_digest, arrival_phase, latency, confidence when available, and speaker/channel binding.",
+                    "Confirm transcript hypotheses carry source, text_digest, arrival_phase, latency, confidence when available, speaker/channel binding, adjudication, and rejection_reasons.",
                     "Confirm unpromoted witness transcript text is absent from action payload sinks.",
                     "Confirm redaction rules are applied before display, persistence, or handoff.",
                     "Confirm approval route before any customer-visible send or call.",
