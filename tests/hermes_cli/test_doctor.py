@@ -199,6 +199,54 @@ class TestRealtimeVoiceReadiness:
 
         assert payload["transport"] == "discord_voice"
 
+    def test_realtime_voice_report_payload_preserves_kame_witness_packet_fields(self):
+        result = SimpleNamespace(
+            ok=True,
+            turn_id="voice-turn-001",
+            audio_segment_ref="artifact://redacted/turn-001.wav",
+            evidence_bundle_id="kame-bundle-001",
+            evidence_merge_key="kame-merge-001",
+            audio_segment_ref_observed=True,
+            interpreter_evidence_observed=True,
+            transcript_hypotheses_labeled=True,
+            witness_arrival_phases=("with_raw_audio",),
+            interpreter_input_order=("raw_audio", "metadata", "reflex", "transcript_hypotheses"),
+            transcript_hypotheses=(
+                {
+                    "kind": "frontend_witness_hypothesis",
+                    "source": "moshi",
+                    "text": "[redacted witness hypothesis]",
+                    "arrival_phase": "with_raw_audio",
+                    "authority": "hypothesis",
+                    "tool_authority": False,
+                },
+            ),
+            interpreter_adjudication_outcomes=("corrected_by_audio",),
+            promoted_evidence_authority={
+                "interpreter_corrected_transcript": "interpreter_promoted",
+                "interpreter_normalized_intent": "interpreter_promoted",
+            },
+        )
+
+        payload = doctor._realtime_voice_smoke_report_payload(result, kind="session_turn")
+
+        assert payload["turn_id"] == "voice-turn-001"
+        assert payload["audio_segment_ref_observed"] is True
+        assert payload["interpreter_evidence_observed"] is True
+        assert payload["transcript_hypotheses_labeled"] is True
+        assert payload["interpreter_input_order"] == [
+            "raw_audio",
+            "metadata",
+            "reflex",
+            "transcript_hypotheses",
+        ]
+        assert payload["transcript_hypotheses"][0]["authority"] == "hypothesis"
+        assert payload["interpreter_adjudication_outcomes"] == ["corrected_by_audio"]
+        assert payload["promoted_evidence_authority"] == {
+            "interpreter_corrected_transcript": "interpreter_promoted",
+            "interpreter_normalized_intent": "interpreter_promoted",
+        }
+
     def test_realtime_voice_result_with_transport_uses_config_metadata(self):
         result = RealtimeVoiceSidecarSmokeResult(ok=True)
         config = SimpleNamespace(metadata={"transport": "discord_voice"})

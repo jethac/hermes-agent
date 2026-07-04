@@ -49,6 +49,18 @@ class RealtimeVoiceSidecarSmokeResult:
     interface_input_source: str = ""
     reflex_provider: str = ""
     reflex_validation_error: str = ""
+    turn_id: str = ""
+    audio_segment_ref: str = ""
+    evidence_bundle_id: str = ""
+    evidence_merge_key: str = ""
+    audio_segment_ref_observed: bool = False
+    interpreter_evidence_observed: bool = False
+    transcript_hypotheses_labeled: bool = False
+    witness_arrival_phases: Tuple[str, ...] = ()
+    interpreter_input_order: Tuple[str, ...] = ()
+    transcript_hypotheses: Tuple[Mapping[str, Any], ...] = ()
+    interpreter_adjudication_outcomes: Tuple[str, ...] = ()
+    promoted_evidence_authority: Mapping[str, Any] | None = None
     transport: str = ""
     error: str = ""
 
@@ -80,6 +92,18 @@ def realtime_voice_smoke_result_payload(
         "interface_input_source": result.interface_input_source or None,
         "reflex_provider": result.reflex_provider or None,
         "reflex_validation_error": result.reflex_validation_error or None,
+        "turn_id": result.turn_id or None,
+        "audio_segment_ref": result.audio_segment_ref or None,
+        "evidence_bundle_id": result.evidence_bundle_id or None,
+        "evidence_merge_key": result.evidence_merge_key or None,
+        "audio_segment_ref_observed": result.audio_segment_ref_observed,
+        "interpreter_evidence_observed": result.interpreter_evidence_observed,
+        "transcript_hypotheses_labeled": result.transcript_hypotheses_labeled,
+        "witness_arrival_phases": list(result.witness_arrival_phases),
+        "interpreter_input_order": list(result.interpreter_input_order),
+        "transcript_hypotheses": [dict(item) for item in result.transcript_hypotheses],
+        "interpreter_adjudication_outcomes": list(result.interpreter_adjudication_outcomes),
+        "promoted_evidence_authority": dict(result.promoted_evidence_authority or {}),
         "transport": result.transport or None,
         "error": result.error or None,
     }
@@ -643,7 +667,7 @@ def _smoke_engine(
     return TextOracleTTSEngine(oracle=oracle, sidecar=sidecar)
 
 
-def _capture_kame_evidence(target: dict[str, str], payload: Mapping[str, Any]) -> None:
+def _capture_kame_evidence(target: dict[str, Any], payload: Mapping[str, Any]) -> None:
     if not isinstance(payload, Mapping):
         return
     route = str(payload.get("route") or payload.get("kame_route") or "").strip()
@@ -666,6 +690,90 @@ def _capture_kame_evidence(target: dict[str, str], payload: Mapping[str, Any]) -
     ).strip()
     if validation_error and not target.get("reflex_validation_error"):
         target["reflex_validation_error"] = validation_error
+    for source_key, target_key in (
+        ("turn_id", "turn_id"),
+        ("kame_turn_id", "turn_id"),
+        ("audio_segment_ref", "audio_segment_ref"),
+        ("kame_audio_segment_ref", "audio_segment_ref"),
+        ("evidence_bundle_id", "evidence_bundle_id"),
+        ("kame_evidence_bundle_id", "evidence_bundle_id"),
+        ("evidence_merge_key", "evidence_merge_key"),
+        ("kame_evidence_merge_key", "evidence_merge_key"),
+    ):
+        value = str(payload.get(source_key) or "").strip()
+        if value and not target.get(target_key):
+            target[target_key] = value
+    if target.get("audio_segment_ref"):
+        target["audio_segment_ref_observed"] = True
+    if payload.get("audio_segment_ref_observed") is True:
+        target["audio_segment_ref_observed"] = True
+    prompt_order = payload.get("interpreter_input_order") or payload.get("kame_interpreter_prompt_input_order")
+    if isinstance(prompt_order, (list, tuple)) and not target.get("interpreter_input_order"):
+        target["interpreter_input_order"] = tuple(str(item) for item in prompt_order if str(item or "").strip())
+    hypotheses = payload.get("transcript_hypotheses") or payload.get("kame_transcript_hypotheses")
+    if isinstance(hypotheses, (list, tuple)) and hypotheses and not target.get("transcript_hypotheses"):
+        compact: list[dict[str, Any]] = []
+        outcomes: list[str] = []
+        for item in hypotheses:
+            if not isinstance(item, Mapping):
+                continue
+            hypothesis = {
+                str(key): value
+                for key, value in item.items()
+                if key
+                in {
+                    "kind",
+                    "source",
+                    "text",
+                    "arrival_phase",
+                    "authority",
+                    "tool_authority",
+                    "partial",
+                    "confidence",
+                    "latency_ms",
+                    "adjudication",
+                    "outcome",
+                    "interpreter_adjudication",
+                }
+            }
+            if "text" in hypothesis:
+                hypothesis["text"] = str(hypothesis["text"] or "")[:240]
+            if hypothesis:
+                compact.append(hypothesis)
+            outcome = str(
+                item.get("adjudication")
+                or item.get("outcome")
+                or item.get("interpreter_adjudication")
+                or ""
+            ).strip()
+            if outcome and outcome not in outcomes:
+                outcomes.append(outcome)
+        if compact:
+            target["transcript_hypotheses"] = tuple(compact)
+            target["transcript_hypotheses_labeled"] = True
+        if outcomes and not target.get("interpreter_adjudication_outcomes"):
+            target["interpreter_adjudication_outcomes"] = tuple(outcomes)
+    phases = payload.get("witness_arrival_phases") or payload.get("kame_witness_arrival_phases")
+    if isinstance(phases, (list, tuple)) and phases and not target.get("witness_arrival_phases"):
+        target["witness_arrival_phases"] = tuple(str(item) for item in phases if str(item or "").strip())
+    outcomes = payload.get("interpreter_adjudication_outcomes") or payload.get("witness_adjudication_outcomes")
+    if isinstance(outcomes, (list, tuple)) and outcomes and not target.get("interpreter_adjudication_outcomes"):
+        target["interpreter_adjudication_outcomes"] = tuple(str(item) for item in outcomes if str(item or "").strip())
+    promoted = payload.get("promoted_evidence_authority") or payload.get("promoted_fields_authority")
+    if isinstance(promoted, Mapping) and promoted and not target.get("promoted_evidence_authority"):
+        target["promoted_evidence_authority"] = {
+            str(key): str(value)
+            for key, value in promoted.items()
+            if str(key or "").strip() and str(value or "").strip()
+        }
+    if payload.get("interpreter_evidence_observed") is True:
+        target["interpreter_evidence_observed"] = True
+    elif (
+        target.get("interpreter_input_order")
+        and target.get("interpreter_adjudication_outcomes")
+        and target.get("promoted_evidence_authority")
+    ):
+        target["interpreter_evidence_observed"] = True
 
 
 def _is_final_user_turn_event(event: VoiceEvent) -> bool:

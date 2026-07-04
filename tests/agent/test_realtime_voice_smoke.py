@@ -161,6 +161,77 @@ def test_session_turn_smoke_measures_first_text_and_audio(monkeypatch):
     )
 
 
+def test_session_turn_smoke_preserves_kame_witness_packet_fields(monkeypatch):
+    async def fake_speak_chunk(self, text, playback_generation):
+        await self._emit(
+            VoiceEventType.AUDIO_OUTPUT_CHUNK,
+            {
+                **AudioChunk(codec=VoiceAudioCodec.OPUS, data=b"audio").to_payload(),
+                "playback_generation": playback_generation,
+                "kame_turn_id": "voice-turn-001",
+                "kame_audio_segment_ref": "artifact://redacted/turn-001.wav",
+                "kame_evidence_bundle_id": "kame-bundle-001",
+                "kame_evidence_merge_key": "kame-merge-001",
+                "kame_interpreter_prompt_input_order": [
+                    "raw_audio",
+                    "metadata",
+                    "reflex",
+                    "transcript_hypotheses",
+                ],
+                "kame_witness_arrival_phases": ["with_raw_audio"],
+                "kame_transcript_hypotheses": [
+                    {
+                        "kind": "frontend_witness_hypothesis",
+                        "source": "moshi",
+                        "text": "[redacted witness hypothesis]",
+                        "arrival_phase": "with_raw_audio",
+                        "authority": "hypothesis",
+                        "tool_authority": False,
+                        "adjudication": "corrected_by_audio",
+                    }
+                ],
+                "promoted_evidence_authority": {
+                    "interpreter_corrected_transcript": "interpreter_promoted",
+                    "interpreter_normalized_intent": "interpreter_promoted",
+                },
+            },
+        )
+
+    monkeypatch.setattr(
+        "agent.realtime_voice_text_engine.TextOracleTTSEngine._speak_chunk",
+        fake_speak_chunk,
+    )
+
+    result = asyncio.run(
+        run_realtime_voice_session_turn_smoke(
+            RealtimeVoiceSessionConfig(session_id="voice-smoke"),
+            answer="Hello from Hermes.",
+            transcript="hello",
+            timeout_seconds=1,
+        )
+    )
+    payload = realtime_voice_smoke_result_payload(result, kind="session_turn")
+
+    assert result.ok is True
+    assert result.turn_id == "voice-turn-001"
+    assert result.audio_segment_ref == "artifact://redacted/turn-001.wav"
+    assert result.audio_segment_ref_observed is True
+    assert result.interpreter_evidence_observed is True
+    assert result.transcript_hypotheses_labeled is True
+    assert result.interpreter_input_order == (
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    )
+    assert result.interpreter_adjudication_outcomes == ("corrected_by_audio",)
+    assert payload["transcript_hypotheses"][0]["authority"] == "hypothesis"
+    assert payload["promoted_evidence_authority"] == {
+        "interpreter_corrected_transcript": "interpreter_promoted",
+        "interpreter_normalized_intent": "interpreter_promoted",
+    }
+
+
 def test_session_audio_smoke_uses_sidecar_stt_and_tts_in_one_session():
     sent = []
 

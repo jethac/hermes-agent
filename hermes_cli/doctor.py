@@ -849,8 +849,47 @@ def _realtime_voice_smoke_report_payload(result: Any, *, kind: str, **extra: Any
         "transport": str(mapping.get("transport", getattr(result, "transport", "")) or "") or None,
         "error": str(mapping.get("error", getattr(result, "error", "")) or "") or None,
     }
+    payload.update(_realtime_voice_kame_report_fields(result))
     payload.update(extra)
     return payload
+
+
+def _realtime_voice_kame_report_fields(result: Any) -> dict[str, Any]:
+    mapping = result if isinstance(result, Mapping) else {}
+
+    def field(name: str, default: Any = None) -> Any:
+        if name in mapping:
+            return mapping.get(name)
+        return getattr(result, name, default)
+
+    fields: dict[str, Any] = {}
+    for key in ("turn_id", "audio_segment_ref", "evidence_bundle_id", "evidence_merge_key"):
+        text = str(field(key, "") or "").strip()
+        if text:
+            fields[key] = text
+    for key in ("audio_segment_ref_observed", "interpreter_evidence_observed", "transcript_hypotheses_labeled"):
+        value = field(key, None)
+        if value is not None:
+            fields[key] = bool(value)
+    for key in ("witness_arrival_phases", "interpreter_input_order", "interpreter_adjudication_outcomes"):
+        value = field(key, None)
+        if isinstance(value, (list, tuple)):
+            fields[key] = [str(item) for item in value if str(item or "").strip()]
+    hypotheses = field("transcript_hypotheses", None)
+    if isinstance(hypotheses, (list, tuple)):
+        fields["transcript_hypotheses"] = [
+            dict(item)
+            for item in hypotheses
+            if isinstance(item, Mapping)
+        ]
+    promoted = field("promoted_evidence_authority", None)
+    if isinstance(promoted, Mapping):
+        fields["promoted_evidence_authority"] = {
+            str(key): str(value)
+            for key, value in promoted.items()
+            if str(key or "").strip() and str(value or "").strip()
+        }
+    return fields
 
 
 def _append_realtime_voice_smoke_report(
