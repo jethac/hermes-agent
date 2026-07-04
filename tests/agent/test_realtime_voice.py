@@ -9376,6 +9376,124 @@ def test_kame_engine_emits_partial_interface_intent_without_oracle():
     asyncio.run(run())
 
 
+def test_kame_engine_changing_partials_do_not_create_duplicate_oracle_turns(monkeypatch):
+    class TrackingOracle(FakeOracle):
+        def __init__(self):
+            self.requests = []
+            self.called = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.called.set()
+            yield f"Answering {request.intent}."
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            pass
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = TrackingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                frontend_provider="moshi",
+                frontend_model="reflex-fast",
+                interface_audio_input="native_audio",
+            )
+        )
+
+        for sequence, transcript, intent, route in (
+            (1, "can you", "The user may be asking for a check.", "local"),
+            (2, "can you provision", "The user may be asking to provision something.", "defer"),
+        ):
+            await engine.receive_event(
+                VoiceEvent(
+                    type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                    session_id="voice-123",
+                    sequence=sequence,
+                    payload={
+                        "transcript": transcript,
+                        "intent": intent,
+                        "intent_source": "reflex_audio",
+                        "route": route,
+                        "end_of_utterance": False,
+                        "input_generation": 7,
+                    },
+                )
+            )
+
+        events = [
+            await anext(engine.events()),
+            await anext(engine.events()),
+            await anext(engine.events()),
+        ]
+        assert [event.type for event in events] == [
+            VoiceEventType.SESSION_STARTED,
+            VoiceEventType.INTERFACE_INTENT_PARTIAL,
+            VoiceEventType.INTERFACE_INTENT_PARTIAL,
+        ]
+        assert [event.payload["text"] for event in events[1:]] == ["can you", "can you provision"]
+        assert [event.payload["intent"] for event in events[1:]] == [
+            "The user may be asking for a check.",
+            "The user may be asking to provision something.",
+        ]
+        assert [event.payload["route"] for event in events[1:]] == ["local", "defer"]
+        assert all(event.payload["input_generation"] == 7 for event in events[1:])
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(anext(engine.events()), timeout=0.01)
+        assert oracle.requests == []
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=3,
+                payload={
+                    "transcript": "provision a test phone line",
+                    "intent": "Provision a test phone line",
+                    "intent_source": "reflex_audio",
+                    "route": "defer",
+                    "interface_already_said": "I am preparing the phone line provisioning check.",
+                    "end_of_utterance": True,
+                    "input_generation": 7,
+                },
+            )
+        )
+
+        seen = []
+        for _ in range(12):
+            event = await asyncio.wait_for(anext(engine.events()), timeout=1)
+            seen.append(event)
+            if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST:
+                break
+        else:
+            assert False, [(event.type.value, event.payload) for event in seen]
+
+        await asyncio.wait_for(oracle.called.wait(), timeout=1)
+        await engine.close()
+
+        assert [event.type for event in seen[:3]] == [
+            VoiceEventType.TRANSCRIPT_FINAL,
+            VoiceEventType.INTERFACE_INTENT_FINAL,
+            VoiceEventType.INTERFACE_REPLY_DEFER,
+        ]
+        oracle_requests = [event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST]
+        assert len(oracle_requests) == 1
+        assert len(oracle.requests) == 1
+        assert oracle.requests[0].intent == "Provision a test phone line"
+        assert oracle.requests[0].transcript == "provision a test phone line"
+        assert seen[0].payload["input_generation"] == 7
+        assert all(
+            "can you" not in str(getattr(oracle.requests[0], field, "") or "")
+            for field in ("oracle_text", "transcript", "intent")
+        )
+
+    asyncio.run(run())
+
+
 def test_kame_engine_emits_partial_transcripts_in_debug_mode():
     async def run():
         engine = KameInterfaceOracleEngine(oracle=FakeOracle())

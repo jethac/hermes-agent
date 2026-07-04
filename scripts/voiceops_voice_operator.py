@@ -151,6 +151,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_kame_evidence_bundle_id_is_stable_across_audio_availability_changes",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_interpreter_evidence_updates_queued_job_before_execution",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_interpreter_evidence_late_for_running_job_is_status_visible",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_changing_partials_do_not_create_duplicate_oracle_turns",
         "tests/agent/test_realtime_voice.py::test_kame_engine_supersedes_partial_frontend_witness_with_final_before_start",
         "tests/agent/test_realtime_voice_async_oracle_smoke.py::test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation",
     ],

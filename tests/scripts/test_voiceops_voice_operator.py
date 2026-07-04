@@ -1409,6 +1409,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["requirements"]["async_oracle_witness_fusion_partial_superseded_by_final"] is True
     assert report["async_oracle_coverage"]["witness_fusion_partial_superseded_by_final"] is True
     assert report["async_oracle_acceptance"]["witness_fusion_supersedes_partial_witness"]["ok"] is True
+    assert (
+        "tests/agent/test_realtime_voice.py::test_kame_engine_changing_partials_do_not_create_duplicate_oracle_turns"
+        in report["async_oracle_acceptance"]["witness_fusion_supersedes_partial_witness"]["test_refs"]
+    )
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_adjudications"] == {
         "early": ["corrected_by_audio"],
         "with": ["accepted_as_supporting_evidence"],

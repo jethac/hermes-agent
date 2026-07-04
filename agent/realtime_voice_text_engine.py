@@ -212,6 +212,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 return
             await self._start_turn(
                 transcript,
+                input_generation=_payload_input_generation(event.payload),
                 metadata=transcript_metadata_from_payload(event.payload),
                 oracle_payload=event.payload,
             )
