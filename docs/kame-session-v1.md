@@ -73,6 +73,17 @@ Hermes' active `/model` only receives promoted wording, intent, entities, and
 compact labeled audit context. Raw witness strings must not be replayed as the
 oracle prompt.
 
+2026-07-05 clarification: a Moshi/open-S2S transcript can be valuable precisely
+because it is paired with the raw voice. Treat it like a same-cut witness, not a
+replacement for STT and not an extra Hermes message. The normalized packet must
+keep `audio.segment_ref` as primary evidence and place any Moshi/OpenClaw/
+VoiceClaw/reflex/classic-ASR text under `transcript_hypotheses[]` with
+`role = "witness_context"`, `authority = "hypothesis"`, and
+`tool_authority = false`. Provider field names such as `stt_text`,
+`transcript`, or `query` are adapter-edge names only; they must not survive as
+verified user text, `oracle_text`, action arguments, or durable history unless
+the interpreter or oracle promotes them.
+
 2026-07-05 adapter rule: a Moshi/Open-S2S transcript may be sent with raw voice,
 but only as interpreter context. Normalize it into `transcript_hypotheses[]`
 with `kind = "frontend_witness_hypothesis"` unless the adapter can prove a
@@ -580,6 +591,8 @@ audit should expose:
 - interpreter adjudication outcome for every active transcript hypothesis
 - Moshi/open-S2S transcript context, when present, attached beside raw audio as
   a same-bundle hypothesis rather than routed as a second user turn
+- explicit proof that provider STT-looking fields were normalized into
+  `transcript_hypotheses[]` and not forwarded as verified `oracle_text`
 - duplicate-turn and duplicate-oracle-job suppression for transcript hypotheses
   that arrive before, with, or after the accepted audio cut
 - sink checks proving rejected or unpromoted witness text did not enter spend,

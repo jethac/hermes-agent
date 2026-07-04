@@ -45,6 +45,34 @@ inline, and late Moshi/Open-S2S/VoiceClaw/OpenClaw/reflex/classic-ASR text must
 merge into that same bundle as witness evidence. It must never fork a second
 Hermes turn.
 
+2026-07-05 amendment: the intended shape is not "reflex plus STT plus oracle"
+and not "Gemma ASR in parallel." It is a three-tier sensor-fan-in loop:
+
+```text
+live audio -> reflex floor control
+accepted speech cut -> Gemma direct-audio interpreter
+promoted evidence -> Hermes active /model oracle
+```
+
+If the reflex or an open S2S frontend such as Moshi also emits an STT-looking
+string, that string should travel with the same accepted speech cut as
+`transcript_hypotheses[]`. It is a sensor reading from the frontend, not a
+second prompt. The interpreter receives the waveform first, metadata second,
+reflex state third, and witness text last. This lets Gemma use the witness for
+clipped starts, names, numbers, and code-switched phrases while still rejecting
+hallucinated, stale, wrong-speaker, wrong-channel, low-energy, or
+waveform-conflicting text before the active Hermes oracle sees the request.
+
+The practical implementation consequence is that adapters should prefer a
+single bundle shape over provider-specific "STT" pathways. A Moshi, OpenClaw,
+VoiceClaw, reflex-caption, or classic-ASR string becomes
+`frontend_witness_hypothesis`, `s2s_transcript_hypothesis`,
+`reflex_transcript_hypothesis`, or `classic_asr_hypothesis` on the same
+`turn_id` and `audio_segment_ref`. Only `interpreter_promoted` or
+`oracle_promoted` fields may become durable chat text, Stripe/NemoClaw spend
+reasons, phone payloads, tool arguments, memory/file writes, or external
+messages.
+
 2026-07-05 amendment: the Moshi/Open-S2S transcript is explicitly interpreter
 context, not a parallel STT lane. If the frontend produces a same-cut waveform
 and text, Hermes sends both to Gemma in one packet: raw audio first, metadata

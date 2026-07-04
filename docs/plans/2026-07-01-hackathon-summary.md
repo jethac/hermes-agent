@@ -23,6 +23,15 @@ useful for clipped starts, names, numbers, and code-switches without making it
 the transcript of record or the thing that authorizes Stripe, NemoClaw, phone,
 memory, files, tools, or external messages.
 
+The design should not be described as a parallel STT race. The useful
+three-tier description is: the reflex controls the live floor, Gemma interprets
+the accepted raw-audio cut with any frontend transcript hypotheses attached,
+and Hermes' active `/model` performs the business operation from promoted
+evidence. If Moshi/open-S2S text exists, the demo should show it as "what the
+frontend believed it heard," then show Gemma accepting, correcting, or
+rejecting it before Stripe, NemoClaw, phone, memory, file, tool, or external
+message payloads are eligible.
+
 The user then gives Hermes a spending budget. Hermes uses Stripe-backed spending controls and skills to provision a service it needs, such as a VoIP provider account or phone-number-capable communications service.
 
 Once provisioned, Hermes calls the user's phone and continues with the same context from Discord. The handoff demonstrates that Hermes is not just a chatbot in one channel; it is an operating agent that can acquire tools, pay for services, and act across real communication surfaces.
@@ -451,5 +460,8 @@ closed by external evidence gates:
 11. Add role-based provider comparison output so the artifact can say which
    component was used for reflex, interpreter, optional witness/fallback
    transcript evidence, outbound TTS, and degraded fallback in the recorded run.
-12. Implement the phone call handoff with context transfer from the Discord session.
-13. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.
+12. Add one demo artifact where a Moshi/open-S2S transcript and raw voice are
+   submitted together as one interpreter packet, proving the text stayed
+   witness context until Gemma promoted or rejected it.
+13. Implement the phone call handoff with context transfer from the Discord session.
+14. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.

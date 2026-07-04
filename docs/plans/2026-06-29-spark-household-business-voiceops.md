@@ -101,6 +101,13 @@ Target KAME layout:
   separate ASR conversation. It is one clipped raw-audio turn, one reflex route,
   and one interpreter bundle. Moshi/open-S2S, VoiceClaw/OpenClaw, reflex, and
   classic ASR text all enter as witness hypotheses when available.
+- Three-tier pivot: use a fast reflex for live floor control, Gemma for
+  direct-audio interpretation of the accepted speech cut, and Hermes' active
+  `/model` as the oracle. A Moshi/open-S2S transcript may be provided to Gemma
+  with the raw voice as same-bundle context, but it must not become a separate
+  STT lane, a second Hermes turn, or a durable prompt. This is the preferred
+  way to use Moshi-style text: it tells Gemma what the frontend believed it
+  heard while raw audio remains the higher-authority signal.
 - Evidence: a speech cut should preserve raw audio, reflex hypothesis,
   Moshi/S2S hypothesis, optional ASR hypothesis, and interpreter correction as
   distinct provenance-labeled fields. When raw audio is available, only
