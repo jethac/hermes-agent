@@ -1181,6 +1181,16 @@ def build_kame_realtime_voice_profile(
     asr_url = _clean_url(streaming_stt_base_url)
     tts_url = _clean_url(streaming_tts_base_url)
     local_oracle_model = str(preferred_local_oracle_model or DEFAULT_KAME_ORACLE_MODEL)
+    oracle_registration = {
+        "enabled": bool(oracle_url),
+        "provider": str(oracle_provider or "custom").strip() or "custom" if oracle_url else "",
+        "provider_name": str(oracle_provider_name or DEFAULT_KAME_ORACLE_PROVIDER_NAME).strip()
+        or DEFAULT_KAME_ORACLE_PROVIDER_NAME if oracle_url else "",
+        "preferred_local_model": local_oracle_model,
+        "base_url": oracle_url,
+        "api_mode": oracle_api,
+        "selection_authority": "Hermes /model",
+    }
     reflex_model_label = str(reflex_model or DEFAULT_KAME_REFLEX_MODEL)
     served_vllm_model = str(vllm_model or reflex_model_label)
     tts_model_label = str(tts_model or streaming_tts_model or DEFAULT_STREAMING_TTS_MODEL)
@@ -1214,9 +1224,6 @@ def build_kame_realtime_voice_profile(
         "asr_provider": str(asr_provider or "streaming_stt"),
         "asr_model": str(streaming_stt_model or DEFAULT_STREAMING_STT_MODEL),
         "asr_base_url": asr_url,
-        "preferred_local_oracle_model": local_oracle_model,
-        "oracle_provider": str(oracle_provider or ""),
-        "oracle_api_mode": oracle_api,
         "oracle_timeout_seconds": oracle_timeout,
         "max_spoken_sentences": spoken_sentences,
         "voice_response_policy": response_policy,
@@ -1267,18 +1274,7 @@ def build_kame_realtime_voice_profile(
         },
         "quality_targets_ms": dict(KAME_QUALITY_TARGETS_MS),
     }
-    if oracle_url:
-        profile.update(
-            {
-                "oracle_provider": str(oracle_provider or "custom").strip() or "custom",
-                "oracle_provider_name": str(
-                    oracle_provider_name or DEFAULT_KAME_ORACLE_PROVIDER_NAME
-                ).strip()
-                or DEFAULT_KAME_ORACLE_PROVIDER_NAME,
-                "oracle_base_url": oracle_url,
-                "oracle_api_mode": oracle_api,
-            }
-        )
+    profile["oracle_provider_registration"] = oracle_registration
     profile.update(_kame_nested_config(profile))
     return profile
 
@@ -1310,6 +1306,14 @@ def merge_realtime_voice_profile(
     else:
         realtime = copy.deepcopy(realtime)
     realtime.update(dict(profile))
+    for legacy_key in (
+        "oracle_provider",
+        "oracle_provider_name",
+        "preferred_local_oracle_model",
+        "oracle_base_url",
+        "oracle_api_mode",
+    ):
+        realtime.pop(legacy_key, None)
     voice["realtime"] = realtime
     updated["voice"] = voice
     discord = updated.get("discord")
@@ -1344,11 +1348,6 @@ def merge_realtime_voice_profile(
             "asr_base_url": profile.get("asr_base_url") or profile.get("streaming_stt_base_url"),
             "streaming_stt_base_url": profile.get("streaming_stt_base_url") or profile.get("asr_base_url"),
             "streaming_stt_token_env": profile.get("streaming_stt_token_env") or DEFAULT_STREAMING_STT_TOKEN_ENV,
-            "oracle_provider": profile.get("oracle_provider"),
-            "oracle_provider_name": profile.get("oracle_provider_name"),
-            "preferred_local_oracle_model": profile.get("preferred_local_oracle_model"),
-            "oracle_base_url": profile.get("oracle_base_url"),
-            "oracle_api_mode": profile.get("oracle_api_mode"),
             "oracle_timeout_seconds": profile.get("oracle_timeout_seconds", 60.0),
             "max_spoken_sentences": profile.get("max_spoken_sentences", 2),
             "voice_response_policy": profile.get("voice_response_policy", "sentence_cap"),
@@ -1370,6 +1369,14 @@ def merge_realtime_voice_profile(
     )
     if str(profile.get("engine") or "") == "kame_interface_oracle":
         discord_rt.update(copy.deepcopy(_kame_nested_config(profile)))
+        for legacy_key in (
+            "oracle_provider",
+            "oracle_provider_name",
+            "preferred_local_oracle_model",
+            "oracle_base_url",
+            "oracle_api_mode",
+        ):
+            discord_rt.pop(legacy_key, None)
     discord["realtime_voice"] = discord_rt
     updated["discord"] = discord
     _merge_kame_oracle_provider_config(updated, profile)
@@ -1384,7 +1391,8 @@ def _kame_nested_config(profile: Mapping[str, Any]) -> dict[str, Any]:
     interface_base_url = profile.get("interface_base_url") or profile.get("vllm_base_url") or ""
     streaming_stt_base_url = profile.get("asr_base_url") or profile.get("streaming_stt_base_url") or ""
     streaming_tts_base_url = profile.get("tts_base_url") or profile.get("streaming_tts_base_url") or ""
-    oracle_base_url = profile.get("oracle_base_url") or ""
+    oracle_registration = _kame_oracle_provider_registration(profile)
+    oracle_base_url = oracle_registration.get("base_url") or ""
     turn_acknowledgement = _mapping_or_default(
         profile.get("turn_acknowledgement"),
         {"enabled": True, "text": "One moment."},
@@ -1433,20 +1441,7 @@ def _kame_nested_config(profile: Mapping[str, Any]) -> dict[str, Any]:
         "oracle": {
             "mode": "hermes_active_model",
             "selected_by": "Hermes /model",
-            "provider": profile.get("oracle_provider") or "",
-            "provider_name": profile.get("oracle_provider_name") or "",
-            "preferred_local_model": profile.get("preferred_local_oracle_model") or DEFAULT_KAME_ORACLE_MODEL,
-            "base_url": oracle_base_url,
-            "api_mode": profile.get("oracle_api_mode") or "chat_completions",
-            "provider_registration": {
-                "enabled": bool(oracle_base_url),
-                "provider": profile.get("oracle_provider") or "",
-                "provider_name": profile.get("oracle_provider_name") or "",
-                "preferred_local_model": profile.get("preferred_local_oracle_model") or DEFAULT_KAME_ORACLE_MODEL,
-                "base_url": oracle_base_url,
-                "api_mode": profile.get("oracle_api_mode") or "chat_completions",
-                "selection_authority": "Hermes /model",
-            },
+            "provider_registration": oracle_registration,
             "timeout_ms": int(round(oracle_timeout_seconds * 1000)),
             "max_spoken_sentences": profile.get("max_spoken_sentences", 2),
             "voice_response_policy": profile.get("voice_response_policy") or "sentence_cap",
@@ -1492,6 +1487,41 @@ def _positive_float_or_default(value: Any, default: float) -> float:
     return parsed if parsed > 0 else default
 
 
+def _kame_oracle_provider_registration(profile: Mapping[str, Any]) -> dict[str, Any]:
+    registration = profile.get("oracle_provider_registration")
+    if not isinstance(registration, Mapping):
+        oracle = profile.get("oracle")
+        if isinstance(oracle, Mapping):
+            registration = oracle.get("provider_registration")
+    if isinstance(registration, Mapping):
+        base_url = _clean_url(str(registration.get("base_url") or ""))
+        provider = str(registration.get("provider") or "").strip()
+        provider_name = str(registration.get("provider_name") or "").strip()
+        preferred_model = str(registration.get("preferred_local_model") or "").strip()
+        api_mode = str(registration.get("api_mode") or "chat_completions").strip() or "chat_completions"
+    else:
+        base_url = _clean_url(str(profile.get("oracle_base_url") or ""))
+        provider = str(profile.get("oracle_provider") or "").strip()
+        provider_name = str(profile.get("oracle_provider_name") or "").strip()
+        preferred_model = str(profile.get("preferred_local_oracle_model") or "").strip()
+        api_mode = str(profile.get("oracle_api_mode") or "chat_completions").strip() or "chat_completions"
+    if not base_url:
+        provider = ""
+        provider_name = ""
+    else:
+        provider = provider or "custom"
+        provider_name = provider_name or DEFAULT_KAME_ORACLE_PROVIDER_NAME
+    return {
+        "enabled": bool(base_url),
+        "provider": provider,
+        "provider_name": provider_name,
+        "preferred_local_model": preferred_model or DEFAULT_KAME_ORACLE_MODEL,
+        "base_url": base_url,
+        "api_mode": api_mode,
+        "selection_authority": "Hermes /model",
+    }
+
+
 def _merge_kame_oracle_provider_config(updated: dict[str, Any], profile: Mapping[str, Any]) -> None:
     """Register the local KAME oracle endpoint without changing Hermes' active model.
 
@@ -1502,20 +1532,16 @@ def _merge_kame_oracle_provider_config(updated: dict[str, Any], profile: Mapping
 
     if str(profile.get("engine") or "") != "kame_interface_oracle":
         return
-    oracle_base_url = _clean_url(str(profile.get("oracle_base_url") or ""))
+    registration = _kame_oracle_provider_registration(profile)
+    oracle_base_url = _clean_url(str(registration.get("base_url") or ""))
     if not oracle_base_url:
         return
-    local_oracle_model = str(profile.get("preferred_local_oracle_model") or DEFAULT_KAME_ORACLE_MODEL).strip()
+    local_oracle_model = str(registration.get("preferred_local_model") or DEFAULT_KAME_ORACLE_MODEL).strip()
     if not local_oracle_model:
         local_oracle_model = DEFAULT_KAME_ORACLE_MODEL
-    oracle_api_mode = (
-        str(profile.get("oracle_api_mode") or "chat_completions").strip()
-        or "chat_completions"
-    )
+    oracle_api_mode = str(registration.get("api_mode") or "chat_completions").strip() or "chat_completions"
 
-    provider_name = str(
-        profile.get("oracle_provider_name") or DEFAULT_KAME_ORACLE_PROVIDER_NAME
-    ).strip() or DEFAULT_KAME_ORACLE_PROVIDER_NAME
+    provider_name = str(registration.get("provider_name") or DEFAULT_KAME_ORACLE_PROVIDER_NAME).strip() or DEFAULT_KAME_ORACLE_PROVIDER_NAME
     custom_entry = {
         "name": provider_name,
         "base_url": oracle_base_url,

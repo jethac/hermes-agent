@@ -311,7 +311,11 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
     assert realtime["asr_provider"] == "streaming_stt"
     assert realtime["asr_model"] == "portable-streaming-asr"
     assert realtime["asr_base_url"] == ""
-    assert realtime["preferred_local_oracle_model"] == "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
+    assert "preferred_local_oracle_model" not in realtime
+    assert "oracle_provider" not in realtime
+    assert "oracle_provider_name" not in realtime
+    assert "oracle_base_url" not in realtime
+    assert "oracle_api_mode" not in realtime
     assert realtime["oracle_timeout_seconds"] == 60.0
     assert realtime["max_spoken_sentences"] == 2
     assert realtime["voice_response_policy"] == "sentence_cap"
@@ -369,11 +373,6 @@ def test_kame_preset_prints_reflex_oracle_profile(capsys):
     assert realtime["oracle"] == {
         "mode": "hermes_active_model",
         "selected_by": "Hermes /model",
-        "provider": "",
-        "provider_name": "",
-        "preferred_local_model": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
-        "base_url": "",
-        "api_mode": "chat_completions",
         "provider_registration": {
             "enabled": False,
             "provider": "",
@@ -428,11 +427,21 @@ def test_kame_preset_can_print_local_oracle_provider_profile(capsys):
     assert result == 0
     data = yaml.safe_load(capsys.readouterr().out)
     realtime = data["voice"]["realtime"]
-    assert realtime["oracle_provider"] == "custom"
-    assert realtime["oracle_provider_name"] == "Spark Oracle"
+    assert "oracle_provider" not in realtime
+    assert "oracle_provider_name" not in realtime
+    assert "preferred_local_oracle_model" not in realtime
     assert "oracle_model" not in realtime
-    assert realtime["oracle_base_url"] == "http://spark.local:8001/v1"
-    assert realtime["oracle_api_mode"] == "chat_completions"
+    assert "oracle_base_url" not in realtime
+    assert "oracle_api_mode" not in realtime
+    assert realtime["oracle"]["provider_registration"] == {
+        "enabled": True,
+        "provider": "custom",
+        "provider_name": "Spark Oracle",
+        "preferred_local_model": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
+        "base_url": "http://spark.local:8001/v1",
+        "api_mode": "chat_completions",
+        "selection_authority": "Hermes /model",
+    }
 
 
 def test_kame_preset_can_override_interface_max_audio_seconds(capsys):
@@ -738,12 +747,12 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["asr_base_url"] == "http://spark.local:8767"
     assert discord_rt["streaming_stt_base_url"] == "http://spark.local:8767"
     assert discord_rt["streaming_stt_token_env"] == "CUSTOM_STT_TOKEN"
-    assert discord_rt["oracle_provider"] == "custom"
-    assert discord_rt["oracle_provider_name"] == "Spark Oracle"
-    assert discord_rt["preferred_local_oracle_model"] == "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
+    assert "oracle_provider" not in discord_rt
+    assert "oracle_provider_name" not in discord_rt
+    assert "preferred_local_oracle_model" not in discord_rt
     assert "oracle_model" not in discord_rt
-    assert discord_rt["oracle_base_url"] == "http://spark.local:8001/v1"
-    assert discord_rt["oracle_api_mode"] == "chat_completions"
+    assert "oracle_base_url" not in discord_rt
+    assert "oracle_api_mode" not in discord_rt
     assert discord_rt["oracle_timeout_seconds"] == 42.0
     assert discord_rt["max_spoken_sentences"] == 3
     assert discord_rt["voice_response_policy"] == "sentence_cap"
@@ -794,11 +803,6 @@ def test_kame_profile_merge_copies_discord_scoped_runtime_fields():
     assert discord_rt["oracle"] == {
         "mode": "hermes_active_model",
         "selected_by": "Hermes /model",
-        "provider": "custom",
-        "provider_name": "Spark Oracle",
-        "preferred_local_model": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
-        "base_url": "http://spark.local:8001/v1",
-        "api_mode": "chat_completions",
         "provider_registration": {
             "enabled": True,
             "provider": "custom",
@@ -839,14 +843,14 @@ def test_kame_profile_merge_registers_local_oracle_without_changing_active_model
     merged = realtime_voice_profile.merge_realtime_voice_profile(existing, profile)
 
     assert merged["model"] == existing["model"]
+    assert "oracle_provider" not in merged["voice"]["realtime"]
+    assert "oracle_provider_name" not in merged["voice"]["realtime"]
+    assert "preferred_local_oracle_model" not in merged["voice"]["realtime"]
+    assert "oracle_base_url" not in merged["voice"]["realtime"]
+    assert "oracle_api_mode" not in merged["voice"]["realtime"]
     assert merged["voice"]["realtime"]["oracle"] == {
         "mode": "hermes_active_model",
         "selected_by": "Hermes /model",
-        "provider": "custom",
-        "provider_name": "Spark Oracle",
-        "preferred_local_model": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
-        "base_url": "http://spark.local:8001/v1",
-        "api_mode": "chat_completions",
         "provider_registration": {
             "enabled": True,
             "provider": "custom",

@@ -1910,7 +1910,7 @@ class TestDiscordVoiceChannelMethods:
         assert session_cls.call_args.kwargs["interface_timeout_seconds"] == 0.6
         assert session_cls.call_args.kwargs["interface_max_audio_seconds"] == 14.0
         assert session_cls.call_args.kwargs["asr_base_url"] == "http://asr.local:8767"
-        assert session_cls.call_args.kwargs["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
+        assert "preferred_local_oracle_model" not in session_cls.call_args.kwargs
         assert "oracle_model" not in session_cls.call_args.kwargs
         assert session_cls.call_args.kwargs["oracle_timeout_seconds"] == 19.0
         assert session_cls.call_args.kwargs["max_spoken_sentences"] == 3
@@ -1940,7 +1940,7 @@ class TestDiscordVoiceChannelMethods:
         assert status["interface_timeout_seconds"] == 0.6
         assert status["interface_max_audio_seconds"] == 14.0
         assert status["asr_base_url"] == "http://asr.local:8767"
-        assert status["preferred_local_oracle_model"] == "gemma-4-26B-A4B-it"
+        assert "preferred_local_oracle_model" not in status
         assert "oracle_model" not in status
         assert status["oracle_timeout_seconds"] == 19.0
         assert status["max_spoken_sentences"] == 3

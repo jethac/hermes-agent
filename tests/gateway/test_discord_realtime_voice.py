@@ -350,12 +350,12 @@ def test_discord_realtime_config_accepts_documented_nested_kame_shape(monkeypatc
     assert cfg["asr_model"] == "nemotron-speech"
     assert cfg["asr_base_url"] == "http://discord.local:8767"
     assert cfg["streaming_stt_base_url"] == "http://discord.local:8767"
-    assert cfg["oracle_provider"] == "custom"
-    assert cfg["oracle_provider_name"] == "Spark Oracle"
-    assert cfg["preferred_local_oracle_model"] == "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
+    assert "oracle_provider" not in cfg
+    assert "oracle_provider_name" not in cfg
+    assert "preferred_local_oracle_model" not in cfg
     assert "oracle_model" not in cfg
-    assert cfg["oracle_base_url"] == "http://spark.local:8001/v1"
-    assert cfg["oracle_api_mode"] == "chat_completions"
+    assert "oracle_base_url" not in cfg
+    assert "oracle_api_mode" not in cfg
     assert cfg["oracle_timeout_seconds"] == 12.0
     assert cfg["voice_response_policy"] == "brief_summary"
     assert cfg["tts_provider"] == "cartesia"
