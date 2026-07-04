@@ -8,6 +8,14 @@ Hermes becomes a VoiceOps hackathon proof targeting Spark/PGX: a household and b
 
 The demo starts in Discord voice. The user joins a voice channel and talks naturally to Hermes. Hermes listens, acknowledges quickly through the reflex, sends raw-audio evidence plus labeled witness hypotheses to the Gemma interpreter, uses the active Hermes `/model` oracle for durable work, and replies by voice in the channel. Open S2S, STT, TTS, or hosted realtime providers may appear in the demo only as role-labeled components: reflex, interpreter, auxiliary witness, outbound TTS, or degraded fallback.
 
+The demo should make the three-tier claim plainly: the reflex answers the floor,
+Gemma interprets the accepted raw-audio cut, and Hermes' active `/model` does
+the business work. If Moshi, OpenClaw, VoiceClaw, or classic ASR emits text, the
+text is shown as a witness attached to the same audio cut, not as the user's
+durable prompt. This lets the video show fast acknowledgement without implying
+that the first transcript-like string gets to spend money, provision services,
+place calls, or write memory.
+
 The user then gives Hermes a spending budget. Hermes uses Stripe-backed spending controls and skills to provision a service it needs, such as a VoIP provider account or phone-number-capable communications service.
 
 Once provisioned, Hermes calls the user's phone and continues with the same context from Discord. The handoff demonstrates that Hermes is not just a chatbot in one channel; it is an operating agent that can acquire tools, pay for services, and act across real communication surfaces.
@@ -22,6 +30,10 @@ We are building a voice-first operations layer for Hermes Agent:
   oracle model. Raw audio is the interpreter's primary evidence; Moshi/S2S or
   ASR transcripts are labeled hypotheses, not the control path, scheduler, or
   user message of record.
+- **Witness-assisted direct-audio interpretation** where Moshi/Open-S2S text,
+  reflex captions, and classic ASR output can help Gemma recover clipped starts,
+  names, numbers, and code-switched terms, but only
+  `interpreter_promoted`/`oracle_promoted` fields become durable or actionable.
 - **Local model serving on PGX/Spark-class hardware** using vLLM containers for reproducible iteration.
 - **Hermes-native oracle selection** where `/model` and the existing Hermes model configuration remain authoritative.
 - **Stripe-enabled spending and provisioning** so Hermes can pay for tools and services under explicit user-granted limits.
@@ -94,6 +106,14 @@ interpreter: it reads the clipped waveform, speaker/timing metadata, the reflex
 route, the acknowledgement already spoken, and any Moshi/open-S2S or classic ASR
 hypotheses. It promotes only the evidence that is safe to hand to Hermes'
 active `/model`.
+
+So the correct demo sentence is not "we replaced STT with Moshi" or "Gemma is
+our ASR." The correct sentence is: "Hermes sends raw voice plus frontend witness
+text to a Gemma interpreter, and only the promoted result reaches the normal
+Hermes oracle." That framing is important because it explains why the system can
+use Moshi-style text as context while still rejecting hallucinated commands,
+wrong-speaker captions, and clipped-prefix mistakes before Stripe, NemoClaw, or
+phone execution.
 
 In the video and operator docs, avoid presenting this as an ASR race. The
 stronger claim is that Hermes can hear through multiple sensors while trusting

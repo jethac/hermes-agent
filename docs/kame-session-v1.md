@@ -27,6 +27,14 @@ hypothesis to the interpreter." The hypothesis is useful context for Gemma, but
 it remains `authority = "hypothesis"` until the interpreter promotes
 raw-audio-grounded wording.
 
+This contract intentionally supports a three-tier sensor-fan-in system rather
+than a fourth STT authority lane. A fast reflex may emit a transcript-looking
+string while it controls the floor. A Gemma-style interpreter then receives the
+same accepted raw-audio cut plus that string and any other witness hypotheses.
+Hermes' active `/model` only receives promoted wording, intent, entities, and
+compact labeled audit context. Raw witness strings must not be replayed as the
+oracle prompt.
+
 The same rule applies when Gemma emits transcript-like text. In KAME, Gemma is
 the direct-audio interpreter, not a second ASR service racing the frontend. Its
 corrected transcript, entities, and intent become useful to Hermes only when
@@ -146,6 +154,7 @@ Minimum external frontend evidence/job-envelope shape:
     {
       "kind": "frontend_witness_hypothesis",
       "source": "moshi",
+      "role": "witness_context",
       "text": "prepare phone handoff",
       "partial": false,
       "confidence": 0.78,
@@ -155,6 +164,7 @@ Minimum external frontend evidence/job-envelope shape:
       "speaker_guess": {"platform": "discord", "channel_user_id": "redacted-user"},
       "channel_guess": {"transport": "discord_voice", "channel_id": "redacted-channel"},
       "authority": "hypothesis",
+      "promotion_required": "interpreter_promoted_or_oracle_promoted",
       "tool_authority": false
     }
   ]
@@ -249,14 +259,24 @@ Adapters should prefer these `kind` values:
   exact producer is not proven.
 - `reflex_transcript_hypothesis`: text proven to come from the live reflex
   model's own hearing.
-- `s2s_transcript_hypothesis`: text proven to come from a distinct S2S caption
-  or transcript side channel.
+- `s2s_transcript_hypothesis`: text proven to come from a named S2S witness
+  producer associated with the same accepted raw-audio cut. This is a
+  provenance label inside `transcript_hypotheses[]`, not a separate STT lane or
+  control path.
 - `classic_asr_hypothesis`: text from a dedicated ASR provider retained for
   captions, diagnostics, literal checks, or degraded fallback.
 
+Prefer `frontend_witness_hypothesis` for Moshi/Open-S2S text unless the adapter
+can prove the narrower producer. Narrower labels are useful for audit and
+quality scoring only; they do not change scheduling, authority, or packet
+merge behavior.
+
 Every hypothesis must carry `authority = "hypothesis"` and
-`tool_authority = false`. Source names such as `moshi`, `openclaw`,
-`voiceclaw`, `riva`, or `cartesia` are provenance, not authority labels.
+`tool_authority = false`; normalized packets should also carry
+`role = "witness_context"` or an equivalent context-only marker so downstream
+artifact checks can prove the field was not promoted by name. Source names such
+as `moshi`, `openclaw`, `voiceclaw`, `riva`, or `cartesia` are provenance, not
+authority labels.
 Every hypothesis should also carry `arrival_phase` when the adapter can
 determine it: `before_raw_audio`, `with_raw_audio`, or
 `after_interpreter_start`. Arrival phase is merge evidence, not authority. It

@@ -30,6 +30,14 @@ oracle. There is no separate `oracle_model`, no second Hermes turn from Moshi
 text, and no ASR proof requirement before acknowledgement or job creation when
 raw audio is available.
 
+The latest implementation posture is stricter than "keep STT in parallel." The
+runtime may collect multiple hearing observations for one speech cut, but those
+observations must join one interpreter packet. A Moshi/Open-S2S witness, reflex
+caption, or classic-ASR string can be provided to Gemma as context alongside raw
+voice; it must not run a sibling conversation, patch queued `oracle_text`, or
+become durable history by arriving first. The accepted cut, not the first text
+string, is the unit of work.
+
 Design consolidation: do not model this as "reflex plus Gemma ASR plus oracle."
 The reflex is latency-biased and provisional. Gemma is the direct-audio
 interpreter that may emit corrected multilingual transcript text as

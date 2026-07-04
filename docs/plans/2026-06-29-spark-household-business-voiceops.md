@@ -174,6 +174,12 @@ Target KAME layout:
   raw audio first and the Moshi/OpenClaw/VoiceClaw/classic-ASR strings as
   labeled `transcript_hypotheses[]`; the interpreter response should show which
   hypotheses were accepted, corrected, rejected, or kept diagnostic-only.
+- Three-tier sensor-fan-in decision: the product architecture is reflex,
+  interpreter, oracle. It is not reflex plus a separate Gemma-ASR lane plus the
+  oracle, and it is not Moshi-STT driving Hermes. The reflex may hear quickly
+  and offer a witness. Gemma judges the accepted raw-audio cut with that witness
+  as context. Hermes' active `/model` receives only promoted wording/intent plus
+  compact labeled audit context before doing business work.
 - Reflex-witness rule: if the low-latency reflex model itself emits
   transcript-looking text, treat it exactly like other witness text. It can
   explain the reflex route and help Gemma repair clipped starts or code-switched
@@ -229,6 +235,12 @@ Target KAME layout:
   the Moshi-context decision auditable: Moshi/Open-S2S text is sent beside raw
   voice as a clue for Gemma, not ahead of raw voice as a transcript prompt and
   not around Gemma as a separate Hermes turn.
+- Witness role-marker rule: every normalized transcript hypothesis should carry
+  hypothesis authority, `tool_authority = false`, and a context-only role marker
+  such as `role = "witness_context"`. This lets package audits prove that
+  vendor text was included for interpretation without being smuggled into
+  `oracle_text`, spend reasons, provider choices, phone scripts, memory/file
+  writes, external messages, tool arguments, or durable history.
 - Bundle schema rule: every speech cut creates one interpreter evidence bundle
   keyed by `turn_id` and `audio_segment_ref`. The bundle carries primary audio,
   VAD/energy timing, speaker metadata, channel/transport metadata, reflex route

@@ -1,13 +1,13 @@
 # Full KAME-Style Realtime Voice Design
 
-Status: design draft
+Status: design draft; packet contract active in `docs/kame-session-v1.md`
 Target branch: `wip/full-kame-reflex-voice`
 Target deployment: one DGX Spark as the intended local appliance path. Hackathon
 artifacts may prove the workflow and evidence gates before Spark-local
 readiness is proven; cloud providers remain allowed only as clearly labeled
 bring-up fallbacks.
 Preferred local reflex: fastest stable floor-control model, such as Moshi/PersonaPlex-class S2S or a smaller timing/noise-gated model
-Preferred local interpreter: Gemma 4 E2B/E4B/12B audio-multimodal
+Preferred local interpreter: Gemma 4 E2B/E4B/12B audio-multimodal, consuming bounded raw-audio cuts plus witness hypotheses
 Preferred local oracle target: Hermes active `/model`, with Nemotron 3 Super as the first Spark-local NVIDIA target to measure before readiness claims
 
 Canonical rule: every provider is assigned to a role before it is trusted.
@@ -26,6 +26,29 @@ only as labeled witness hypotheses inside the same interpreter bundle. They do
 not schedule a second Hermes turn, become durable user text, authorize tools,
 or carry spend/call/file/memory/message authority before raw-audio-grounded
 interpreter promotion.
+
+Authoritative architecture statement: do not implement KAME as a parallel ASR
+stack. There are three roles:
+
+1. Reflex: fast live floor control, barge-in, acknowledgement, provisional
+   route, and optional transcript-looking witness text.
+2. Interpreter: Gemma-style direct-audio adjudication over the clipped waveform,
+   timing/speaker metadata, reflex state, and every transcript hypothesis.
+3. Oracle: Hermes' active `/model`, selected through the existing model
+   interface, with authority over tools, memory, files, spend, calls, approvals,
+   and durable outcomes.
+
+Moshi/Open-S2S text can be extremely useful, but only as `transcript_hypotheses[]`
+attached to the accepted raw-audio cut. Gemma may use it to recover clipped
+prefixes, names, numbers, or code-switched words; Gemma may also reject it when
+energy, speaker, channel, timing, or waveform evidence disagrees. The first text
+string to arrive is never the transcript of record.
+
+Implementation naming rule: "Moshi STT" is adapter-edge shorthand only, and
+"Gemma ASR" is the wrong abstraction for the normal path. Internal packet
+fields, evidence artifacts, prompts, tests, and demo copy should describe
+Moshi/Open-S2S/classic-ASR strings as witness hypotheses and Gemma output as
+`interpreter_promoted` direct-audio interpretation.
 
 Current operator decision: when a Moshi/OpenClaw/VoiceClaw-style frontend can
 expose both the clipped waveform and an STT-like string for the same speech cut,
@@ -639,7 +662,7 @@ input must keep provenance until a later layer promotes it.
 | `raw_audio` | transport/session cut | interpreter evidence, replay/debug, disagreement checks | primary interpreter input |
 | `reflex_intent` | live reflex | routing, immediate acknowledgement, provisional job envelope creation | provisional routing |
 | `reflex_transcript_hypothesis` | live reflex | early clue for the Gemma interpreter, user-visible rough caption when desired | hypothesis only |
-| `s2s_transcript_hypothesis` | explicit S2S caption/transcript component | what a distinct realtime caption lane thought it heard | hypothesis only |
+| `s2s_transcript_hypothesis` | named S2S witness producer bound to the same raw-audio cut | what that S2S witness believed it heard, kept inside `transcript_hypotheses[]` | hypothesis only |
 | `frontend_witness_hypothesis` | Moshi/VoiceClaw/OpenClaw or any ambiguous S2S/reflex frontend exposing STT-like text | umbrella label for "what the frontend believed it heard" when the exact producer is ambiguous | hypothesis only |
 | `classic_asr_hypothesis` | dedicated ASR fallback/evidence lane | literal wording comparison, captions, diagnostics | optional hypothesis |
 | `interpreter_corrected_transcript` | Gemma-style interpreter | durable user request candidate and tool-critical wording | first promoted transcript |
@@ -649,12 +672,13 @@ This allows a three-tier design without making STT the control path. Ambiguous
 Moshi/OpenClaw/VoiceClaw transcript-looking text should default to
 `frontend_witness_hypothesis`, with `reflex_transcript_hypothesis` and
 `s2s_transcript_hypothesis` reserved for producers the adapter can identify
-precisely. These hypotheses are valuable because they summarize what the live
-frontend believed it heard, including dropped prefixes or code-switched
-phrases. They must travel beside the raw audio into the Gemma interpreter, not
-replace the raw audio and not become a separate oracle prompt. Classic ASR
-follows the same rule and is kept primarily for fallback, diagnostics, and
-literal-evidence checks.
+precisely. A narrower S2S label does not create a distinct transcript lane; it
+only preserves provenance for one same-packet witness. These hypotheses are
+valuable because they summarize what the live frontend believed it heard,
+including dropped prefixes or code-switched phrases. They must travel beside
+the raw audio into the Gemma interpreter, not replace the raw audio and not
+become a separate oracle prompt. Classic ASR follows the same rule and is kept
+primarily for fallback, diagnostics, and literal-evidence checks.
 
 The important distinction is not "Moshi instead of ASR" versus "classic ASR".
 Both are transcript-like side channels. They can be useful evidence, especially
@@ -801,12 +825,12 @@ session, turn, and audio reference.
 
 If an operator calls the Moshi side channel "Moshi STT", the runtime should
 store it as `frontend_witness_hypothesis` unless the adapter can prove it came
-from the live reflex itself or from a distinct transcript output. The name can
-appear in `source`; hypothesis kind/source describes provenance, while
-`authority` stays `hypothesis` and `tool_authority` stays `false`.
+from the live reflex itself or from a named same-bundle S2S witness producer.
+The name can appear in `source`; hypothesis kind/source describes provenance,
+while `authority` stays `hypothesis` and `tool_authority` stays `false`.
 
 If the adapter cannot confidently tell whether the string came from the reflex
-model itself or from a sibling caption output, it should use
+model itself or from a named S2S witness producer, it should use
 `frontend_witness_hypothesis`. That is still a hypothesis and still attaches to
 the raw-audio bundle. It is deliberately safer than guessing `classic_asr` or
 promoting the text to a user turn.
@@ -967,17 +991,18 @@ as a replacement for the raw waveform or as an independent user message.
 When a Moshi, VoiceClaw, OpenClaw, or similar S2S frontend emits text, Hermes
 should handle it as:
 
-1. `reflex_transcript_hypothesis` when it is the live reflex model's own hearing
-   of the turn.
-2. `s2s_transcript_hypothesis` when it is a distinct transcript or caption side
-   channel from the same frontend.
-3. `classic_asr_hypothesis` only for a dedicated ASR provider used for fallback,
+1. `frontend_witness_hypothesis` by default. This is the normal Moshi/Open-S2S
+   adapter label for transcript-looking text that reports what the frontend
+   believed it heard.
+2. `reflex_transcript_hypothesis` only when the adapter can prove the text came
+   from the live reflex model's own hearing for the same accepted speech cut.
+3. `s2s_transcript_hypothesis` only when the adapter can prove a named S2S
+   witness producer emitted the text for the same accepted speech cut. This is
+   still same-bundle context, not a separate STT lane.
+4. `classic_asr_hypothesis` only for a dedicated ASR provider used for fallback,
    diagnostics, captions, or literal wording checks.
-4. `frontend_witness_hypothesis` when an adapter has frontend text but cannot
-   distinguish whether it came from the reflex model or an adjacent S2S caption
-   component.
 
-All four fields are context for the interpreter. They are allowed to improve
+All four labels are context for the interpreter. They are allowed to improve
 Gemma's correction, entity extraction, language notes, and oracle request patch.
 They are not allowed to:
 
@@ -1169,8 +1194,8 @@ prompt must label it explicitly as a hypothesis, not as ground truth:
 - `reflex_transcript_hypothesis`: what the live reflex thought it heard
 - `frontend_witness_hypothesis`: ambiguous Moshi/OpenClaw/VoiceClaw-style text,
   meaning what the realtime frontend believed it heard
-- `s2s_transcript_hypothesis`: a proven distinct S2S caption/transcript output,
-  if separate from the reflex hypothesis
+- `s2s_transcript_hypothesis`: a proven named S2S witness output for the same
+  accepted raw-audio cut, if separate from the reflex hypothesis
 - `classic_asr_hypothesis`: optional fallback/evidence transcript, if enabled
 
 The interpreter may use all of those signals, but its output must identify
