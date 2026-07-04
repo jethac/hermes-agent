@@ -284,6 +284,94 @@ def test_stripe_executor_rejects_plan_command_sha256_mismatch(tmp_path):
     assert all(result["executed"] is False for result in report["command_results"])
 
 
+def test_stripe_executor_rejects_missing_approval_decision(tmp_path):
+    plan = _plan()
+    packet = _packet_from_plan(plan)
+    decisions = _decisions(plan, set())
+    missing_action_id = plan["approval_required_actions"][0]["action_id"]
+    decisions["decisions"] = [
+        decision for decision in decisions["decisions"] if decision["action_id"] != missing_action_id
+    ]
+    calls = []
+
+    report = execute_approved_actions(
+        packet=packet,
+        plan=plan,
+        decisions_payload=decisions,
+        output_dir=tmp_path,
+        execute=True,
+        confirmation=LIVE_CONFIRMATION,
+        runner=lambda argv, _timeout_seconds: calls.append(list(argv)) or CommandResult(exit_code=0),
+        now=lambda: "2026-06-29T00:00:30Z",
+    )
+
+    assert report["ok"] is False
+    assert f"approval_decisions:{missing_action_id}:missing_decision" in report["issues"]
+    assert calls == []
+    assert all(result["executed"] is False for result in report["command_results"])
+
+
+def test_stripe_executor_rejects_unknown_approval_decision_action(tmp_path):
+    plan = _plan()
+    packet = _packet_from_plan(plan)
+    decisions = _decisions(plan, set())
+    decisions["decisions"].append(
+        {
+            "action_id": "delete-production-account",
+            "approval_id": "approval-delete-production-account",
+            "decision": "approve_once",
+            "decision_by": "operator-ref-test",
+            "decision_at": "2026-06-29T00:00:00Z",
+        }
+    )
+    calls = []
+
+    report = execute_approved_actions(
+        packet=packet,
+        plan=plan,
+        decisions_payload=decisions,
+        output_dir=tmp_path,
+        execute=True,
+        confirmation=LIVE_CONFIRMATION,
+        runner=lambda argv, _timeout_seconds: calls.append(list(argv)) or CommandResult(exit_code=0),
+        now=lambda: "2026-06-29T00:00:30Z",
+    )
+
+    assert report["ok"] is False
+    assert "approval_decisions:delete-production-account:unknown_action_id" in report["issues"]
+    assert calls == []
+    assert all(result["executed"] is False for result in report["command_results"])
+
+
+def test_stripe_executor_rejects_invalid_approval_decision_provenance(tmp_path):
+    plan = _plan()
+    packet = _packet_from_plan(plan)
+    decisions = _decisions(plan, set())
+    action_id = plan["approval_required_actions"][0]["action_id"]
+    decisions["decisions"][0]["approval_id"] = "approval-for-another-action"
+    decisions["decisions"][0]["decision_by"] = ""
+    decisions["decisions"][0]["decision_at"] = "not-a-timestamp"
+    calls = []
+
+    report = execute_approved_actions(
+        packet=packet,
+        plan=plan,
+        decisions_payload=decisions,
+        output_dir=tmp_path,
+        execute=True,
+        confirmation=LIVE_CONFIRMATION,
+        runner=lambda argv, _timeout_seconds: calls.append(list(argv)) or CommandResult(exit_code=0),
+        now=lambda: "2026-06-29T00:00:30Z",
+    )
+
+    assert report["ok"] is False
+    assert f"approval_decisions:{action_id}:approval_id_mismatch" in report["issues"]
+    assert f"approval_decisions:{action_id}:missing_decision_by" in report["issues"]
+    assert f"approval_decisions:{action_id}:invalid_decision_at" in report["issues"]
+    assert calls == []
+    assert all(result["executed"] is False for result in report["command_results"])
+
+
 def test_stripe_executor_cli_outputs_report(tmp_path, capsys):
     plan = _plan()
     packet = _packet_from_plan(plan)

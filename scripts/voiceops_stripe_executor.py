@@ -174,6 +174,35 @@ def _load_decisions(payload: Mapping[str, Any]) -> tuple[dict[str, Mapping[str, 
     return by_action, issues
 
 
+def _approval_decision_contract_issues(
+    decisions: Mapping[str, Mapping[str, Any]],
+    actions: Mapping[str, Mapping[str, Any]],
+) -> list[str]:
+    issues: list[str] = []
+    expected_action_ids = set(actions)
+    supplied_action_ids = set(decisions)
+    for action_id in sorted(supplied_action_ids - expected_action_ids):
+        issues.append(f"approval_decisions:{action_id}:unknown_action_id")
+    for action_id in sorted(expected_action_ids - supplied_action_ids):
+        issues.append(f"approval_decisions:{action_id}:missing_decision")
+    for action_id in sorted(expected_action_ids & supplied_action_ids):
+        decision = decisions[action_id]
+        action = actions[action_id]
+        if decision.get("approval_id") != action.get("approval_id"):
+            issues.append(f"approval_decisions:{action_id}:approval_id_mismatch")
+        if not str(decision.get("decision_by") or "").strip():
+            issues.append(f"approval_decisions:{action_id}:missing_decision_by")
+        decision_at = str(decision.get("decision_at") or "").strip()
+        if not decision_at:
+            issues.append(f"approval_decisions:{action_id}:missing_decision_at")
+        else:
+            try:
+                dt.datetime.fromisoformat(decision_at.replace("Z", "+00:00"))
+            except ValueError:
+                issues.append(f"approval_decisions:{action_id}:invalid_decision_at")
+    return issues
+
+
 def _command_issues_for_action(action_id: str, command: str) -> list[str]:
     try:
         argv = shlex.split(command)
@@ -291,6 +320,7 @@ def execute_approved_actions(
     output_dir.mkdir(parents=True, exist_ok=True)
     decisions_dir = output_dir / "approval-decisions"
     actions = _actions_by_id(plan)
+    issues.extend(_approval_decision_contract_issues(decisions, actions))
     packet_actions = _packet_actions_by_id(packet)
     estimates = _action_estimates(plan)
     packet_hash = hashlib.sha256(json.dumps(packet, sort_keys=True, default=str).encode("utf-8")).hexdigest()
