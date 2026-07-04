@@ -990,6 +990,16 @@ should make that visible by reporting the shared `turn_id`, `audio_segment_ref`,
 `evidence_bundle_id`, hypothesis count, promoted source, and degraded reason when
 raw audio is missing.
 
+Multi-human calls add one more mandatory proof: witness text must be bound to
+the accepted speaker and channel before it can be useful. In a Discord call with
+two humans, a Moshi/open-S2S or classic-ASR string from the wrong user, a stale
+buffer, or an ambiguous speaker segment is still valuable diagnostic evidence,
+but it must be adjudicated as `rejected_or_diagnostic_only` with a reason such
+as `wrong_speaker`, `wrong_channel`, `stale_witness`, or `ambiguous_speaker`.
+The interpreter may compare that rejected witness against the raw audio, but the
+oracle must never receive it as promoted user wording, spend rationale, phone
+payload, memory/file content, or a tool argument.
+
 ## Responsibilities
 
 ### Reflex / Interface Model

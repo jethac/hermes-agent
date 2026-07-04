@@ -40,7 +40,7 @@ The realtime voice implementation now has both engine families behind the same p
 - `agent/realtime_voice_sidecar.py` implements the configured model-sidecar client for local, Gemma/vLLM, and remote STT/TTS frontends.
 - `agent/realtime_voice_reference_sidecar.py` implements the reference sidecar server that can run on ordinary machines with configured STT/TTS providers, call a vLLM/Gemma audio endpoint when available, or bridge to a compatible streaming STT service while keeping Hermes' TTS/oracle boundary intact.
 - `agent/realtime_voice_text_engine.py` implements the text-oracle path: audio or transcript input, streaming frontend events from a configured sidecar, local STT fallback via Hermes' existing transcription provider chain at utterance boundaries, streaming Hermes oracle deltas, speech planning, and chunked audio output via sidecar TTS or the existing TTS provider chain.
-- `agent/realtime_voice_s2s_engine.py` implements the native S2S path as a websocket bridge to a local, remote, or cloud model sidecar. When the sidecar emits final transcript events, Hermes calls the active `/model` oracle and sends `oracle.hint` events back to the sidecar.
+- `agent/realtime_voice_s2s_engine.py` implements the native S2S path as a websocket bridge to a local, remote, or cloud model sidecar. In full KAME mode, native S2S submits raw-audio/evidence-bundle events or promoted interpreter requests; final transcript events remain hypotheses unless the session is explicitly running a text-oracle fallback.
 - `hermes_cli/web_server.py` exposes `/api/voice/realtime` behind the same websocket auth and Host/Origin guards as the dashboard chat websocket. For loopback `local`, `reference`, `sidecar`, `gemma`, `gemma4`, `lmstudio`, and `vllm` frontends, it can also supervise the reference sidecar process automatically.
 - `apps/desktop/src/app/chat/composer/hooks/use-realtime-voice-session.ts` implements the desktop websocket client, microphone frame capture, simple VAD, playback queue, and barge-in cancellation.
 
@@ -596,7 +596,7 @@ Do not make English the hidden default. The speech-understanding sidecar prompt 
 
 Quality coverage is tiered, not protocol-limited. English and Japanese are the first production acceptance languages for speech input, assistant captions, barge-in, and spoken output. Other languages are best-effort based on the configured STT, frontend model, TTS voice, or native S2S sidecar; clean metadata such as `ko-KR` or `de-DE` should pass through diagnostics and captions, but Hermes may report degraded frontend state when the configured provider cannot serve that language well.
 
-When sanitized transcript language metadata is available, the text-oracle engine carries it into assistant partial/commit events and the Hermes oracle prompt uses it as non-durable guidance to preserve the user's spoken language and script. The persisted user message remains the transcript text only; URLs, provider-specific fields, and malformed metadata must not enter the prompt or durable transcript.
+When sanitized transcript language metadata is available, the text-oracle engine carries it into assistant partial/commit events and the Hermes oracle prompt uses it as non-durable guidance to preserve the user's spoken language and script. In text-oracle fallback mode, the persisted user message is the sanitized final transcript text only; URLs, provider-specific fields, and malformed metadata must not enter the prompt or durable transcript. In full KAME mode, persisted user wording must come from `interpreter_promoted` or `oracle_promoted` evidence, and raw transcript fields remain non-durable hypotheses unless promoted.
 
 TTS is also language-sensitive. Prefer provider auto-detection or configured multilingual voices where available. If a configured voice is known to be language-limited, report a degraded `frontend.state` or use a configured fallback voice/provider; do not silently translate assistant output into English to satisfy a voice.
 
@@ -652,7 +652,7 @@ WS /v1/realtime-text/session
 
 Hermes sends a `session.config` frame first, then forwards `audio.input.chunk`, `barge_in`, and assistant text chunks with `{"speak": true}`. Forwarded `audio.input.chunk` events include the active `input_generation`; sidecars should echo it on transcript events so Hermes can reject stale STT output after barge-in or newer input. Forwarded `barge_in` events include the active `playback_generation` so sidecars can cancel or tag stale output work deterministically. The sidecar returns `transcript.partial`, `transcript.final`, `frontend.state`, `audio.output.chunk`, or `session.error` events using the shared wire protocol.
 
-Hermes sanitizes sidecar transcript payloads before forwarding them or starting oracle work. Transcript events may keep `text`, `confidence`, `stability`, `input_generation`, `playback_generation`, and sanitized `language`/`locale`/`script`; provider URLs, secrets, raw metadata blobs, and malformed language tokens are dropped.
+Hermes sanitizes sidecar transcript payloads before forwarding them or, in fallback/text-oracle mode, starting oracle work. Transcript events may keep `text`, `confidence`, `stability`, `input_generation`, `playback_generation`, and sanitized `language`/`locale`/`script`; provider URLs, secrets, raw metadata blobs, and malformed language tokens are dropped. In full KAME mode, transcript payloads attach to `transcript_hypotheses[]` and oracle work should use promoted interpreter/oracle evidence rather than raw transcript text.
 
 Hermes and the reference sidecar use the same binary audio envelope as the desktop hot path for sidecar-facing `audio.input.chunk` and `audio.output.chunk` events: a 4-byte big-endian JSON header length, a UTF-8 `VoiceEvent` header without `payload.data_b64`, then the raw audio bytes. JSON/base64 audio events remain valid for compatibility sidecars and tests, and raw binary output bytes without the envelope are still accepted as legacy Opus output from older sidecars.
 
@@ -825,7 +825,9 @@ Unit tests:
 Integration tests:
 
 - websocket opens and closes cleanly
-- fake STT emits partial/final transcript
+- fallback fake STT emits partial/final transcript
+- full-KAME fixture carries raw audio first, then hypothesis labels,
+  interpreter adjudication, and promoted user wording only
 - fake oracle streams text
 - fake TTS streams audio chunks
 - fake sidecar receives browser audio and assistant TTS chunks
@@ -836,11 +838,17 @@ Manual checks:
 - Start desktop app.
 - Enable realtime voice feature flag.
 - Speak a short question.
-- Confirm partial transcript appears before final transcript.
+- In fallback mode, confirm partial transcript appears before final transcript.
+- In full KAME mode, confirm raw audio is primary evidence and transcript text
+  is labeled as a hypothesis until interpreter/oracle promotion.
 - Confirm first audio starts before full response completes.
 - Interrupt playback and verify it stops.
 - Kill or restart the realtime sidecar or bridge during active playback and verify the desktop stops playback, releases microphone capture, clears stale queued audio, and reconnects or falls back without recording into the failed session.
-- Confirm durable transcript contains only final user text and committed assistant text.
+- Confirm durable fallback transcript contains only final user text and
+  committed assistant text.
+- Confirm durable full-KAME history contains only promoted user wording and
+  committed assistant text; raw transcript hypotheses remain audit evidence
+  unless promoted.
 
 Run focused tests with:
 

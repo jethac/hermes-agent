@@ -50,7 +50,9 @@ The ladder is intentionally hardware-neutral. A developer may use a large local 
 - Keep the desktop UI protocol stable while engines change behind it.
 - Preserve the user's spoken language and script by default; realtime voice must not silently translate to English or assume English punctuation/word boundaries.
 - Support barge-in: user speech interrupts assistant playback and updates the live session state.
-- Commit only stable transcript and assistant text to durable Hermes session history.
+- Commit only promoted user wording and committed assistant text to durable
+  Hermes session history. Transcript hypotheses are not durable user history
+  unless interpreter/oracle promotion makes them authoritative.
 
 ## Non-goals
 

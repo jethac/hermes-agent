@@ -218,6 +218,15 @@ Target KAME layout:
   in `docs/design/full-kame-style-realtime-voice.md`; duplicated text from any
   transcript side channel must attach to that bundle, not spawn a new Hermes
   turn.
+- Multi-speaker rule: Discord voice, phone bridges, and future WhatsApp voice
+  sessions must treat speaker/channel attribution as part of the authority
+  boundary. A transcript hypothesis from a second human in the same call may be
+  shown as audit context, but it cannot update the accepted user's durable
+  transcript, oracle request, approval packet, Stripe spend reason, phone
+  payload, memory/file content, or tool arguments unless the interpreter
+  promotes it from the matching raw-audio cut. Wrong-speaker, wrong-channel,
+  stale, and ambiguous-speaker witnesses should fail closed with typed rejection
+  reasons.
 - Witness-fusion acceptance rule: when raw audio and Moshi/OpenClaw/VoiceClaw
   witness text are both present, artifacts should prove a single stable
   `evidence_bundle_id`, a single interpreter merge path, and no duplicate oracle

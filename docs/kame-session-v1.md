@@ -159,6 +159,16 @@ hypothesis for the same speech cut arrives. The final hypothesis replaces the
 partial in active interpreter context; the partial survives only as superseded
 provenance for audit and latency debugging.
 
+In multi-speaker sessions, a transcript hypothesis is not attachable to a
+speech cut merely because it arrived near the same time. The adapter must bind
+the hypothesis to the accepted cut by `turn_id`, `audio_segment_ref`, and the
+best available speaker/channel evidence. If the hypothesis speaker or channel
+does not match the accepted cut, the interpreter may retain it only as
+`rejected_or_diagnostic_only` evidence with an explicit reason such as
+`wrong_speaker`, `wrong_channel`, `stale_witness`, or `ambiguous_speaker`.
+Ambiguous speaker evidence must not become durable user text or action
+authority.
+
 The interpreter must adjudicate each active hypothesis with one of:
 
 - `accepted_as_supporting_evidence`
@@ -222,6 +232,9 @@ audit should expose:
 - witness arrival phase: before cut, with cut, or after interpreter start
 - witness metadata for source, confidence, latency, partial/final state,
   audio time range, speaker guess, and channel guess when available
+- multi-speaker binding proof showing accepted speaker/channel matches, or a
+  typed rejection reason for wrong-speaker, wrong-channel, stale, or ambiguous
+  witness text
 - transcript-only degraded mode rejected for full-KAME/action gates
 - terminal correlation by `tool_call_id`
 - audit-id continuity from request to status and terminal event

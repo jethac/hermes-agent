@@ -46,7 +46,7 @@ Provider bridges sit at the edge of that contract. The current matrix is:
 | ElevenLabs bridge | Implemented | Streaming STT/TTS fallback and provider-comparison path |
 | OpenAI Realtime | Implemented | Native speech-to-speech frontend provider behind the sidecar |
 | Gemini Live | Implemented | Native speech-to-speech frontend provider with KAME-scoped bridge tools |
-| Gemma/audio interpreter | Future | Interpreter/evidence lane over clipped raw audio plus labeled transcript hypotheses; not a speech frontend and not the Hermes oracle |
+| Gemma/audio interpreter | Target KAME role, implementation pending/partial | Interpreter/evidence lane over clipped raw audio plus labeled transcript hypotheses; not a speech frontend and not the Hermes oracle |
 | Native speech-to-speech | Future | Another provider path, not required for first production readiness |
 
 The design decisions are:

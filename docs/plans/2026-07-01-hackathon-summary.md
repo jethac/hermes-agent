@@ -278,6 +278,10 @@ system heard the user.
 - When a Moshi/OpenClaw/VoiceClaw witness transcript is present, the artifact
   shows it sharing the raw-audio turn's `evidence_bundle_id` rather than
   creating a second Hermes turn. Text-only witness turns are labeled degraded.
+- In a multi-human voice channel, witness text is bound to the accepted
+  speaker/channel before it can influence promoted evidence. Wrong-speaker,
+  wrong-channel, stale, or ambiguous-speaker hypotheses remain audit-only and
+  cannot become spend, phone, memory, file, durable-history, or tool payloads.
 - A low-energy or VAD-rejected packet with transcript-looking text is suppressed
   before barge-in, interpreter scheduling, oracle scheduling, and transcript
   promotion. The artifact records the suppression so room-tone hallucinations

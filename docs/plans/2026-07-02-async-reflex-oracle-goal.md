@@ -328,6 +328,16 @@ arrives after the interpreter request starts, attach it as a late hypothesis on
 the same interpreter bundle and oracle job. It must never create a duplicate
 oracle job, durable transcript, or approval-capable action record by itself.
 
+Multi-speaker packet rule: the merge key is necessary but not sufficient in a
+shared voice channel. The scheduler must also preserve speaker/channel evidence
+for the accepted cut and each transcript hypothesis. A hypothesis from another
+human, another channel, a stale buffer, or an ambiguous speaker segment may be
+retained for diagnostics, but it must be marked `rejected_or_diagnostic_only`
+with a typed reason such as `wrong_speaker`, `wrong_channel`,
+`stale_witness`, or `ambiguous_speaker`. Such a witness cannot patch queued
+`oracle_text`, create durable history, satisfy approvals, or provide
+tool-critical action arguments.
+
 Noise-gated raw-audio rule: the packet only exists after the realtime frontend
 has identified an intentional speech cut. Energy/VAD metadata is not merely
 diagnostic; it is part of the authority boundary. Silence, room tone, harmonic
