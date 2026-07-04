@@ -118,6 +118,13 @@ attach to that bundle with source and authority labels. A field called "Moshi
 STT" is still stored as a hypothesis: useful context for Gemma, not the user
 message of record.
 
+The packet also records when each witness arrived: `before_raw_audio`,
+`with_raw_audio`, or `after_interpreter_start`. The demo artifact should show
+that all three phases converge on one `turn_id`, one `audio_segment_ref`, one
+`evidence_bundle_id`, and one oracle job. This is the practical proof that
+Moshi/OpenClaw/VoiceClaw text is interpreter context beside raw voice, not a
+parallel STT-first conversation.
+
 The practical interpreter rule is: include the Moshi/OpenClaw/VoiceClaw witness
 text when it exists, but place it after the raw waveform and timing metadata in
 the Gemma request. The witness can help recover clipped starts, names, numbers,

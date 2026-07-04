@@ -142,6 +142,7 @@ def _complete_live_turn():
         "audio_segment_ref_observed": True,
         "interpreter_evidence_observed": True,
         "transcript_hypotheses_labeled": True,
+        "witness_arrival_phases": ["before_raw_audio", "with_raw_audio", "after_interpreter_start"],
         "assistant_audio_observed": True,
         "barge_in_observed": True,
         "spoken_reply_short": True,
@@ -225,6 +226,15 @@ def _alpha_realtime_voice_report(
                 "audio_segment_ref_observed": True,
                 "interpreter_evidence_observed": True,
                 "transcript_hypotheses_labeled": True,
+                "witness_arrival_phases": ["before_raw_audio", "with_raw_audio"],
+                "transcript_hypotheses": [
+                    {
+                        "kind": "frontend_witness_hypothesis",
+                        "source": "moshi",
+                        "text": "redacted hypothesis",
+                        "arrival_phase": "after_interpreter_start",
+                    }
+                ],
                 "text": assistant_text,
                 **ALPHA_REQUIRED_SESSION_TURN_METADATA[text],
                 "transcript_final_ms": 10,
@@ -1064,6 +1074,11 @@ def test_live_evidence_derives_complete_sections_from_realtime_voice_report(monk
     assert live_turn["audio_segment_ref_observed"] is True
     assert live_turn["interpreter_evidence_observed"] is True
     assert live_turn["transcript_hypotheses_labeled"] is True
+    assert live_turn["witness_arrival_phases"] == [
+        "before_raw_audio",
+        "with_raw_audio",
+        "after_interpreter_start",
+    ]
     assert live_turn["assistant_audio_observed"] is True
     assert live_turn["barge_in_observed"] is True
     assert live_turn["barge_in_stop_ms"] == 45.0

@@ -1563,8 +1563,11 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
                 "reflex_transcript_hypothesis",
                 "reflex_transcript_source",
                 "reflex_transcript_confidence",
+                "reflex_transcript_arrival_phase",
                 "auxiliary_transcript_hypotheses_count",
                 "auxiliary_transcript_hypotheses",
+                "witness_arrival_phases",
+                "latest_interpreter_evidence_witness_arrival_phases",
             ):
                 if key in status:
                     metadata[key] = status[key]
@@ -3752,10 +3755,13 @@ def _oracle_job_update_event_payload(job: OracleJob, *, reason: str) -> dict[str
             "reflex_transcript_hypothesis",
             "reflex_transcript_source",
             "reflex_transcript_confidence",
+            "reflex_transcript_arrival_phase",
             "auxiliary_transcript_hypotheses_count",
             "auxiliary_transcript_hypotheses",
             "transcript_hypotheses_count",
             "transcript_hypotheses",
+            "witness_arrival_phases",
+            "latest_interpreter_evidence_witness_arrival_phases",
         ):
             if key in status:
                 payload[key] = status[key]
@@ -4258,6 +4264,11 @@ def _copy_witness_hypothesis_audit_fields(
         value = source.get(key)
         if isinstance(value, (list, tuple)) and len(value) >= 2:
             target["audio_time_range_ms"] = tuple(value[:2])
+            break
+    for key in ("arrival_phase", "witness_arrival_phase", "transcript_arrival_phase"):
+        value = str(source.get(key) or "").strip()
+        if value:
+            target["arrival_phase"] = value[:80]
             break
 
 
@@ -5285,6 +5296,12 @@ def _with_oracle_job_interpreter_evidence(payload: Mapping[str, Any], job: Oracl
     delivery_status = str(status.get("interpreter_evidence_delivery_status") or "").strip()
     if delivery_status:
         enriched["interpreter_evidence_delivery_status"] = delivery_status
+    for key in (
+        "witness_arrival_phases",
+        "latest_interpreter_evidence_witness_arrival_phases",
+    ):
+        if key in status:
+            enriched[key] = status[key]
     if isinstance(status.get("speaker"), Mapping):
         enriched["speaker"] = dict(status.get("speaker") or {})
     if isinstance(status.get("channel"), Mapping):

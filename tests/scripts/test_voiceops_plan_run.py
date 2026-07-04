@@ -1623,6 +1623,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "authority": "hypothesis",
         "tool_authority": False,
         "confidence": 0.88,
+        "arrival_phase": "with_raw_audio",
         "partial": False,
         "superseded_partial_texts": ("what is three to the",),
         "superseded_partial_count": 1,

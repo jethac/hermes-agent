@@ -246,6 +246,10 @@ Target KAME layout:
   arrives late, it is late evidence on the same bundle. If raw audio is missing,
   the turn is degraded and cannot close Stripe, NemoClaw, phone, memory, file,
   or external-message action gates on hypothesis text alone.
+  Each witness should retain `arrival_phase` as one of `before_raw_audio`,
+  `with_raw_audio`, or `after_interpreter_start`, and that phase must remain
+  visible in runtime job status, bounded oracle-job updates, live evidence, and
+  package-audit output.
   Partial witness text is active only until a final same-source/same-kind
   witness arrives for the same speech cut. The final witness should become the
   only active frontend hypothesis, while the partial survives only as

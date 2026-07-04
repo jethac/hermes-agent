@@ -287,9 +287,13 @@ keeping the evidence boundary strict:
 3. The bundle includes raw audio first, then speaker/channel/VAD timing, then
    reflex route and acknowledgement, then Moshi/OpenClaw/VoiceClaw/classic-ASR
    transcript hypotheses with provenance labels.
-4. Gemma interprets that bundle and emits promoted wording, entities,
+4. Each transcript hypothesis carries arrival phase when known:
+   `before_raw_audio`, `with_raw_audio`, or `after_interpreter_start`. The
+   same phase list must remain visible on oracle job status, bounded job
+   updates, live-evidence reports, and package audits.
+5. Gemma interprets that bundle and emits promoted wording, entities,
    confidence, disagreements, witness adjudication, and an oracle request patch.
-5. Hermes sends only promoted wording and labeled evidence to the active
+6. Hermes sends only promoted wording and labeled evidence to the active
    `/model` oracle for durable work and external effects.
 
 This keeps a three-tier user experience without creating three competing
@@ -314,6 +318,13 @@ accepts or corrects it, and the promoted fields reach the active Hermes
 wrong-speaker, stale, or energy-inconsistent string; Gemma rejects it as
 diagnostic evidence; no spend, phone, file, memory, external-message, tool, or
 durable-history sink receives that unpromoted text.
+
+The fixture should also include all three witness arrival phases. A
+`before_raw_audio` witness proves the pending bundle can hold context before
+the accepted cut. A `with_raw_audio` witness proves inline context reaches the
+interpreter in the intended order. An `after_interpreter_start` witness proves
+late evidence patches the existing oracle job rather than creating another
+turn. These are runtime lifecycle tests, not model-quality tests.
 
 ## Provider Role Matrix
 

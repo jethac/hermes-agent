@@ -398,6 +398,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
         "authority": "hypothesis",
         "tool_authority": False,
         "confidence": 0.88,
+        "arrival_phase": "with_raw_audio",
         "partial": False,
         "superseded_partial_texts": ("what is three to the",),
         "superseded_partial_count": 1,

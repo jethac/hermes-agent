@@ -54,6 +54,13 @@ after the interpreter has started. All three cases must attach to one
 bundle and append late witness text to the existing bundle; it must not create a
 duplicate oracle job or durable user turn.
 
+Runtime decision: every attached witness hypothesis should retain an
+`arrival_phase` of `before_raw_audio`, `with_raw_audio`, or
+`after_interpreter_start` when the adapter can infer it. That phase must be
+visible in compact oracle job status, bounded job updates, live evidence, and
+headless package audits. The phase proves merge timing only; it never upgrades
+the witness from hypothesis authority.
+
 The Moshi transcript is useful context, not control. It should help Gemma detect
 clipped prefixes, names, numbers, code-switching, and hallucinated commands,
 but it must remain `frontend_witness_hypothesis` or another explicit

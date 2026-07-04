@@ -758,6 +758,7 @@ def _derive_live_turn_from_realtime_report(
         or _non_empty(entry.get("transcript_hypotheses"))
         for entry in turn_entries
     )
+    witness_arrival_phases = _witness_arrival_phases_from_entries(turn_entries)
     return {
         "kind": "live_turn",
         "source_artifact": str(report_path),
@@ -770,6 +771,7 @@ def _derive_live_turn_from_realtime_report(
         "audio_segment_ref_observed": bool(alpha_valid and audio_segment_ref_observed),
         "interpreter_evidence_observed": bool(alpha_valid and interpreter_evidence_observed),
         "transcript_hypotheses_labeled": bool(alpha_valid and transcript_hypotheses_labeled),
+        "witness_arrival_phases": witness_arrival_phases,
         "assistant_audio_observed": bool(alpha_valid and assistant_audio_observed),
         "barge_in_observed": bool(alpha_valid and isinstance(barge_in, dict) and barge_in.get("ok") is True),
         "spoken_reply_short": bool(alpha_valid and spoken_reply_short),
@@ -798,6 +800,47 @@ def _first_non_empty_from_entries(entries: list[dict[str, Any]], *keys: str) -> 
             if _non_empty(value):
                 return str(value).strip()
     return ""
+
+
+def _witness_arrival_phases_from_entries(entries: list[dict[str, Any]]) -> list[str]:
+    phases: list[str] = []
+    for entry in entries:
+        for phase in _witness_arrival_phases_from_mapping(entry):
+            if phase not in phases:
+                phases.append(phase)
+        metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
+        for phase in _witness_arrival_phases_from_mapping(metadata):
+            if phase not in phases:
+                phases.append(phase)
+        hypotheses = entry.get("transcript_hypotheses")
+        if isinstance(hypotheses, list):
+            for hypothesis in hypotheses:
+                if isinstance(hypothesis, dict):
+                    for phase in _witness_arrival_phases_from_mapping(hypothesis):
+                        if phase not in phases:
+                            phases.append(phase)
+    return phases
+
+
+def _witness_arrival_phases_from_mapping(payload: dict[str, Any]) -> list[str]:
+    raw = (
+        payload.get("witness_arrival_phases")
+        or payload.get("witness_arrival_phase")
+        or payload.get("arrival_phase")
+        or payload.get("transcript_arrival_phase")
+    )
+    if isinstance(raw, str):
+        values: list[Any] = [raw]
+    elif isinstance(raw, (list, tuple)):
+        values = list(raw)
+    else:
+        values = []
+    phases: list[str] = []
+    for value in values:
+        phase = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if phase in {"before_raw_audio", "with_raw_audio", "after_interpreter_start"}:
+            phases.append(phase)
+    return phases
 
 
 def _first_passing_entry(entries: list[dict[str, Any]], kind: str) -> dict[str, Any] | None:

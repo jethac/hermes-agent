@@ -19,6 +19,7 @@ from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_kame import (
     INTERPRETER_PROMPT_INPUT_ORDER,
     INTERPRETER_PROMPT_POLICY,
+    KAME_WITNESS_ARRIVAL_PHASES,
     KameOracleRequest,
     kame_evidence_bundle_id,
     kame_evidence_merge_key,
@@ -112,6 +113,7 @@ class OracleJob:
     reflex_transcript_hypothesis: str = ""
     reflex_transcript_source: str = ""
     reflex_transcript_confidence: Optional[float] = None
+    reflex_transcript_arrival_phase: str = ""
     auxiliary_transcript_hypotheses: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     interpreter_corrected_transcript: str = ""
     interpreter_normalized_intent: str = ""
@@ -195,6 +197,8 @@ class OracleJob:
             status["reflex_transcript_source"] = self.reflex_transcript_source or "reflex_audio"
         if self.reflex_transcript_confidence is not None:
             status["reflex_transcript_confidence"] = self.reflex_transcript_confidence
+        if self.reflex_transcript_arrival_phase:
+            status["reflex_transcript_arrival_phase"] = self.reflex_transcript_arrival_phase
         if self.auxiliary_transcript_hypotheses:
             status["auxiliary_transcript_hypotheses_count"] = len(self.auxiliary_transcript_hypotheses)
             status["auxiliary_transcript_hypotheses"] = tuple(self.auxiliary_transcript_hypotheses)
@@ -202,6 +206,9 @@ class OracleJob:
         if transcript_hypotheses:
             status["transcript_hypotheses_count"] = len(transcript_hypotheses)
             status["transcript_hypotheses"] = transcript_hypotheses
+            arrival_phases = _transcript_hypotheses_arrival_phases(transcript_hypotheses)
+            if arrival_phases:
+                status["witness_arrival_phases"] = arrival_phases
         if self.interpreter_corrected_transcript:
             status["interpreter_corrected_transcript"] = self.interpreter_corrected_transcript
         if self.interpreter_normalized_intent:
@@ -242,6 +249,9 @@ class OracleJob:
                 if isinstance(policy_version, str) and policy_version.strip():
                     status["latest_interpreter_prompt_policy_version"] = policy_version.strip()[:80]
             status["interpreter_evidence_late"] = bool(latest_evidence.get("late"))
+            latest_arrival_phases = latest_evidence.get("witness_arrival_phases")
+            if isinstance(latest_arrival_phases, tuple) and latest_arrival_phases:
+                status["latest_interpreter_evidence_witness_arrival_phases"] = latest_arrival_phases
             if "delivered_to_oracle" in latest_evidence:
                 status["interpreter_evidence_delivered_to_oracle"] = bool(latest_evidence.get("delivered_to_oracle"))
             if "consumed_before_irreversible_action" in latest_evidence:
@@ -729,6 +739,7 @@ class OracleJobManager:
                 if request.reflex_transcript_confidence is not None
                 else (request.transcript_confidence if request.transcript_source == "reflex_audio" else None)
             ),
+            reflex_transcript_arrival_phase=_request_reflex_transcript_arrival_phase(request),
             auxiliary_transcript_hypotheses=_compact_auxiliary_transcript_hypotheses(
                 request.auxiliary_transcript_hypotheses
             ),
@@ -1095,6 +1106,9 @@ def _job_evidence_bundle(
         "transcript_hypotheses_count": len(_job_transcript_hypotheses(job)),
         "interpreter_evidence_count": len(job.interpreter_evidence),
     }
+    arrival_phases = _transcript_hypotheses_arrival_phases(_job_transcript_hypotheses(job))
+    if arrival_phases:
+        bundle["witness_arrival_phases"] = arrival_phases
     if job.audio_segment_ref:
         bundle["audio_segment_ref"] = job.audio_segment_ref
     if job.audio_metadata:
@@ -1124,6 +1138,8 @@ def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
         }
         if job.reflex_transcript_confidence is not None:
             item["confidence"] = job.reflex_transcript_confidence
+        if job.reflex_transcript_arrival_phase:
+            item["arrival_phase"] = job.reflex_transcript_arrival_phase
         hypotheses.append(item)
     for value in job.auxiliary_transcript_hypotheses:
         if not isinstance(value, Mapping):
@@ -1148,6 +1164,9 @@ def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
         latency_ms = _compact_nonnegative_int(value.get("latency_ms"))
         if latency_ms is not None:
             item["latency_ms"] = latency_ms
+        arrival_phase = _compact_witness_arrival_phase(value)
+        if arrival_phase:
+            item["arrival_phase"] = arrival_phase
         if isinstance(value.get("partial"), bool):
             item["partial"] = value["partial"]
         superseded_partials = _compact_superseded_partial_texts(value.get("superseded_partial_texts"))
@@ -1180,6 +1199,17 @@ def _job_transcript_hypothesis_kind(source: str) -> str:
     ):
         return "frontend_witness_hypothesis"
     return "s2s_transcript_hypothesis"
+
+
+def _transcript_hypotheses_arrival_phases(
+    hypotheses: Sequence[Mapping[str, Any]],
+) -> tuple[str, ...]:
+    phases: list[str] = []
+    for hypothesis in hypotheses:
+        phase = _compact_witness_arrival_phase(hypothesis)
+        if phase and phase not in phases:
+            phases.append(phase)
+    return tuple(phases)
 
 
 def _compact_nonnegative_int(value: object) -> Optional[int]:
@@ -1340,11 +1370,20 @@ def _compact_interpreter_evidence(
     compact_reflex_hypothesis = _compact_reflex_transcript_hypothesis(reflex_transcript_hypothesis)
     compact_speaker = _compact_speaker_metadata(speaker_metadata or {})
     compact_channel = _compact_channel_metadata(channel_metadata or {})
+    default_arrival_phase = _default_interpreter_evidence_arrival_phase(
+        late=late,
+        audio_segment_ref=compact_audio_ref,
+        audio_time_range_ms=compact_audio_range,
+        audio_metadata=compact_audio_metadata,
+    )
+    if compact_reflex_hypothesis and "arrival_phase" not in compact_reflex_hypothesis:
+        compact_reflex_hypothesis["arrival_phase"] = default_arrival_phase
     compact_auxiliary_hypotheses = _compact_auxiliary_transcript_hypotheses(
         auxiliary_transcript_hypotheses or [],
         speaker_metadata=compact_speaker,
         channel_metadata=compact_channel,
         audio_time_range_ms=compact_audio_range,
+        default_arrival_phase=default_arrival_phase,
     )
     compact_entities = _compact_interpreter_entities(entities or [])
     compact_disagreements = tuple(
@@ -1370,6 +1409,15 @@ def _compact_interpreter_evidence(
         evidence["reflex_transcript_hypothesis"] = compact_reflex_hypothesis
     if compact_auxiliary_hypotheses:
         evidence["auxiliary_transcript_hypotheses"] = compact_auxiliary_hypotheses
+    arrival_phases = _transcript_hypotheses_arrival_phases(
+        tuple(
+            item
+            for item in (compact_reflex_hypothesis, *compact_auxiliary_hypotheses)
+            if item
+        )
+    )
+    if arrival_phases:
+        evidence["witness_arrival_phases"] = arrival_phases
     if compact_speaker:
         evidence["speaker"] = compact_speaker
     if compact_channel:
@@ -1397,6 +1445,20 @@ def _compact_interpreter_evidence(
         return {}
     evidence["summary"] = summary
     return evidence
+
+
+def _default_interpreter_evidence_arrival_phase(
+    *,
+    late: bool,
+    audio_segment_ref: str,
+    audio_time_range_ms: tuple[int, int] | tuple[()],
+    audio_metadata: Mapping[str, Any],
+) -> str:
+    if late:
+        return "after_interpreter_start"
+    if audio_segment_ref or audio_time_range_ms or audio_metadata:
+        return "with_raw_audio"
+    return "before_raw_audio"
 
 
 def _interpreter_evidence_authority(evidence: Mapping[str, Any]) -> dict[str, str]:
@@ -1483,6 +1545,10 @@ def _compact_reflex_transcript_hypothesis(value: object) -> dict[str, Any]:
     }
     if confidence is not None:
         item["confidence"] = confidence
+    if isinstance(value, Mapping):
+        arrival_phase = _compact_witness_arrival_phase(value)
+        if arrival_phase:
+            item["arrival_phase"] = arrival_phase
     return item
 
 
@@ -1588,6 +1654,7 @@ def _compact_auxiliary_transcript_hypotheses(
     speaker_metadata: Optional[Mapping[str, Any]] = None,
     channel_metadata: Optional[Mapping[str, Any]] = None,
     audio_time_range_ms: object = (),
+    default_arrival_phase: str = "",
 ) -> tuple[dict[str, Any], ...]:
     canonical_speaker = _compact_speaker_metadata(speaker_metadata or {})
     canonical_channel = _compact_channel_metadata(channel_metadata or {})
@@ -1624,6 +1691,11 @@ def _compact_auxiliary_transcript_hypotheses(
         latency_ms = _compact_nonnegative_int(value.get("latency_ms"))
         if latency_ms is not None:
             item["latency_ms"] = latency_ms
+        arrival_phase = _compact_witness_arrival_phase(value) or _compact_witness_arrival_phase(
+            {"arrival_phase": default_arrival_phase}
+        )
+        if arrival_phase:
+            item["arrival_phase"] = arrival_phase
         if isinstance(value.get("partial"), bool):
             item["partial"] = value["partial"]
         superseded_partials = _compact_superseded_partial_texts(value.get("superseded_partial_texts"))
@@ -1685,6 +1757,17 @@ def _compact_superseded_partial_texts(value: Any) -> tuple[str, ...]:
         if text and text not in compact:
             compact.append(text)
     return tuple(compact)
+
+
+def _compact_witness_arrival_phase(value: Mapping[str, Any]) -> str:
+    phase = _compact_evidence_text(
+        value.get("arrival_phase")
+        or value.get("witness_arrival_phase")
+        or value.get("transcript_arrival_phase"),
+        limit=80,
+    )
+    phase = phase.lower().replace("-", "_").replace(" ", "_")
+    return phase if phase in KAME_WITNESS_ARRIVAL_PHASES else ""
 
 
 def _record_superseded_partial_hypothesis(
@@ -1878,6 +1961,17 @@ def _request_with_compact_auxiliary_hypotheses(request: KameOracleRequest) -> Ka
     return dataclasses.replace(request, auxiliary_transcript_hypotheses=compact)
 
 
+def _request_reflex_transcript_arrival_phase(request: KameOracleRequest) -> str:
+    for hypothesis in request.transcript_hypotheses:
+        if not isinstance(hypothesis, Mapping):
+            continue
+        kind = _compact_evidence_text(hypothesis.get("kind"), limit=80)
+        source = _compact_evidence_text(hypothesis.get("source"), limit=40)
+        if kind == "reflex_transcript_hypothesis" or "reflex" in source.lower():
+            return _compact_witness_arrival_phase(hypothesis)
+    return ""
+
+
 def _compact_speaker_metadata(value: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         return {}
@@ -1955,6 +2049,7 @@ def _promote_interpreter_evidence(job: OracleJob, evidence: Mapping[str, Any]) -
                 limit=40,
             ) or "reflex_audio"
             job.reflex_transcript_confidence = _compact_confidence(reflex_hypothesis.get("confidence"))  # type: ignore[arg-type]
+            job.reflex_transcript_arrival_phase = _compact_witness_arrival_phase(reflex_hypothesis)
     auxiliary = evidence.get("auxiliary_transcript_hypotheses")
     if isinstance(auxiliary, tuple):
         job.auxiliary_transcript_hypotheses = _compact_auxiliary_transcript_hypotheses(

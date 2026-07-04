@@ -109,6 +109,9 @@ KAME_PROMOTED_TRANSCRIPT_SOURCES = frozenset(
 )
 INTERPRETER_PROMPT_INPUT_ORDER = ("raw_audio", "metadata", "reflex", "transcript_hypotheses")
 INTERPRETER_PROMPT_POLICY_VERSION = "raw_audio_compare_v1"
+KAME_WITNESS_ARRIVAL_PHASES = frozenset(
+    {"before_raw_audio", "with_raw_audio", "after_interpreter_start"}
+)
 INTERPRETER_PROMPT_POLICY = {
     "version": INTERPRETER_PROMPT_POLICY_VERSION,
     "primary_evidence": "raw_audio",
@@ -616,6 +619,17 @@ class KameOracleRequest:
                 break
         return tuple(compact)
 
+    @property
+    def witness_arrival_phases(self) -> tuple[str, ...]:
+        """Return stable arrival phases observed on transcript hypotheses."""
+
+        phases: list[str] = []
+        for hypothesis in self.transcript_hypotheses:
+            phase = _witness_arrival_phase(hypothesis)
+            if phase and phase not in phases:
+                phases.append(phase)
+        return tuple(phases)
+
     def to_interpreter_prompt_packet(self) -> dict[str, Any]:
         """Return the ordered evidence packet intended for the audio interpreter."""
 
@@ -640,6 +654,9 @@ class KameOracleRequest:
             metadata["speaker"] = dict(self.speaker_metadata)
         if self.channel_metadata:
             metadata["channel"] = dict(self.channel_metadata)
+        witness_arrival_phases = self.witness_arrival_phases
+        if witness_arrival_phases:
+            metadata["witness_arrival_phases"] = witness_arrival_phases
         if metadata:
             sections.append({"name": "metadata", "payload": metadata})
 
@@ -724,6 +741,9 @@ class KameOracleRequest:
         transcript_hypotheses = self.transcript_hypotheses
         if transcript_hypotheses:
             metadata["kame_transcript_hypotheses"] = transcript_hypotheses
+        witness_arrival_phases = self.witness_arrival_phases
+        if witness_arrival_phases:
+            metadata["kame_witness_arrival_phases"] = witness_arrival_phases
         if self.audio_segment_ref:
             metadata["kame_audio_segment_ref"] = self.audio_segment_ref
         if self.audio_time_range_ms:
@@ -1212,6 +1232,9 @@ def _canonical_transcript_hypothesis(value: object) -> dict[str, Any]:
     latency_ms = _non_negative_int(value.get("latency_ms"))
     if latency_ms is not None:
         hypothesis["latency_ms"] = latency_ms
+    arrival_phase = _witness_arrival_phase(value)
+    if arrival_phase:
+        hypothesis["arrival_phase"] = arrival_phase
     language = _optional_text(value.get("language"))
     if language:
         hypothesis["language"] = language
@@ -1495,6 +1518,9 @@ def _auxiliary_transcript_hypothesis(value: object) -> dict[str, Any]:
     latency_ms = _non_negative_int(value.get("latency_ms"))
     if latency_ms is not None:
         hypothesis["latency_ms"] = latency_ms
+    arrival_phase = _witness_arrival_phase(value)
+    if arrival_phase:
+        hypothesis["arrival_phase"] = arrival_phase
     language = _optional_text(value.get("language"))
     if language:
         hypothesis["language"] = language
@@ -1537,6 +1563,16 @@ def _transcript_hypothesis_superseded_partial_texts(value: object) -> tuple[str,
         if text:
             texts.append(text[:500])
     return tuple(dict.fromkeys(texts))
+
+
+def _witness_arrival_phase(value: Mapping[str, Any]) -> str:
+    phase = (
+        _optional_text(value.get("arrival_phase"))
+        or _optional_text(value.get("witness_arrival_phase"))
+        or _optional_text(value.get("transcript_arrival_phase"))
+    )
+    phase = phase.lower().replace("-", "_").replace(" ", "_")
+    return phase if phase in KAME_WITNESS_ARRIVAL_PHASES else ""
 
 
 def _transcript_hypothesis_speaker_metadata(value: Mapping[str, Any]) -> dict[str, Any]:

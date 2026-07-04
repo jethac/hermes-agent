@@ -111,6 +111,7 @@ Minimum external frontend evidence/job-envelope shape:
       "partial": false,
       "confidence": 0.78,
       "latency_ms": 140,
+      "arrival_phase": "with_raw_audio",
       "audio_time_range_ms": [120, 1840],
       "speaker_guess": {"platform": "discord", "channel_user_id": "redacted-user"},
       "channel_guess": {"transport": "discord_voice", "channel_id": "redacted-channel"},
@@ -181,6 +182,12 @@ Adapters should prefer these `kind` values:
 Every hypothesis must carry `authority = "hypothesis"` and
 `tool_authority = false`. Source names such as `moshi`, `openclaw`,
 `voiceclaw`, `riva`, or `cartesia` are provenance, not authority labels.
+Every hypothesis should also carry `arrival_phase` when the adapter can
+determine it: `before_raw_audio`, `with_raw_audio`, or
+`after_interpreter_start`. Arrival phase is merge evidence, not authority. It
+must survive status updates, job evidence bundles, readiness reports, and
+package audits so Hermes can prove early, inline, and late witness text all
+attached to one speech cut without spawning duplicate oracle jobs.
 
 Partial hypotheses are active only until a same-source, same-kind final
 hypothesis for the same speech cut arrives. The final hypothesis replaces the
@@ -223,6 +230,8 @@ should be stored in `transcript_hypotheses[]` with:
 - `tool_authority = false`
 - timing, confidence, partial/final state, speaker guess, and channel guess
   when available
+- arrival phase: `before_raw_audio`, `with_raw_audio`, or
+  `after_interpreter_start`
 
 This Moshi text is useful because it tells Gemma what the live interface model
 believed it heard. It must be attached to the same `turn_id`,
@@ -230,6 +239,13 @@ believed it heard. It must be attached to the same `turn_id`,
 audio. It may arrive before, with, or after the accepted cut, but it must not
 create a second Hermes turn, replace the waveform, block reflex
 acknowledgement, or become `oracle_text` before interpreter or oracle
+promotion.
+
+Arrival phase controls only merge handling. A before-cut witness waits on the
+pending bundle. A with-cut witness is inline interpreter context. An
+after-start witness is late evidence on the same job. None of those phases may
+start a standalone Hermes turn, create a second oracle job, or make the witness
+eligible for durable history or action sinks without interpreter/oracle
 promotion.
 
 If the Moshi text conflicts with the waveform, speaker/channel metadata,

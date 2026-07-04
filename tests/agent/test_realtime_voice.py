@@ -1334,6 +1334,7 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
                 "confidence": 0.74,
                 "latency_ms": 140,
                 "authority": "hypothesis",
+                "arrival_phase": "with_raw_audio",
             },
         ),
         interface_already_said="One moment.",
@@ -1377,6 +1378,7 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
         "channel_user_id": "42",
         "display_name": "jetha",
     }
+    assert packet["sections"][1]["payload"]["witness_arrival_phases"] == ("with_raw_audio",)
     assert packet["sections"][2]["payload"]["route"] == "oracle_direct"
     assert packet["sections"][2]["payload"]["interface_already_said"] == "One moment."
     assert packet["sections"][3]["payload"][0]["kind"] == "reflex_transcript_hypothesis"
@@ -1389,6 +1391,7 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
         "transcript_hypotheses",
     )
     assert metadata["kame_interpreter_prompt_policy_version"] == INTERPRETER_PROMPT_POLICY_VERSION
+    assert metadata["kame_witness_arrival_phases"] == ("with_raw_audio",)
     assert (
         metadata["kame_interpreter_prompt_policy"]["promotion_requirement"]
         == "compare_transcript_hypotheses_against_raw_audio_before_promotion"
@@ -1444,6 +1447,7 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
             "tool_authority": False,
             "confidence": 0.74,
             "latency_ms": 140,
+            "arrival_phase": "with_raw_audio",
         },
     )
 
@@ -3608,6 +3612,7 @@ def test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job(mo
                 "authority": "hypothesis",
                 "tool_authority": False,
                 "confidence": 0.7,
+                "arrival_phase": "with_raw_audio",
             },
             {
                 "kind": "classic_asr_hypothesis",
@@ -3616,8 +3621,10 @@ def test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job(mo
                 "authority": "hypothesis",
                 "tool_authority": False,
                 "confidence": 0.89,
+                "arrival_phase": "with_raw_audio",
             },
         )
+        assert oracle.requests[1].witness_arrival_phases == ("with_raw_audio",)
         assert oracle.requests[1].transcript == "what is three to the power of seventeen"
         assert oracle.requests[1].transcript_source == "gemma_interpreter"
         assert oracle.requests[1].transcript_confidence == 0.94
@@ -4026,8 +4033,10 @@ def test_kame_engine_merges_sequential_queued_transcript_hypotheses_before_start
                 "authority": "hypothesis",
                 "tool_authority": False,
                 "confidence": 0.7,
+                "arrival_phase": "before_raw_audio",
             },
         )
+        assert oracle.requests[1].witness_arrival_phases == ("before_raw_audio",)
         assert oracle.requests[1].transcript == "what is three to the power of seventeen"
         assert oracle.requests[1].transcript_source == "gemma_interpreter"
         assert oracle.requests[1].transcript_confidence == 0.94
@@ -4183,10 +4192,13 @@ def test_kame_engine_supersedes_partial_frontend_witness_with_final_before_start
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.88,
+            "arrival_phase": "with_raw_audio",
             "partial": False,
             "superseded_partial_texts": ("what is three to the",),
             "superseded_partial_count": 1,
         }
+        assert queued_job["witness_arrival_phases"] == ("with_raw_audio",)
+        assert queued_job["latest_interpreter_evidence_witness_arrival_phases"] == ("with_raw_audio",)
 
         oracle.release("Run task 1")
         for _ in range(16):
@@ -4213,10 +4225,12 @@ def test_kame_engine_supersedes_partial_frontend_witness_with_final_before_start
                 "tool_authority": False,
                 "confidence": 0.88,
                 "kind": "frontend_witness_hypothesis",
+                "arrival_phase": "with_raw_audio",
                 "partial": False,
                 "superseded_partial_texts": ("what is three to the",),
             },
         )
+        assert oracle.requests[1].witness_arrival_phases == ("with_raw_audio",)
 
     asyncio.run(run())
 

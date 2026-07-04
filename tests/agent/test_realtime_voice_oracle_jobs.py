@@ -160,11 +160,13 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
                 "source": "moshi",
                 "text": "three to the power of seventeen",
                 "confidence": 0.78,
+                "arrival_phase": "before_raw_audio",
             },
             {
                 "source": "asr",
                 "text": "what is three to the power of seventeen",
                 "confidence": 0.92,
+                "arrival_phase": "with_raw_audio",
             },
         ),
     )
@@ -194,6 +196,7 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
             "tool_authority": False,
             "kind": "frontend_witness_hypothesis",
             "confidence": 0.78,
+            "arrival_phase": "before_raw_audio",
         },
         {
             "source": "asr",
@@ -202,6 +205,7 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
             "tool_authority": False,
             "kind": "classic_asr_hypothesis",
             "confidence": 0.92,
+            "arrival_phase": "with_raw_audio",
         },
     )
     assert job.interpreter_corrected_transcript == "what is three to the power of seventeen"
@@ -232,8 +236,10 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
         "transcript_hypotheses_count": 3,
         "interpreter_evidence_count": 1,
         "audio_segment_ref": "segments/turn-voice-1.wav",
+        "witness_arrival_phases": ("before_raw_audio", "with_raw_audio"),
         "promoted_transcript_source": "gemma_interpreter",
     }
+    assert job_status["witness_arrival_phases"] == ("before_raw_audio", "with_raw_audio")
     assert "degraded_reason" not in job_status
     assert job_status["evidence_authority"] == {
         "intent": "reflex_hypothesis",
@@ -264,6 +270,7 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.78,
+            "arrival_phase": "before_raw_audio",
         },
         {
             "kind": "classic_asr_hypothesis",
@@ -272,6 +279,7 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.92,
+            "arrival_phase": "with_raw_audio",
         },
     )
     assert job_status["interpreter_corrected_transcript"] == "what is three to the power of seventeen"
@@ -672,12 +680,14 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
             "source": "moshi",
             "text": "three to the power of seventeen",
             "confidence": 0.71,
+            "arrival_phase": "before_raw_audio",
         },
         auxiliary_transcript_hypotheses=[
             {
                 "source": "classic_asr_fallback_optional",
                 "text": "what is three to the power of seventeen",
                 "confidence": 0.88,
+                "arrival_phase": "with_raw_audio",
             }
         ],
         speaker_metadata={
@@ -722,6 +732,7 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
         "authority": "hypothesis",
         "tool_authority": False,
         "confidence": 0.71,
+        "arrival_phase": "before_raw_audio",
     }
     assert updated.interpreter_evidence[0]["auxiliary_transcript_hypotheses"] == (
         {
@@ -730,7 +741,12 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.88,
+            "arrival_phase": "with_raw_audio",
         },
+    )
+    assert updated.interpreter_evidence[0]["witness_arrival_phases"] == (
+        "before_raw_audio",
+        "with_raw_audio",
     )
     assert updated.interpreter_evidence[0]["evidence_authority"] == {
         "raw_audio": "primary_audio",
@@ -793,9 +809,19 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
     }
     assert queued_status["reflex_transcript_hypothesis"] == "three to the power of seventeen"
     assert queued_status["reflex_transcript_source"] == "moshi"
+    assert queued_status["reflex_transcript_arrival_phase"] == "before_raw_audio"
     assert queued_status["auxiliary_transcript_hypotheses_count"] == 1
+    assert queued_status["witness_arrival_phases"] == ("before_raw_audio", "with_raw_audio")
+    assert queued_status["evidence_bundle"]["witness_arrival_phases"] == (
+        "before_raw_audio",
+        "with_raw_audio",
+    )
     assert queued_status["interpreter_evidence_count"] == 1
     assert queued_status["interpreter_evidence_late"] is False
+    assert queued_status["latest_interpreter_evidence_witness_arrival_phases"] == (
+        "before_raw_audio",
+        "with_raw_audio",
+    )
     assert queued_status["latest_interpreter_prompt_input_order"] == (
         "raw_audio",
         "metadata",
@@ -817,6 +843,11 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
     assert "auxiliary_hypotheses=1" in queued_status["latest_interpreter_evidence"]
     assert attached["payload"]["operation"] == "interpreter_evidence"
     assert attached["payload"]["interpreter_evidence_late"] is False
+    assert attached["payload"]["witness_arrival_phases"] == ("before_raw_audio", "with_raw_audio")
+    assert attached["payload"]["latest_interpreter_evidence_witness_arrival_phases"] == (
+        "before_raw_audio",
+        "with_raw_audio",
+    )
     assert attached["payload"]["speaker"] == queued_status["speaker"]
     assert attached["payload"]["channel"] == queued_status["channel"]
     assert attached["payload"]["latest_interpreter_evidence_authority"] == updated.interpreter_evidence[0]["evidence_authority"]
@@ -837,6 +868,7 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.71,
+            "arrival_phase": "before_raw_audio",
         },
         {
             "kind": "classic_asr_hypothesis",
@@ -845,8 +877,10 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.88,
+            "arrival_phase": "with_raw_audio",
         },
     )
+    assert oracle_request.witness_arrival_phases == ("before_raw_audio", "with_raw_audio")
     assert oracle_request.transcript == "what is three to the power of seventeen"
     assert oracle_request.transcript_source == "gemma_interpreter"
     assert oracle_request.transcript_confidence == 0.94
@@ -1131,8 +1165,13 @@ async def test_interpreter_evidence_late_for_running_job_is_status_visible():
     }
     assert running_status["reflex_transcript_hypothesis"] == "check deployment"
     assert running_status["reflex_transcript_source"] == "moshi"
+    assert running_status["reflex_transcript_arrival_phase"] == "after_interpreter_start"
     assert running_status["auxiliary_transcript_hypotheses_count"] == 1
+    assert running_status["witness_arrival_phases"] == ("after_interpreter_start",)
     assert running_status["interpreter_evidence_late"] is True
+    assert running_status["latest_interpreter_evidence_witness_arrival_phases"] == (
+        "after_interpreter_start",
+    )
     assert running_status["latest_interpreter_prompt_input_order"] == (
         "raw_audio",
         "metadata",
@@ -1142,6 +1181,10 @@ async def test_interpreter_evidence_late_for_running_job_is_status_visible():
     assert running_status["latest_interpreter_evidence_authority"] == updated.interpreter_evidence[0]["evidence_authority"]
     assert late["payload"]["interpreter_evidence_late"] is True
     assert late["payload"]["latest_interpreter_evidence_authority"] == updated.interpreter_evidence[0]["evidence_authority"]
+    assert late["payload"]["witness_arrival_phases"] == ("after_interpreter_start",)
+    assert late["payload"]["latest_interpreter_evidence_witness_arrival_phases"] == (
+        "after_interpreter_start",
+    )
     assert late["payload"]["audio_segment_ref"] == "artifact://redacted/running.wav"
     assert late["payload"]["speaker"] == running_status["speaker"]
     assert late["payload"]["channel"] == running_status["channel"]
