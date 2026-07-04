@@ -50,6 +50,22 @@ create a second Hermes turn, become `oracle_text`, or authorize Stripe,
 NemoClaw, phone, file, memory, message, or tool payloads before interpreter or
 oracle promotion.
 
+Current amendment, 2026-07-05: provide Moshi/Open-S2S transcript output to the
+Gemma interpreter with the raw voice when both refer to the same accepted speech
+cut. That is the intended witness-context path. It is not an ASR-first path.
+The demo and implementation should show the user getting an immediate reflex
+acknowledgement, then one raw-audio interpreter bundle, then promoted evidence
+flowing into the active Hermes `/model`.
+
+For VoiceOps actions, this distinction is a safety requirement. A Moshi,
+OpenClaw, VoiceClaw, reflex, or classic-ASR string can help Gemma interpret a
+service name, dollar amount, phone number, approval phrase, or code-switched
+instruction. It cannot itself become a spend reason, provider choice, phone
+script, account-provisioning payload, memory/file write, external message, or
+tool argument. Headless and live artifacts must prove that unpromoted witness
+text stayed out of those sinks even when it helped the interpreter produce
+promoted wording.
+
 ## Spark Model Strategy
 
 There are two related but distinct model strategies.

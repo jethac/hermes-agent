@@ -23,6 +23,32 @@ The current architecture is **reflex -> interpreter -> oracle**.
   separate `oracle_model`; the existing Hermes model selector remains the
   business/action brain.
 
+Current amendment, 2026-07-05: the intended shape is a three-tier
+direct-audio interpreter loop with witness transcripts as context. It is not a
+parallel ASR design. The reflex may be Moshi/Open-S2S-like and may emit a
+transcript-looking string, but that text is a sensor reading from the live
+interface. If raw audio is available, Hermes must attach the string to the same
+interpreter bundle as `transcript_hypotheses[]`; it must not turn the string
+into a second Hermes turn, a durable user message, `oracle_text`, a spend
+reason, a phone payload, or a tool argument.
+
+The target packet order is intentionally strict:
+
+```text
+raw_audio
+metadata: VAD, energy, speaker, channel, transport, timing
+reflex: route, acknowledgement already spoken, provisional intent
+transcript_hypotheses: Moshi/Open-S2S/reflex/classic-ASR witness strings
+```
+
+Gemma receives that packet as a direct-audio interpreter, not as an ASR service.
+It may use the Moshi/Open-S2S witness to recover clipped starts, names,
+numbers, code-switched terms, and rough intent. It must also be free to reject
+that witness when waveform, timing, energy, speaker, channel, or session
+evidence disagrees. Only Gemma's `interpreter_promoted` fields, or later
+`oracle_promoted` fields, can become durable/actionable wording for the active
+Hermes `/model`.
+
 Moshi/Open-S2S output is allowed and useful, but it is not the control path.
 When a Moshi-like frontend can provide both raw voice and an STT-looking string
 for the same accepted speech cut, Hermes should send both to Gemma in one

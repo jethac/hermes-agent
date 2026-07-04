@@ -30,6 +30,32 @@ oracle. There is no separate `oracle_model`, no second Hermes turn from Moshi
 text, and no ASR proof requirement before acknowledgement or job creation when
 raw audio is available.
 
+Latest design amendment, 2026-07-05: Moshi/Open-S2S transcript output should be
+passed to Gemma with the raw voice when it belongs to the same accepted speech
+cut. That is the desired context path. It does not make Moshi the STT authority
+and it does not make Gemma a parallel ASR lane. The fast reflex answers the
+floor, the accepted raw-audio cut becomes the interpreter unit of work, and any
+Moshi/reflex/classic-ASR text is attached as `transcript_hypotheses[]` after
+raw audio, metadata, and reflex state. The active Hermes `/model` receives only
+promoted wording, intent, entities, and compact labeled evidence.
+
+The implementation should optimize for this ordering:
+
+```text
+speech end / accepted energy-gated cut
+  -> immediate reflex acknowledgement and provisional route
+  -> one interpreter evidence bundle with raw audio first
+  -> Moshi/Open-S2S/reflex/classic-ASR text attached as witness hypotheses
+  -> Gemma accept/correct/reject adjudication
+  -> promoted oracle request patch for Hermes' active /model
+```
+
+If a witness transcript arrives early, it waits on the pending bundle. If it
+arrives late, it patches the same bundle and job as late evidence. Neither case
+may create another Hermes turn or another oracle job. Text-only Moshi/Open-S2S
+compatibility remains useful for captions, clarification, or audit, but it is
+degraded mode and cannot satisfy full-KAME or high-risk action gates.
+
 The current concrete target is same-cut raw-audio plus witness context. If a
 Moshi/Open-S2S frontend emits an STT-looking string for the same accepted
 speech cut as the waveform, the adapter should include that string in

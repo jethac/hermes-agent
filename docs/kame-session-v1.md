@@ -59,6 +59,43 @@ after the interpreter has started, it must merge into the same bundle and job.
 If no raw audio exists, the turn is degraded compatibility mode and high-risk
 action gates fail closed.
 
+## Direct-Audio Interpreter Context Rule
+
+The answer to "can we provide Moshi STT as context with raw voice?" is yes, but
+only under the same-cut witness contract. A Moshi/Open-S2S string is useful
+because it is a fast report of what the live interface believed it heard. It is
+not the user message, not a second STT conversation, and not a scheduler.
+
+The normal runtime should therefore build this packet:
+
+```text
+accepted raw-audio cut
+  + VAD/energy/speaker/channel metadata
+  + reflex route and acknowledgement already spoken
+  + Moshi/Open-S2S/reflex/classic-ASR transcript hypotheses
+  -> Gemma direct-audio interpreter
+  -> interpreter_promoted wording, intent, entities, and confidence
+  -> Hermes active /model oracle
+```
+
+This is a three-tier system with sensor fan-in, not a four-tier
+reflex-plus-STT-plus-interpreter-plus-oracle stack. The speech gate and reflex
+own live timing. Gemma owns post-cut direct-audio adjudication. Hermes' active
+`/model` owns durable reasoning and tools. Transcript-looking text from Moshi,
+OpenClaw, VoiceClaw, the reflex, or classic ASR is a witness sensor attached to
+the accepted cut. It can help Gemma recover clipped prefixes, names, numbers,
+code-switched phrases, or rough intent, but it remains hypothesis authority
+until `interpreter_promoted` or `oracle_promoted` fields exist.
+
+Adapters must not wait for Moshi/classic-ASR text before acknowledging the user
+or creating a raw-audio interpreter request when an accepted speech cut and
+reflex route are already available. If witness text arrives before the cut, hold
+it on the pending bundle. If it arrives with the cut, include it after raw
+audio, metadata, and reflex state. If it arrives after the interpreter starts,
+append it as late evidence on the same bundle. All three timings must preserve
+one `turn_id`, one `audio_segment_ref`, one `evidence_bundle_id`, and one
+oracle job lifecycle.
+
 The implementation contract is "attach, do not translate." If the frontend has
 both a waveform and Moshi/Open-S2S text, the adapter should preserve both
 signals in one interpreter packet rather than turning the text into a Hermes
