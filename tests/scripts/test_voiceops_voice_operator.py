@@ -468,6 +468,53 @@ def _async_oracle_smoke_payload() -> dict:
             "late": "kame-merge-witness-late",
         },
         "witness_fusion_merge_key_observed": True,
+        "witness_fusion_same_turn_convergence_ok": True,
+        "witness_fusion_same_turn_arrival_phases": [
+            "before_raw_audio",
+            "with_raw_audio",
+            "after_interpreter_start",
+        ],
+        "witness_fusion_same_turn_lineage": {
+            "session_id": "voice-smoke-witness-fusion",
+            "turn_id": "witness-fusion:same-turn",
+            "audio_segment_ref": "artifact://voice/witness-same-turn.wav",
+            "evidence_bundle_id": "kame-evidence-witness-same-turn",
+            "evidence_merge_key": "kame-merge-witness-same-turn",
+            "job_id": "voice-oracle-008",
+        },
+        "witness_fusion_same_turn_phase_lineage": {
+            "before_raw_audio": {
+                "session_id": "voice-smoke-witness-fusion",
+                "turn_id": "witness-fusion:same-turn",
+                "audio_segment_ref": "artifact://voice/witness-same-turn.wav",
+                "evidence_bundle_id": "kame-evidence-witness-same-turn",
+                "evidence_merge_key": "kame-merge-witness-same-turn",
+                "job_id": "voice-oracle-008",
+            },
+            "with_raw_audio": {
+                "session_id": "voice-smoke-witness-fusion",
+                "turn_id": "witness-fusion:same-turn",
+                "audio_segment_ref": "artifact://voice/witness-same-turn.wav",
+                "evidence_bundle_id": "kame-evidence-witness-same-turn",
+                "evidence_merge_key": "kame-merge-witness-same-turn",
+                "job_id": "voice-oracle-008",
+            },
+            "after_interpreter_start": {
+                "session_id": "voice-smoke-witness-fusion",
+                "turn_id": "witness-fusion:same-turn",
+                "audio_segment_ref": "artifact://voice/witness-same-turn.wav",
+                "evidence_bundle_id": "kame-evidence-witness-same-turn",
+                "evidence_merge_key": "kame-merge-witness-same-turn",
+                "job_id": "voice-oracle-008",
+            },
+        },
+        "witness_fusion_same_turn_oracle_job_counts": {
+            "accepted": 1,
+            "started": 1,
+            "completed": 1,
+        },
+        "witness_fusion_same_turn_no_duplicate_oracle_job": True,
+        "witness_fusion_same_turn_expected_merge_key": "kame-merge-witness-same-turn",
         "witness_fusion_audio_metadata": {
             "early": {
                 "codec": "pcm_s16le",
@@ -1463,6 +1510,30 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     )
     assert len(set(report["proofs"]["async_oracle_jobs"]["witness_fusion_evidence_merge_keys"].values())) == 3
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_merge_key_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_convergence_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_arrival_phases"] == [
+        "before_raw_audio",
+        "with_raw_audio",
+        "after_interpreter_start",
+    ]
+    same_turn_lineage = report["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_lineage"]
+    assert same_turn_lineage["turn_id"] == "witness-fusion:same-turn"
+    assert same_turn_lineage["audio_segment_ref"] == "artifact://voice/witness-same-turn.wav"
+    assert same_turn_lineage["evidence_merge_key"] == "kame-merge-witness-same-turn"
+    assert len(
+        {
+            tuple(sorted(lineage.items()))
+            for lineage in report["proofs"]["async_oracle_jobs"][
+                "witness_fusion_same_turn_phase_lineage"
+            ].values()
+        }
+    ) == 1
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_oracle_job_counts"] == {
+        "accepted": 1,
+        "started": 1,
+        "completed": 1,
+    }
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_same_turn_no_duplicate_oracle_job"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_accepted_audio_gate_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["raw_audio_interpreter_evidence_observed"] is True
     assert (

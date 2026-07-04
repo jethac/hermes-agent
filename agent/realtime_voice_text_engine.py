@@ -282,7 +282,18 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             user_id=user_id,
             default_max_spoken_sentences=_effective_max_spoken_sentences(self.config),
         )
-        playback_generation = self._next_external_kame_playback_generation()
+        existing_job: Optional[OracleJob] = None
+        with contextlib.suppress(OracleJobNotFoundError):
+            existing_job = await manager.find_by_evidence_key(
+                turn_id=request.turn_id,
+                audio_segment_ref=request.audio_segment_ref,
+            )
+        existing_context = self._oracle_job_context_by_turn_id.get(request.turn_id)
+        playback_generation = (
+            existing_context[0]
+            if existing_job is not None and existing_context is not None
+            else self._next_external_kame_playback_generation()
+        )
         metadata = request.to_metadata()
         self._oracle_job_context_by_turn_id[request.turn_id] = (
             playback_generation,
@@ -297,18 +308,35 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         except OracleJobQueueFullError:
             self._oracle_job_context_by_turn_id.pop(request.turn_id, None)
             return {"accepted": False, "reason": "oracle_job_queue_full"}
-        interface_payload = _kame_interface_payload_with_metrics(
-            request,
-            playback_generation,
-            metadata,
-        )
-        interface_payload["job_id"] = job.job_id
-        await self._emit_interface_event(VoiceEventType.INTERFACE_ORACLE_REQUEST, interface_payload)
+        coalesced = existing_job is not None and existing_job.job_id == job.job_id
+        if coalesced:
+            await self._notify_running_oracle_job_update(
+                job,
+                update_text=request.intent,
+                reason="evidence_bundle_merge",
+            )
+            await self._emit_interface_event(
+                VoiceEventType.INTERFACE_ORACLE_UPDATE,
+                {
+                    **_oracle_job_update_event_payload(job, reason="evidence_bundle_merge"),
+                    "duplicate_submit_suppressed": True,
+                    "evidence_bundle_merge": True,
+                },
+            )
+        else:
+            interface_payload = _kame_interface_payload_with_metrics(
+                request,
+                playback_generation,
+                metadata,
+            )
+            interface_payload["job_id"] = job.job_id
+            await self._emit_interface_event(VoiceEventType.INTERFACE_ORACLE_REQUEST, interface_payload)
         status = await manager.status_view()
         reflex_status = status.get("reflex") if isinstance(status.get("reflex"), Mapping) else {}
         return {
             "accepted": True,
             "job_id": job.job_id,
+            "coalesced": coalesced,
             "state": job.state.value,
             "turn_id": request.turn_id,
             "source": request.source,
@@ -1559,7 +1587,7 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         request = self._running_oracle_request_by_job_id.get(job.job_id)
         if request is None:
             return
-        updated_request = _oracle_request_for_job(job, request)
+        updated_request = _oracle_request_for_job(job, job.request or request)
         self._running_oracle_request_by_job_id[job.job_id] = updated_request
         metadata = {
             "job_id": job.job_id,
@@ -1576,22 +1604,22 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
             metadata["latest_interpreter_evidence"] = latest_evidence
             metadata["interpreter_evidence_count"] = status.get("interpreter_evidence_count", 0)
             metadata["interpreter_evidence_late"] = status.get("interpreter_evidence_late", False)
-            for key in (
-                "audio_segment_ref",
-                "audio_time_range_ms",
-                "speaker",
-                "channel",
-                "reflex_transcript_hypothesis",
-                "reflex_transcript_source",
-                "reflex_transcript_confidence",
-                "reflex_transcript_arrival_phase",
-                "auxiliary_transcript_hypotheses_count",
-                "auxiliary_transcript_hypotheses",
-                "witness_arrival_phases",
-                "latest_interpreter_evidence_witness_arrival_phases",
-            ):
-                if key in status:
-                    metadata[key] = status[key]
+        for key in (
+            "audio_segment_ref",
+            "audio_time_range_ms",
+            "speaker",
+            "channel",
+            "reflex_transcript_hypothesis",
+            "reflex_transcript_source",
+            "reflex_transcript_confidence",
+            "reflex_transcript_arrival_phase",
+            "auxiliary_transcript_hypotheses_count",
+            "auxiliary_transcript_hypotheses",
+            "witness_arrival_phases",
+            "latest_interpreter_evidence_witness_arrival_phases",
+        ):
+            if key in status:
+                metadata[key] = status[key]
         updater = getattr(self._oracle, "update_request", None)
         if not callable(updater):
             if latest_evidence and self._oracle_job_manager is not None:

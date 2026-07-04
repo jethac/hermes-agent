@@ -2915,16 +2915,120 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
     releases.setdefault("three to the", asyncio.Event()).set()
     await manager.wait_for_idle()
 
-    case_jobs = {
-        "early": early.job_id,
-        "with": with_raw.job_id,
-        "late": late.job_id,
-    }
     def event_matches(event: Any, event_type: str, job_id: str) -> bool:
         return str(getattr(getattr(event, "type", ""), "value", getattr(event, "type", ""))) == event_type and (
             str(getattr(event, "job_id", "")) == job_id
         )
 
+    same_turn_blocker = await manager.submit(
+        KameOracleRequest(
+            session_id="voice-smoke-witness-fusion",
+            turn_id="witness-fusion:same-turn-blocker",
+            source="discord_voice",
+            user_id="42",
+            intent="occupy same turn convergence worker",
+            route=KameRoute.DEFER,
+            interface_already_said="Starting the same-turn blocker.",
+        )
+    )
+    await asyncio.sleep(0)
+    same_turn_request = KameOracleRequest(
+        session_id="voice-smoke-witness-fusion",
+        turn_id="witness-fusion:same-turn",
+        source="voiceclaw",
+        user_id="42",
+        intent="prepare same turn witness convergence",
+        route=KameRoute.DEFER,
+        transcript="prepare same turn witness convergence",
+        transcript_source="reflex_audio",
+        interface_input_source="ask_brain",
+        interface_already_said="Preparing the same-turn convergence proof.",
+        auxiliary_transcript_hypotheses=(
+            {
+                "source": "moshi",
+                "text": "prepare same turn witness",
+                "authority": "hypothesis",
+                "arrival_phase": "before_raw_audio",
+                "adjudication": "corrected_by_audio",
+            },
+        ),
+    )
+    same_turn_job = await manager.submit(same_turn_request)
+    same_turn_audio_request = KameOracleRequest(
+        session_id="voice-smoke-witness-fusion",
+        turn_id="witness-fusion:same-turn",
+        source="discord_voice",
+        user_id="42",
+        intent="prepare same turn witness convergence",
+        route=KameRoute.DEFER,
+        transcript="prepare same turn witness convergence",
+        transcript_source="reflex_audio",
+        audio_segment_ref="artifact://voice/witness-same-turn.wav",
+        audio_time_range_ms=(400, 1700),
+        audio_metadata={
+            **accepted_audio_metadata,
+            "time_range_ms": (400, 1700),
+            "vad": {
+                "speech_start_ms": 400,
+                "speech_end_ms": 1700,
+                "vad_speech": True,
+            },
+        },
+        interface_input_source="ask_brain",
+        interface_already_said="Preparing the same-turn convergence proof.",
+        auxiliary_transcript_hypotheses=(
+            {
+                "source": "asr",
+                "text": "prepare same turn witness convergence",
+                "authority": "hypothesis",
+                "arrival_phase": "with_raw_audio",
+                "adjudication": "accepted_as_supporting_evidence",
+            },
+        ),
+    )
+    same_turn_joined = await manager.submit(same_turn_audio_request)
+    releases.setdefault("occupy same turn convergence worker", asyncio.Event()).set()
+    while not event_matches(events[-1], "oracle.job.started", same_turn_job.job_id):
+        if any(event_matches(event, "oracle.job.started", same_turn_job.job_id) for event in events):
+            break
+        await asyncio.sleep(0)
+    await manager.add_interpreter_evidence(
+        same_turn_job.job_id,
+        audio_segment_ref="artifact://voice/witness-same-turn.wav",
+        audio_time_range_ms=(400, 1700),
+        audio_metadata={
+            **accepted_audio_metadata,
+            "time_range_ms": (400, 1700),
+            "vad": {
+                "speech_start_ms": 400,
+                "speech_end_ms": 1700,
+                "vad_speech": True,
+            },
+        },
+        corrected_transcript="prepare same turn witness convergence",
+        normalized_intent="prepare a same-turn witness convergence proof",
+        confidence=0.93,
+        auxiliary_transcript_hypotheses=(
+            {
+                "source": "moshi",
+                "text": "prepare the same turn convergence proof",
+                "authority": "hypothesis",
+                "arrival_phase": "after_interpreter_start",
+                "adjudication": "corrected_by_audio",
+            },
+        ),
+        source="gemma_interpreter",
+    )
+    same_turn_status = await manager.status_view()
+    same_turn_status_job = next(job for job in same_turn_status["jobs"] if job["job_id"] == same_turn_job.job_id)
+    releases.setdefault("prepare same turn witness convergence", asyncio.Event()).set()
+    await manager.wait_for_idle()
+
+    case_jobs = {
+        "early": early.job_id,
+        "with": with_raw.job_id,
+        "late": late.job_id,
+    }
     accepted_counts = {
         label: sum(
             event_matches(event, "oracle.job.accepted", job_id)
@@ -3067,6 +3171,39 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         accepted_counts[label] == 1 and started_counts[label] == 1 and completed_counts[label] == 1
         for label in case_jobs
     )
+    same_turn_job_counts = {
+        "accepted": sum(event_matches(event, "oracle.job.accepted", same_turn_job.job_id) for event in events),
+        "started": sum(event_matches(event, "oracle.job.started", same_turn_job.job_id) for event in events),
+        "completed": sum(event_matches(event, "oracle.job.completed", same_turn_job.job_id) for event in events),
+    }
+    same_turn_lineage = {
+        "session_id": "voice-smoke-witness-fusion",
+        "turn_id": str(same_turn_status_job.get("turn_id") or ""),
+        "audio_segment_ref": str(same_turn_status_job.get("audio_segment_ref") or ""),
+        "evidence_bundle_id": str(same_turn_status_job.get("evidence_bundle_id") or ""),
+        "evidence_merge_key": str(same_turn_status_job.get("evidence_merge_key") or ""),
+        "job_id": same_turn_job.job_id,
+    }
+    same_turn_phase_lineage = {
+        phase: dict(same_turn_lineage)
+        for phase in ("before_raw_audio", "with_raw_audio", "after_interpreter_start")
+    }
+    same_turn_arrival_phases = list(same_turn_status_job.get("witness_arrival_phases") or [])
+    same_turn_expected_merge_key = kame_evidence_merge_key(
+        session_id="voice-smoke-witness-fusion",
+        turn_id="witness-fusion:same-turn",
+        audio_segment_ref="artifact://voice/witness-same-turn.wav",
+    )
+    same_turn_convergence_ok = (
+        same_turn_joined.job_id == same_turn_job.job_id
+        and same_turn_arrival_phases == ["before_raw_audio", "with_raw_audio", "after_interpreter_start"]
+        and same_turn_lineage["turn_id"] == "witness-fusion:same-turn"
+        and same_turn_lineage["audio_segment_ref"] == "artifact://voice/witness-same-turn.wav"
+        and same_turn_lineage["evidence_merge_key"] == same_turn_expected_merge_key
+        and same_turn_status_job.get("evidence_bundle", {}).get("status") == "primary_audio"
+        and same_turn_status_job.get("evidence_bundle", {}).get("transcript_hypotheses_count") == 4
+        and same_turn_job_counts == {"accepted": 1, "started": 1, "completed": 1}
+    )
     adjudications = {
         "early": _witness_adjudications_from_status_job(early_status_job),
         "with": _witness_adjudications_from_status_job(with_status_job),
@@ -3100,6 +3237,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
             and accepted_audio_gate_observed
             and adjudication_outcomes_observed
             and partial_supersession_observed
+            and same_turn_convergence_ok
         ),
         "witness_fusion_timing_smoke_ok": early_single_bundle
         and early_positive_recovery
@@ -3111,7 +3249,8 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         and merge_key_observed
         and accepted_audio_gate_observed
         and adjudication_outcomes_observed
-        and partial_supersession_observed,
+        and partial_supersession_observed
+        and same_turn_convergence_ok,
         "witness_fusion_arrival_phases": ["before_raw_audio", "with_raw_audio", "after_interpreter_start"],
         "witness_fusion_case_job_ids": case_jobs,
         "witness_fusion_turn_ids": turn_ids,
@@ -3157,6 +3296,16 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "witness_fusion_accepted_counts": accepted_counts,
         "witness_fusion_started_counts": started_counts,
         "witness_fusion_completed_counts": completed_counts,
+        "witness_fusion_same_turn_convergence_ok": same_turn_convergence_ok,
+        "witness_fusion_same_turn_arrival_phases": same_turn_arrival_phases,
+        "witness_fusion_same_turn_lineage": same_turn_lineage,
+        "witness_fusion_same_turn_phase_lineage": same_turn_phase_lineage,
+        "witness_fusion_same_turn_oracle_job_counts": same_turn_job_counts,
+        "witness_fusion_same_turn_no_duplicate_oracle_job": same_turn_job_counts
+        == {"accepted": 1, "started": 1, "completed": 1}
+        and same_turn_joined.job_id == same_turn_job.job_id,
+        "witness_fusion_same_turn_expected_merge_key": same_turn_expected_merge_key,
+        "witness_fusion_same_turn_blocker_job_id": same_turn_blocker.job_id,
     }
 
 
@@ -5141,6 +5290,27 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "witness_fusion_completed_counts": witness_fusion_timing_smoke[
             "witness_fusion_completed_counts"
+        ],
+        "witness_fusion_same_turn_convergence_ok": witness_fusion_timing_smoke[
+            "witness_fusion_same_turn_convergence_ok"
+        ],
+        "witness_fusion_same_turn_arrival_phases": witness_fusion_timing_smoke[
+            "witness_fusion_same_turn_arrival_phases"
+        ],
+        "witness_fusion_same_turn_lineage": witness_fusion_timing_smoke[
+            "witness_fusion_same_turn_lineage"
+        ],
+        "witness_fusion_same_turn_phase_lineage": witness_fusion_timing_smoke[
+            "witness_fusion_same_turn_phase_lineage"
+        ],
+        "witness_fusion_same_turn_oracle_job_counts": witness_fusion_timing_smoke[
+            "witness_fusion_same_turn_oracle_job_counts"
+        ],
+        "witness_fusion_same_turn_no_duplicate_oracle_job": witness_fusion_timing_smoke[
+            "witness_fusion_same_turn_no_duplicate_oracle_job"
+        ],
+        "witness_fusion_same_turn_expected_merge_key": witness_fusion_timing_smoke[
+            "witness_fusion_same_turn_expected_merge_key"
         ],
         "runtime_kame_action_gate_smoke_ok": runtime_kame_action_gate_smoke[
             "runtime_kame_action_gate_smoke_ok"

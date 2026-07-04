@@ -2265,6 +2265,15 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         }
         and smoke.get("witness_fusion_arrival_phases")
         == ["before_raw_audio", "with_raw_audio", "after_interpreter_start"],
+        "witness_fusion_same_turn_convergence": smoke.get(
+            "witness_fusion_same_turn_convergence_ok"
+        )
+        is True
+        and smoke.get("witness_fusion_same_turn_arrival_phases")
+        == ["before_raw_audio", "with_raw_audio", "after_interpreter_start"]
+        and smoke.get("witness_fusion_same_turn_no_duplicate_oracle_job") is True
+        and smoke.get("witness_fusion_same_turn_oracle_job_counts")
+        == {"accepted": 1, "started": 1, "completed": 1},
         "witness_fusion_accepted_audio_gate_visible": smoke.get(
             "witness_fusion_accepted_audio_gate_observed"
         )
@@ -3609,6 +3618,27 @@ def build_voice_operator_report(
             ),
             "witness_fusion_merge_key_observed": bool(
                 async_oracle_smoke.get("witness_fusion_merge_key_observed")
+            ),
+            "witness_fusion_same_turn_convergence_ok": bool(
+                async_oracle_smoke.get("witness_fusion_same_turn_convergence_ok")
+            ),
+            "witness_fusion_same_turn_arrival_phases": list(
+                async_oracle_smoke.get("witness_fusion_same_turn_arrival_phases") or []
+            ),
+            "witness_fusion_same_turn_lineage": dict(
+                async_oracle_smoke.get("witness_fusion_same_turn_lineage") or {}
+            ),
+            "witness_fusion_same_turn_phase_lineage": dict(
+                async_oracle_smoke.get("witness_fusion_same_turn_phase_lineage") or {}
+            ),
+            "witness_fusion_same_turn_oracle_job_counts": dict(
+                async_oracle_smoke.get("witness_fusion_same_turn_oracle_job_counts") or {}
+            ),
+            "witness_fusion_same_turn_no_duplicate_oracle_job": bool(
+                async_oracle_smoke.get("witness_fusion_same_turn_no_duplicate_oracle_job")
+            ),
+            "witness_fusion_same_turn_expected_merge_key": str(
+                async_oracle_smoke.get("witness_fusion_same_turn_expected_merge_key") or ""
             ),
             "witness_fusion_audio_metadata": dict(
                 async_oracle_smoke.get("witness_fusion_audio_metadata") or {}

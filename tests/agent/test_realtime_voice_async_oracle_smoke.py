@@ -418,6 +418,31 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
         for value in report["witness_fusion_evidence_merge_keys"].values()
     )
     assert len(set(report["witness_fusion_evidence_merge_keys"].values())) == 3
+    assert report["witness_fusion_same_turn_convergence_ok"] is True
+    assert report["witness_fusion_same_turn_arrival_phases"] == [
+        "before_raw_audio",
+        "with_raw_audio",
+        "after_interpreter_start",
+    ]
+    same_turn_lineage = report["witness_fusion_same_turn_lineage"]
+    assert same_turn_lineage["session_id"] == "voice-smoke-witness-fusion"
+    assert same_turn_lineage["turn_id"] == "witness-fusion:same-turn"
+    assert same_turn_lineage["audio_segment_ref"] == "artifact://voice/witness-same-turn.wav"
+    assert same_turn_lineage["evidence_merge_key"] == report[
+        "witness_fusion_same_turn_expected_merge_key"
+    ]
+    assert len(
+        {
+            tuple(sorted(lineage.items()))
+            for lineage in report["witness_fusion_same_turn_phase_lineage"].values()
+        }
+    ) == 1
+    assert report["witness_fusion_same_turn_oracle_job_counts"] == {
+        "accepted": 1,
+        "started": 1,
+        "completed": 1,
+    }
+    assert report["witness_fusion_same_turn_no_duplicate_oracle_job"] is True
     assert report["witness_fusion_no_duplicate_oracle_jobs"] is True
     assert report["witness_fusion_partial_superseded_by_final"] is True
     assert report["witness_fusion_partial_active_hypothesis"] == {

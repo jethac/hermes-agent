@@ -2425,6 +2425,29 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "witness_fusion_audio_segment_refs": async_smoke.get("witness_fusion_audio_segment_refs") or {},
             "witness_fusion_evidence_merge_keys": async_smoke.get("witness_fusion_evidence_merge_keys") or {},
             "witness_fusion_merge_key_observed": bool(async_smoke.get("witness_fusion_merge_key_observed")),
+            "witness_fusion_same_turn_convergence_ok": bool(
+                async_smoke.get("witness_fusion_same_turn_convergence_ok")
+            ),
+            "witness_fusion_same_turn_arrival_phases": async_smoke.get(
+                "witness_fusion_same_turn_arrival_phases"
+            )
+            or [],
+            "witness_fusion_same_turn_lineage": async_smoke.get("witness_fusion_same_turn_lineage") or {},
+            "witness_fusion_same_turn_phase_lineage": async_smoke.get(
+                "witness_fusion_same_turn_phase_lineage"
+            )
+            or {},
+            "witness_fusion_same_turn_oracle_job_counts": async_smoke.get(
+                "witness_fusion_same_turn_oracle_job_counts"
+            )
+            or {},
+            "witness_fusion_same_turn_no_duplicate_oracle_job": bool(
+                async_smoke.get("witness_fusion_same_turn_no_duplicate_oracle_job")
+            ),
+            "witness_fusion_same_turn_expected_merge_key": async_smoke.get(
+                "witness_fusion_same_turn_expected_merge_key"
+            )
+            or "",
             "witness_fusion_audio_metadata": async_smoke.get("witness_fusion_audio_metadata") or {},
             "witness_fusion_bundle_audio_metadata": async_smoke.get(
                 "witness_fusion_bundle_audio_metadata"

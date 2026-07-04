@@ -2108,6 +2108,35 @@ async def build_plan_run_async(
                     "witness_fusion_merge_key_observed": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_merge_key_observed"
                     ],
+                    "witness_fusion_same_turn_convergence_ok": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_fusion_same_turn_convergence_ok"],
+                    "witness_fusion_same_turn_arrival_phases": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "witness_fusion_same_turn_arrival_phases"
+                        ]
+                    ),
+                    "witness_fusion_same_turn_lineage": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "witness_fusion_same_turn_lineage"
+                        ]
+                    ),
+                    "witness_fusion_same_turn_phase_lineage": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "witness_fusion_same_turn_phase_lineage"
+                        ]
+                    ),
+                    "witness_fusion_same_turn_oracle_job_counts": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "witness_fusion_same_turn_oracle_job_counts"
+                        ]
+                    ),
+                    "witness_fusion_same_turn_no_duplicate_oracle_job": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_fusion_same_turn_no_duplicate_oracle_job"],
+                    "witness_fusion_same_turn_expected_merge_key": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_fusion_same_turn_expected_merge_key"],
                     "witness_fusion_audio_metadata": dict(
                         voice_operator["proofs"]["async_oracle_jobs"]["witness_fusion_audio_metadata"]
                     ),

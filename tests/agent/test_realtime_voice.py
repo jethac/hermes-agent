@@ -15771,6 +15771,153 @@ def test_session_client_interface_oracle_request_preserves_nested_evidence_bundl
     asyncio.run(run())
 
 
+def test_session_external_same_turn_audio_update_coalesces_without_duplicate_request_record(monkeypatch):
+    class BlockingOracle:
+        def __init__(self):
+            self.requests = []
+            self.updates = []
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            self.started.set()
+            await self.release.wait()
+            yield "I merged the evidence bundle."
+
+        async def update_request(self, request, update_text, metadata):
+            self.updates.append((request, update_text, metadata))
+
+    async def run():
+        async def fake_speak(self, text, playback_generation):
+            pass
+
+        monkeypatch.setattr(KameInterfaceOracleEngine, "_speak_chunk", fake_speak)
+
+        oracle = BlockingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        session = RealtimeVoiceSession(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                oracle_jobs={"enabled": True, "max_concurrent": 1, "queue_limit": 4},
+            ),
+            engine=engine,
+        )
+        await session.start()
+        turn_id = "voice-123:voiceclaw:dupe"
+
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    "protocol": "kame_session_v1",
+                    "tool": "ask_brain",
+                    "tool_call_id": "voiceclaw-call-1",
+                    "source": "voiceclaw",
+                    "turn_id": turn_id,
+                    "arguments": {
+                        "query": "prepare the phone handoff",
+                        "interface_audio_input_fallback": True,
+                        "interface_already_said": "I'm preparing the handoff.",
+                    },
+                },
+            )
+        )
+
+        seen = []
+        events = session.events()
+        while True:
+            event = await asyncio.wait_for(anext(events), timeout=1)
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_STARTED:
+                break
+        await asyncio.wait_for(oracle.started.wait(), timeout=1)
+
+        await session.receive_client_event(
+            VoiceEvent(
+                type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+                session_id="voice-123",
+                sequence=2,
+                payload={
+                    "protocol": "kame_session_v1",
+                    "tool": "ask_brain",
+                    "tool_call_id": "voiceclaw-call-2",
+                    "source": "voiceclaw",
+                    "turn_id": turn_id,
+                    "arguments": {
+                        "query": "prepare the phone handoff",
+                        "audio_segment_ref": "artifact://voice/dupe.wav",
+                        "audio_time_range_ms": [100, 1200],
+                        "auxiliary_transcript_hypotheses": [
+                            {
+                                "source": "asr",
+                                "text": "prepare the phone handoff",
+                                "arrival_phase": "with_raw_audio",
+                            }
+                        ],
+                        "interface_already_said": "I'm preparing the handoff.",
+                    },
+                },
+            )
+        )
+
+        while True:
+            event = await asyncio.wait_for(anext(events), timeout=1)
+            seen.append(event)
+            if (
+                event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE
+                and event.payload.get("duplicate_submit_suppressed") is True
+            ):
+                break
+
+        interface_requests = [
+            event for event in seen if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST
+        ]
+        assert len(interface_requests) == 1
+        assert interface_requests[0].payload["job_id"] == "voice-oracle-001"
+        assert len(oracle.requests) == 1
+        assert oracle.requests[0].raw_audio_available is False
+        assert len(oracle.updates) == 1
+        updated_request, update_text, update_metadata = oracle.updates[0]
+        assert update_text == "prepare the phone handoff"
+        assert updated_request.raw_audio_available is True
+        assert updated_request.audio_segment_ref == "artifact://voice/dupe.wav"
+        assert updated_request.evidence_bundle_id == oracle.requests[0].evidence_bundle_id
+        assert updated_request.evidence_merge_key != oracle.requests[0].evidence_merge_key
+        assert updated_request.witness_arrival_phases == ("with_raw_audio",)
+        assert update_metadata["audio_segment_ref"] == "artifact://voice/dupe.wav"
+        assert update_metadata["witness_arrival_phases"] == ("with_raw_audio",)
+
+        status = await engine.get_oracle_job_status()
+        assert len(status["jobs"]) == 1
+        assert status["jobs"][0]["job_id"] == "voice-oracle-001"
+        assert status["jobs"][0]["raw_audio_available"] is True
+        assert status["jobs"][0]["evidence_bundle_status"] == "primary_audio"
+        assert status["jobs"][0]["witness_arrival_phases"] == ("with_raw_audio",)
+
+        durable_requests = [
+            record
+            for record in session.durable_oracle_records()
+            if record["type"] == VoiceEventType.INTERFACE_ORACLE_REQUEST.value
+        ]
+        assert len(durable_requests) == 1
+        assert durable_requests[0]["payload"]["job_id"] == "voice-oracle-001"
+        serialized = json.dumps(session.durable_oracle_records(), sort_keys=True)
+        assert "prepare phone handoff" not in serialized
+
+        oracle.release.set()
+        async for event in session.events():
+            seen.append(event)
+            if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
+                break
+        await session.close()
+
+    asyncio.run(run())
+
+
 def test_reference_sidecar_kame_reflex_never_speaks_voice_denial_locally():
     payload = reference_sidecar_module._kame_reflex_payload_from_content(
         json.dumps(
