@@ -131,6 +131,13 @@ compatibility and cannot create durable user text or action authority.
 
 External frontends must not receive or execute direct Hermes file, shell,
 memory, payment, provisioning, phone, message, or credential tools.
+The only bridge tools accepted at this boundary are `ask_brain`,
+`ask_hermes_oracle`, `agent_consult`, and `openclaw_agent_consult`. Any other
+tool name, including Stripe, NemoClaw, phone, file, shell, memory, message, or
+provider-provisioning tools, must return a rejected `tool.result` with
+`accepted = false` and must not create an oracle job. Tool authority starts only
+after Hermes' active oracle receives promoted evidence and routes a normal
+Hermes tool call.
 
 The intended deployment may have three model roles, but it must still produce
 one logical Hermes turn per accepted speech cut:

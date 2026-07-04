@@ -757,8 +757,30 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         payload = dict(event.payload)
         tool = str(payload.get("tool") or payload.get("tool_name") or default_tool).strip()
         source = str(payload.get("provider") or payload.get("source") or payload.get("transport") or "").strip()
-        if tool not in {"ask_brain", "ask_hermes_oracle", "agent_consult", "openclaw_agent_consult"}:
-            return False
+        allowed_tools = {"ask_brain", "ask_hermes_oracle", "agent_consult", "openclaw_agent_consult"}
+        if tool not in allowed_tools:
+            if not require_protocol:
+                return False
+            tool_result_payload = {
+                "provider": source or "external_kame_frontend",
+                "tool": tool,
+                "tool_call_id": str(payload.get("tool_call_id") or ""),
+                "accepted": False,
+                "reason": "unsupported_external_kame_tool",
+                "allowed_tools": sorted(allowed_tools),
+            }
+            await self._emit(VoiceEventType.TOOL_RESULT, tool_result_payload)
+            if self._sidecar is not None:
+                await self._send_sidecar_event(
+                    VoiceEvent(
+                        type=VoiceEventType.TOOL_RESULT,
+                        session_id=event.session_id,
+                        sequence=event.sequence,
+                        timestamp_ms=event.timestamp_ms,
+                        payload=tool_result_payload,
+                    )
+                )
+            return True
         arguments = _external_kame_bridge_arguments(payload)
         protocol = str(payload.get("protocol") or arguments.get("protocol") or "").strip()
         validation_errors = (

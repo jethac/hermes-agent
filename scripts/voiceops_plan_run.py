@@ -2137,6 +2137,18 @@ async def build_plan_run_async(
                     "external_frontend_direct_tool_authority_exposed": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_direct_tool_authority_exposed"],
+                    "external_frontend_direct_tool_rejected": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_direct_tool_rejected"],
+                    "external_frontend_direct_tool_rejected_tool": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_direct_tool_rejected_tool"],
+                    "external_frontend_direct_tool_rejection_reason": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_direct_tool_rejection_reason"],
+                    "external_frontend_direct_tool_created_oracle_job": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_direct_tool_created_oracle_job"],
                     "external_frontend_tool_result_payload_safe": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_tool_result_payload_safe"],

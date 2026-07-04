@@ -1558,6 +1558,31 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         VoiceEvent(
             type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
             session_id="voice-smoke-external-frontend",
+            sequence=0,
+            payload={
+                "protocol": "kame_session_v1",
+                "tool": "stripe_link_purchase",
+                "tool_call_id": "voiceclaw-direct-tool-1",
+                "provider": "voiceclaw",
+                "turn_id": "voice-smoke-external-frontend:direct-tool",
+                "user_id": "jetha",
+                "text": "buy credits directly from the frontend",
+            },
+        )
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.TOOL_RESULT
+            and event.payload.get("accepted") is False
+            and event.payload.get("tool") == "stripe_link_purchase"
+            for event in events
+        )
+    )
+
+    await engine.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+            session_id="voice-smoke-external-frontend",
             sequence=1,
             payload={
                 "protocol": "kame_session_v1",
@@ -1618,6 +1643,13 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and event.payload.get("accepted") is True
         and event.payload.get("tool") == "ask_brain"
     )
+    direct_tool_result = next(
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.TOOL_RESULT
+        and event.payload.get("accepted") is False
+        and event.payload.get("tool") == "stripe_link_purchase"
+    )
     job_id = str(tool_result.payload.get("job_id") or "")
     await recorder.wait_for(
         lambda events: any(
@@ -1643,6 +1675,18 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         pass
 
     request = oracle.requests[0] if oracle.requests else None
+    direct_tool_created_oracle_job = any(
+        getattr(seen_request, "interface_tool_call_id", "") == "voiceclaw-direct-tool-1"
+        for seen_request in oracle.requests
+    )
+    direct_tool_rejected = (
+        direct_tool_result.payload.get("accepted") is False
+        and direct_tool_result.payload.get("reason") == "unsupported_external_kame_tool"
+        and direct_tool_result.payload.get("tool_call_id") == "voiceclaw-direct-tool-1"
+        and set(direct_tool_result.payload.get("allowed_tools") or [])
+        == {"agent_consult", "ask_brain", "ask_hermes_oracle", "openclaw_agent_consult"}
+        and not direct_tool_created_oracle_job
+    )
     metadata = request.to_metadata() if request is not None else {}
     metadata_text = json.dumps(metadata, sort_keys=True)
     status_jobs = status.get("jobs") if isinstance(status.get("jobs"), list) else []
@@ -1904,6 +1948,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and terminal_correlation_observed
         and audit_id_continuity_observed
         and not direct_tool_authority_exposed
+        and direct_tool_rejected
         and external_frontend_tool_result_safe
         and external_frontend_reflex_status_safe
         and external_frontend_placeholder_safe
@@ -1986,6 +2031,12 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         "external_frontend_durable_oracle_text_absent": durable_oracle_text_absent,
         "external_frontend_durable_record_count": len(durable_records),
         "external_frontend_direct_tool_authority_exposed": direct_tool_authority_exposed,
+        "external_frontend_direct_tool_rejected": direct_tool_rejected,
+        "external_frontend_direct_tool_rejected_tool": str(direct_tool_result.payload.get("tool") or ""),
+        "external_frontend_direct_tool_rejection_reason": str(
+            direct_tool_result.payload.get("reason") or ""
+        ),
+        "external_frontend_direct_tool_created_oracle_job": direct_tool_created_oracle_job,
         "external_frontend_tool_result_payload_safe": external_frontend_tool_result_safe,
         "external_frontend_reflex_status_payload_safe": external_frontend_reflex_status_safe,
         "external_frontend_placeholder_payload_safe": external_frontend_placeholder_safe,
@@ -5169,6 +5220,18 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "external_frontend_direct_tool_authority_exposed": external_frontend_bridge_smoke[
             "external_frontend_direct_tool_authority_exposed"
+        ],
+        "external_frontend_direct_tool_rejected": external_frontend_bridge_smoke[
+            "external_frontend_direct_tool_rejected"
+        ],
+        "external_frontend_direct_tool_rejected_tool": external_frontend_bridge_smoke[
+            "external_frontend_direct_tool_rejected_tool"
+        ],
+        "external_frontend_direct_tool_rejection_reason": external_frontend_bridge_smoke[
+            "external_frontend_direct_tool_rejection_reason"
+        ],
+        "external_frontend_direct_tool_created_oracle_job": external_frontend_bridge_smoke[
+            "external_frontend_direct_tool_created_oracle_job"
         ],
         "external_frontend_tool_result_payload_safe": external_frontend_bridge_smoke[
             "external_frontend_tool_result_payload_safe"

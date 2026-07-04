@@ -2393,6 +2393,18 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "external_frontend_direct_tool_authority_exposed": bool(
                 async_smoke.get("external_frontend_direct_tool_authority_exposed")
             ),
+            "external_frontend_direct_tool_rejected": bool(
+                async_smoke.get("external_frontend_direct_tool_rejected")
+            ),
+            "external_frontend_direct_tool_rejected_tool": async_smoke.get(
+                "external_frontend_direct_tool_rejected_tool"
+            ),
+            "external_frontend_direct_tool_rejection_reason": async_smoke.get(
+                "external_frontend_direct_tool_rejection_reason"
+            ),
+            "external_frontend_direct_tool_created_oracle_job": bool(
+                async_smoke.get("external_frontend_direct_tool_created_oracle_job")
+            ),
             "external_frontend_tool_result_payload_safe": bool(
                 async_smoke.get("external_frontend_tool_result_payload_safe")
             ),

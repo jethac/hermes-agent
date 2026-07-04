@@ -124,6 +124,23 @@ interpreters, TTS providers, or degraded fallbacks. They are not allowed to
 silently become the Hermes oracle, the transcript of record, or an action
 authority source.
 
+2026-07-05 authority amendment: external realtime frontends are consult
+bridges, not Hermes tool runners. `kame_session_v1` may accept only
+`ask_brain`, `ask_hermes_oracle`, `agent_consult`, or
+`openclaw_agent_consult` as bridge tools. Direct requests for Stripe, NemoClaw,
+phone, file, shell, memory, message, credential, or provider-provisioning tools
+must be rejected with an auditable `tool.result` and must not create an oracle
+job. A frontend can say what it heard, what it already told the user, and what
+it wants Hermes to consider; it cannot spend, call, write, provision, or mutate
+state by bypassing the active Hermes oracle.
+
+This is the same boundary as the Moshi witness rule. Moshi/Open-S2S text can
+help the interpreter understand the raw waveform, but both the text and the
+frontend's requested action remain hypothesis/context until Gemma or the
+Hermes oracle promotes them. The allowed bridge tools carry evidence and
+consultation envelopes only; promoted action still flows through normal Hermes
+tool routing, approvals, Stripe/NemoClaw safety, and durable audit.
+
 Canonical current design: three-tier sensor fan-in, not STT-first. The reflex
 is the always-warm live interface; Gemma is the post-cut audio interpreter; the
 Hermes active `/model` is the oracle. The normal unit of work is one

@@ -169,6 +169,14 @@ Target KAME layout:
   interpreter may use it to recover clipped prefixes, names, numbers,
   code-switches, or commands, but must also be free to reject it as hallucinated
   or wrong-speaker evidence.
+- External frontend tool-boundary rule: VoiceClaw/OpenClaw/Moshi-style
+  frontends are consult bridges only. They may submit `ask_brain`,
+  `ask_hermes_oracle`, `agent_consult`, or `openclaw_agent_consult` envelopes
+  with raw-audio evidence, witness text, reflex status, and correlation ids.
+  They must not call Stripe, NemoClaw, phone, file, shell, memory, message,
+  credential, or provider-provisioning tools directly. Unsupported tool names
+  must be rejected with an auditable `tool.result` and must not create an
+  oracle job.
 - Witness-adjudication rule: each witness transcript should receive an
   interpreter outcome before it can influence durable/actionable wording:
   `accepted_as_supporting_evidence`, `corrected_by_audio`, or

@@ -2315,6 +2315,11 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("external_frontend_terminal_correlation_observed") is True
         and smoke.get("external_frontend_audit_id_continuity_observed") is True
         and smoke.get("external_frontend_direct_tool_authority_exposed") is False
+        and smoke.get("external_frontend_direct_tool_rejected") is True
+        and smoke.get("external_frontend_direct_tool_rejected_tool") == "stripe_link_purchase"
+        and smoke.get("external_frontend_direct_tool_rejection_reason")
+        == "unsupported_external_kame_tool"
+        and smoke.get("external_frontend_direct_tool_created_oracle_job") is False
         and smoke.get("external_frontend_tool_result_payload_safe") is True
         and smoke.get("external_frontend_reflex_status_payload_safe") is True
         and smoke.get("external_frontend_placeholder_payload_safe") is True
@@ -3539,6 +3544,18 @@ def build_voice_operator_report(
             ),
             "external_frontend_direct_tool_authority_exposed": bool(
                 async_oracle_smoke.get("external_frontend_direct_tool_authority_exposed")
+            ),
+            "external_frontend_direct_tool_rejected": bool(
+                async_oracle_smoke.get("external_frontend_direct_tool_rejected")
+            ),
+            "external_frontend_direct_tool_rejected_tool": async_oracle_smoke.get(
+                "external_frontend_direct_tool_rejected_tool"
+            ),
+            "external_frontend_direct_tool_rejection_reason": async_oracle_smoke.get(
+                "external_frontend_direct_tool_rejection_reason"
+            ),
+            "external_frontend_direct_tool_created_oracle_job": bool(
+                async_oracle_smoke.get("external_frontend_direct_tool_created_oracle_job")
             ),
             "external_frontend_tool_result_payload_safe": bool(
                 async_oracle_smoke.get("external_frontend_tool_result_payload_safe")

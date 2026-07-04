@@ -436,8 +436,12 @@ def _async_oracle_smoke_payload() -> dict:
         "external_frontend_hypothesis_not_durable_oracle_text": True,
         "external_frontend_durable_user_messages_empty": True,
         "external_frontend_durable_oracle_text_absent": True,
-        "external_frontend_durable_record_count": 1,
+        "external_frontend_durable_record_count": 2,
         "external_frontend_direct_tool_authority_exposed": False,
+        "external_frontend_direct_tool_rejected": True,
+        "external_frontend_direct_tool_rejected_tool": "stripe_link_purchase",
+        "external_frontend_direct_tool_rejection_reason": "unsupported_external_kame_tool",
+        "external_frontend_direct_tool_created_oracle_job": False,
         "external_frontend_tool_result_payload_safe": True,
         "external_frontend_reflex_status_payload_safe": True,
         "external_frontend_placeholder_payload_safe": True,
@@ -446,7 +450,7 @@ def _async_oracle_smoke_payload() -> dict:
         "external_frontend_placeholder": "Accepted job one running: I'm preparing the handoff.",
         "external_frontend_placeholder_forbidden_paths": [],
         "external_frontend_event_counts": {
-            "tool.result": 1,
+            "tool.result": 2,
             "oracle.job.accepted": 1,
             "oracle.job.started": 1,
             "oracle.job.completed": 1,
@@ -1530,8 +1534,21 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_hypothesis_not_durable_oracle_text"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_durable_user_messages_empty"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_durable_oracle_text_absent"] is True
-    assert report["proofs"]["async_oracle_jobs"]["external_frontend_durable_record_count"] == 1
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_durable_record_count"] == 2
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_direct_tool_authority_exposed"] is False
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_direct_tool_rejected"] is True
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_direct_tool_rejected_tool"]
+        == "stripe_link_purchase"
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_direct_tool_rejection_reason"]
+        == "unsupported_external_kame_tool"
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_direct_tool_created_oracle_job"]
+        is False
+    )
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_tool_result_payload_safe"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_reflex_status_payload_safe"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_placeholder_payload_safe"] is True

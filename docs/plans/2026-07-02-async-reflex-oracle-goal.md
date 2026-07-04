@@ -147,6 +147,16 @@ Those fields are how runtime status, VoiceOps readiness, plan-run projection,
 and package audit prove that transcript-looking text remained interpreter
 context until Gemma or the oracle promoted it.
 
+Runtime decision: external KAME frontends are deny-by-default for direct tool
+names. They may submit consult envelopes through `ask_brain`,
+`ask_hermes_oracle`, `agent_consult`, or `openclaw_agent_consult`; they may
+not call Stripe, NemoClaw, phone, file, shell, memory, message, credential, or
+provider-provisioning tools directly. Unsupported tool names must produce a
+rejected `tool.result`, remain visible in audit, and create no oracle job. This
+keeps VoiceClaw/OpenClaw/Moshi-style frontends useful as reflex/witness
+surfaces without letting them bypass Hermes' active `/model`, approvals,
+NemoClaw policy, Stripe spend controls, or durable tool audit.
+
 The Moshi transcript is useful context, not control. It should help Gemma detect
 clipped prefixes, names, numbers, code-switching, and hallucinated commands,
 but it must remain `frontend_witness_hypothesis` or another explicit

@@ -386,6 +386,10 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_tool_authority_false"] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_role_context"] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_promotion_required"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_direct_tool_rejected"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_direct_tool_rejected_tool"] = "read_file"
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_direct_tool_rejection_reason"] = "accepted"
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_direct_tool_created_oracle_job"] = True
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_tool_result_payload_safe"] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_reflex_status_payload_safe"] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_placeholder_payload_safe"] = False
@@ -593,6 +597,22 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_witness_promotion_required_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_direct_tool_rejected_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_direct_tool_rejected_tool_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_direct_tool_rejection_reason_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_direct_tool_created_oracle_job_mismatch"
         in report["issues"]
     )
     assert (
