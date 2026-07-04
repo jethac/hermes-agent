@@ -62,6 +62,26 @@ LIVE_EVIDENCE_REQUIRED_INTERPRETER_PROMPT_POLICY = {
     "primary_evidence": "raw_audio",
     "transcript_hypotheses_authority": "non_authoritative_context",
 }
+LIVE_EVIDENCE_REQUIRED_TRANSCRIPT_HYPOTHESIS_FIELDS = {
+    "kind",
+    "source",
+    "text_digest",
+    "role",
+    "authority",
+    "promotion_required",
+    "tool_authority",
+    "arrival_phase",
+    "latency_ms",
+    "confidence",
+    "speaker_or_actor_ref",
+    "channel_or_surface_ref",
+}
+LIVE_EVIDENCE_TRANSCRIPT_HYPOTHESIS_CONTRACT = {
+    "role": "witness_context",
+    "authority": "hypothesis",
+    "promotion_required": "interpreter_promoted_or_oracle_promoted",
+    "tool_authority": False,
+}
 LIVE_EVIDENCE_VALID_ADJUDICATION_OUTCOMES = {
     "accepted_as_supporting_evidence",
     "corrected_by_audio",
@@ -997,10 +1017,17 @@ def build_live_probe_evidence_example() -> dict[str, Any]:
                     "kind": "frontend_witness_hypothesis",
                     "source": "moshi",
                     "text": "[redacted witness hypothesis]",
+                    "text_digest": hashlib.sha256(b"redacted witness hypothesis").hexdigest(),
+                    "role": "witness_context",
                     "arrival_phase": "with_raw_audio",
                     "adjudication": "corrected_by_audio",
                     "authority": "hypothesis",
+                    "promotion_required": "interpreter_promoted_or_oracle_promoted",
                     "tool_authority": False,
+                    "latency_ms": 140,
+                    "confidence": 0.78,
+                    "speaker_or_actor_ref": "discord:user:jetha-redacted",
+                    "channel_or_surface_ref": "discord_voice:guild-redacted:general-redacted",
                 }
             ],
             "interpreter_adjudication_outcomes": ["corrected_by_audio"],
@@ -1434,28 +1461,59 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
     adjudicated_hypothesis_count = 0
     rejected_hypothesis_count = 0
     rejected_hypotheses_with_valid_reasons = 0
+    metadata_complete_count = 0
     active_partial_observed = False
     hypothesis_phases: list[str] = []
+    hypothesis_adjudications: set[str] = set()
     for index, hypothesis in enumerate(hypotheses):
         if not isinstance(hypothesis, Mapping):
             issues.append(f"live_turn:transcript_hypothesis_{index}_not_object")
             continue
         mapping_hypothesis_count += 1
+        missing_metadata_fields = sorted(
+            field
+            for field in LIVE_EVIDENCE_REQUIRED_TRANSCRIPT_HYPOTHESIS_FIELDS
+            if field not in hypothesis
+            or (
+                field not in {"tool_authority", "latency_ms", "confidence"}
+                and not str(hypothesis.get(field) or "").strip()
+            )
+        )
+        if missing_metadata_fields:
+            issues.append(
+                f"live_turn:transcript_hypothesis_{index}_missing_metadata:"
+                + ",".join(missing_metadata_fields)
+            )
         kind = str(hypothesis.get("kind") or "").strip()
         source = str(hypothesis.get("source") or "").strip()
+        role = str(hypothesis.get("role") or "").strip()
         authority = str(hypothesis.get("authority") or "").strip()
+        promotion_required = str(hypothesis.get("promotion_required") or "").strip()
         arrival_phase = str(hypothesis.get("arrival_phase") or "").strip()
         adjudication = str(hypothesis.get("adjudication") or "").strip()
+        text_digest = str(hypothesis.get("text_digest") or "").strip()
         if not kind:
             issues.append(f"live_turn:transcript_hypothesis_{index}_missing_kind")
         elif kind not in LIVE_EVIDENCE_VALID_HYPOTHESIS_KINDS:
             issues.append(f"live_turn:transcript_hypothesis_{index}_invalid_kind")
         if not source:
             issues.append(f"live_turn:transcript_hypothesis_{index}_missing_source")
+        if text_digest and not re.fullmatch(r"[0-9a-f]{64}", text_digest):
+            issues.append(f"live_turn:transcript_hypothesis_{index}_invalid_text_digest")
+        if role != LIVE_EVIDENCE_TRANSCRIPT_HYPOTHESIS_CONTRACT["role"]:
+            issues.append(f"live_turn:transcript_hypothesis_{index}_role_not_witness_context")
         if authority != "hypothesis":
             issues.append(f"live_turn:transcript_hypothesis_{index}_authority_not_hypothesis")
+        if promotion_required != LIVE_EVIDENCE_TRANSCRIPT_HYPOTHESIS_CONTRACT["promotion_required"]:
+            issues.append(f"live_turn:transcript_hypothesis_{index}_promotion_required_invalid")
         if hypothesis.get("tool_authority") is not False:
             issues.append(f"live_turn:transcript_hypothesis_{index}_tool_authority_not_false")
+        latency_ms = _non_negative_number(hypothesis.get("latency_ms"))
+        if "latency_ms" in hypothesis and latency_ms is None:
+            issues.append(f"live_turn:transcript_hypothesis_{index}_latency_ms_invalid")
+        confidence = _non_negative_number(hypothesis.get("confidence"))
+        if "confidence" in hypothesis and (confidence is None or confidence > 1):
+            issues.append(f"live_turn:transcript_hypothesis_{index}_confidence_invalid")
         if hypothesis.get("partial") is True:
             active_partial_observed = True
             issues.append(f"live_turn:transcript_hypothesis_{index}_active_partial_not_superseded")
@@ -1471,6 +1529,7 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
             issues.append(f"live_turn:transcript_hypothesis_{index}_invalid_adjudication")
         else:
             adjudicated_hypothesis_count += 1
+            hypothesis_adjudications.add(adjudication)
             if adjudication == "rejected_or_diagnostic_only":
                 rejected_hypothesis_count += 1
                 rejection_reasons = _normalized_string_list(hypothesis.get("rejection_reasons"))
@@ -1488,12 +1547,21 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
         if (
             kind in LIVE_EVIDENCE_VALID_HYPOTHESIS_KINDS
             and source
+            and re.fullmatch(r"[0-9a-f]{64}", text_digest)
+            and role == LIVE_EVIDENCE_TRANSCRIPT_HYPOTHESIS_CONTRACT["role"]
             and authority == "hypothesis"
+            and promotion_required == LIVE_EVIDENCE_TRANSCRIPT_HYPOTHESIS_CONTRACT["promotion_required"]
             and hypothesis.get("tool_authority") is False
             and arrival_phase in LIVE_EVIDENCE_VALID_WITNESS_ARRIVAL_PHASES
             and adjudication in LIVE_EVIDENCE_VALID_ADJUDICATION_OUTCOMES
+            and latency_ms is not None
+            and confidence is not None
+            and confidence <= 1
+            and str(hypothesis.get("speaker_or_actor_ref") or "").strip()
+            and str(hypothesis.get("channel_or_surface_ref") or "").strip()
         ):
             valid_hypothesis_observed = True
+            metadata_complete_count += 1
     valid_hypothesis_adjudication_observed = (
         mapping_hypothesis_count > 0 and adjudicated_hypothesis_count == mapping_hypothesis_count
     )
@@ -1537,6 +1605,9 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
         issues.append("live_turn:missing_interpreter_adjudication_outcomes")
     elif not valid_adjudication_observed:
         issues.append("live_turn:invalid_interpreter_adjudication_outcome")
+    elif hypothesis_adjudications and adjudication_outcomes != hypothesis_adjudications:
+        issues.append("live_turn:interpreter_adjudication_outcomes_mismatch")
+        valid_adjudication_observed = False
 
     promoted_authority = live_turn.get("promoted_evidence_authority")
     valid_promoted_authority_observed = False
@@ -1577,6 +1648,9 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
     return issues, {
         "witness_packet_observed": valid_hypothesis_observed and bool(declared_phases),
         "active_partial_absent": not active_partial_observed,
+        "transcript_hypothesis_metadata_observed": (
+            mapping_hypothesis_count > 0 and metadata_complete_count == mapping_hypothesis_count
+        ),
         "transcript_hypothesis_adjudication_observed": valid_hypothesis_adjudication_observed,
         "rejected_witness_reasons_observed": valid_rejection_reasons_observed,
         "interpreter_input_order_observed": input_order == LIVE_EVIDENCE_REQUIRED_INTERPRETER_INPUT_ORDER,
@@ -4774,6 +4848,10 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "source_artifacts_reject_voice_capability_denials": True,
             "template_source_artifacts_accepted": False,
             "example_only_accepted": False,
+            "required_transcript_hypothesis_fields": sorted(
+                LIVE_EVIDENCE_REQUIRED_TRANSCRIPT_HYPOTHESIS_FIELDS
+            ),
+            "transcript_hypothesis_contract": dict(LIVE_EVIDENCE_TRANSCRIPT_HYPOTHESIS_CONTRACT),
             "collector_attestation_required_for_live_readiness": True,
             "collector_attestation_required_fields": list(COLLECTOR_ATTESTATION_REQUIRED_FIELDS),
             "placeholder_collector_attestation_accepted": False,
@@ -4795,7 +4873,9 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "interpreter_evidence_observed, transcript_hypotheses_labeled, optional transcript_observed, "
                 "assistant_audio_observed, barge_in_observed, spoken_reply_short, no_voice_denial_observed, "
                 "speech_end_to_first_audio_ms, barge_in_stop_ms, source_artifact, and collector_attestation. "
-                "Moshi/S2S or ASR text must be labeled as hypothesis context, not durable user text, and "
+                "Moshi/S2S or ASR text must be labeled as hypothesis context with text_digest, role, "
+                "promotion_required, latency_ms, confidence, speaker_or_actor_ref, and "
+                "channel_or_surface_ref, not durable user text, and "
                 "transcript-only witness evidence is rejected for the full KAME live gate until raw audio "
                 "and interpreter evidence are observed."
             ),

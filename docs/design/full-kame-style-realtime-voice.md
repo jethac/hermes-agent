@@ -386,6 +386,19 @@ or transcript text. Spend, provisioning, credential, and account-mutation routes
 must keep `outbound_payload_allowed = false` and may emit only blocked-intent or
 operator-escalation evidence.
 
+2026-07-05 live witness-metadata amendment: live KAME evidence cannot merely say
+that transcript hypotheses were labeled. Each `transcript_hypotheses[]` item
+must carry `text_digest`, `role = "witness_context"`,
+`authority = "hypothesis"`, `promotion_required =
+"interpreter_promoted_or_oracle_promoted"`, `tool_authority = false`,
+`arrival_phase`, `latency_ms`, `confidence`, `speaker_or_actor_ref`, and
+`channel_or_surface_ref`. This lets live evidence bind frontend/Moshi/Open-S2S
+witness text to a specific speaker, channel, timing window, and digest without
+turning raw witness text into durable user text or action authority. The
+top-level `interpreter_adjudication_outcomes` set must exactly cover the
+per-hypothesis adjudications; a rejected witness row cannot be summarized as an
+accepted interpreter outcome.
+
 2026-07-04 frontend-witness amendment: when a Moshi/open-S2S frontend exposes
 an "STT" string, Hermes should classify it as a frontend witness transcript, not
 as a dedicated ASR result. The preferred packet is raw audio plus witness text in

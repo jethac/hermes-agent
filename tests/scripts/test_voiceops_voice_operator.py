@@ -1082,10 +1082,17 @@ def _complete_live_turn_fields(*, speech_end_to_first_audio_ms: int = 950, barge
                 "kind": "frontend_witness_hypothesis",
                 "source": "moshi",
                 "text": "[redacted witness hypothesis]",
+                "text_digest": hashlib.sha256(b"redacted witness hypothesis").hexdigest(),
+                "role": "witness_context",
                 "arrival_phase": "with_raw_audio",
                 "adjudication": "corrected_by_audio",
                 "authority": "hypothesis",
+                "promotion_required": "interpreter_promoted_or_oracle_promoted",
                 "tool_authority": False,
+                "latency_ms": 140,
+                "confidence": 0.78,
+                "speaker_or_actor_ref": "discord:user:jetha-redacted",
+                "channel_or_surface_ref": "discord_voice:guild-redacted:general-redacted",
             }
         ],
         "interpreter_adjudication_outcomes": ["corrected_by_audio"],
@@ -3050,6 +3057,21 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert live_closure["evidence_contract"]["source_artifacts_reject_secret_or_phone_values"] is True
     assert live_closure["evidence_contract"]["source_artifacts_reject_voice_capability_denials"] is True
     assert live_closure["evidence_contract"]["template_source_artifacts_accepted"] is False
+    assert set(live_closure["evidence_contract"]["required_transcript_hypothesis_fields"]) >= {
+        "text_digest",
+        "role",
+        "promotion_required",
+        "latency_ms",
+        "confidence",
+        "speaker_or_actor_ref",
+        "channel_or_surface_ref",
+    }
+    assert live_closure["evidence_contract"]["transcript_hypothesis_contract"] == {
+        "role": "witness_context",
+        "authority": "hypothesis",
+        "promotion_required": "interpreter_promoted_or_oracle_promoted",
+        "tool_authority": False,
+    }
     assert live_closure["evidence_contract"]["collector_attestation_required_for_live_readiness"] is True
     assert live_closure["evidence_contract"]["collector_attestation_required_fields"] == [
         "collector_name",
@@ -3125,6 +3147,8 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert "command_argv" in closure_markdown
     assert "redacted_artifact_sha256" in closure_markdown
     assert "parent_manifest_sha256" in closure_markdown
+    assert "text_digest" in closure_markdown
+    assert "speaker_or_actor_ref" in closure_markdown
     assert "kind/evidence_type" in closure_markdown
     assert "--validate-live-evidence" in closure_markdown
     assert "artifacts/realtime-voice-evidence/live-current/sidecar-session.json" in closure_markdown
@@ -3205,6 +3229,7 @@ def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing
     assert live_evidence["live_turn"]["transcript_only_witness_rejected_for_full_kame"] is False
     assert live_evidence["live_turn"]["witness_packet_observed"] is True
     assert live_evidence["live_turn"]["active_partial_absent"] is True
+    assert live_evidence["live_turn"]["transcript_hypothesis_metadata_observed"] is True
     assert live_evidence["live_turn"]["transcript_hypothesis_adjudication_observed"] is True
     assert live_evidence["live_turn"]["interpreter_input_order_observed"] is True
     assert live_evidence["live_turn"]["interpreter_prompt_policy_observed"] is True
@@ -3436,6 +3461,43 @@ def test_live_evidence_rejects_authoritative_or_unphased_witness_hypothesis():
     assert live_evidence["live_turn"]["ok"] is False
 
 
+def test_live_evidence_rejects_incomplete_witness_hypothesis_metadata():
+    evidence = _complete_live_evidence()
+    hypothesis = evidence["live_turn"]["transcript_hypotheses"][0]
+    hypothesis.pop("text_digest")
+    hypothesis.pop("speaker_or_actor_ref")
+    hypothesis["role"] = "verified_transcript"
+    hypothesis["promotion_required"] = "none"
+    hypothesis["latency_ms"] = -1
+    hypothesis["confidence"] = 1.2
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert live_evidence["overall_status"] == "partial_live_evidence"
+    assert (
+        "live_turn:transcript_hypothesis_0_missing_metadata:speaker_or_actor_ref,text_digest"
+        in live_evidence["issues"]
+    )
+    assert "live_turn:transcript_hypothesis_0_role_not_witness_context" in live_evidence["issues"]
+    assert "live_turn:transcript_hypothesis_0_promotion_required_invalid" in live_evidence["issues"]
+    assert "live_turn:transcript_hypothesis_0_latency_ms_invalid" in live_evidence["issues"]
+    assert "live_turn:transcript_hypothesis_0_confidence_invalid" in live_evidence["issues"]
+    assert live_evidence["live_turn"]["transcript_hypothesis_metadata_observed"] is False
+    assert live_evidence["live_turn"]["witness_packet_observed"] is False
+    assert live_evidence["live_turn"]["ok"] is False
+
+
+def test_live_evidence_rejects_invalid_witness_text_digest():
+    evidence = _complete_live_evidence()
+    evidence["live_turn"]["transcript_hypotheses"][0]["text_digest"] = "not-a-sha"
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert "live_turn:transcript_hypothesis_0_invalid_text_digest" in live_evidence["issues"]
+    assert live_evidence["live_turn"]["transcript_hypothesis_metadata_observed"] is False
+    assert live_evidence["live_turn"]["ok"] is False
+
+
 def test_live_evidence_rejects_hypothesis_without_bound_adjudication():
     missing = _complete_live_evidence()
     missing["live_turn"]["transcript_hypotheses"][0].pop("adjudication")
@@ -3504,6 +3566,25 @@ def test_live_evidence_rejects_diagnostic_hypothesis_without_typed_reasons():
     assert "live_turn:transcript_hypothesis_0_invalid_rejection_reason" not in valid_result["issues"]
     assert valid_result["live_turn"]["rejected_witness_reasons_observed"] is True
     assert valid_result["live_turn"]["ok"] is True
+
+
+def test_live_evidence_rejects_interpreter_adjudication_outcome_mismatch():
+    evidence = _complete_live_evidence()
+    evidence["live_turn"]["transcript_hypotheses"][0]["adjudication"] = (
+        "rejected_or_diagnostic_only"
+    )
+    evidence["live_turn"]["transcript_hypotheses"][0]["rejection_reasons"] = [
+        "waveform_conflict"
+    ]
+    evidence["live_turn"]["interpreter_adjudication_outcomes"] = [
+        "accepted_as_supporting_evidence"
+    ]
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert "live_turn:interpreter_adjudication_outcomes_mismatch" in live_evidence["issues"]
+    assert live_evidence["live_turn"]["interpreter_adjudication_observed"] is False
+    assert live_evidence["live_turn"]["ok"] is False
 
 
 def test_live_evidence_rejects_unpromoted_hypothesis_without_sink_checks():

@@ -409,6 +409,16 @@ Target KAME layout:
   prohibition. High-risk spend, provisioning, credential, and account-mutation
   routes must deny channel egress by default; they can emit only blocked-intent
   or operator-escalation evidence, not customer-visible payloads.
+- Live witness-metadata rule: every `transcript_hypotheses[]` item in live KAME
+  evidence must include `text_digest`, `role = witness_context`,
+  `authority = hypothesis`, `promotion_required =
+  interpreter_promoted_or_oracle_promoted`, `tool_authority = false`,
+  `arrival_phase`, `latency_ms`, `confidence`, `speaker_or_actor_ref`, and
+  `channel_or_surface_ref`. A hypothesis that lacks this metadata is not valid
+  full-KAME live evidence, even if raw audio and interpreter fields are present.
+  The top-level `interpreter_adjudication_outcomes` set must exactly match the
+  per-hypothesis adjudications so an artifact cannot summarize a rejected
+  witness as accepted.
 - Operator-state rule: pending approval records must carry the same promoted
   KAME evidence used by the NemoClaw packet, plus a reference to the artifact's
   tool-disclosure proof. The operator-state artifact itself must include that
