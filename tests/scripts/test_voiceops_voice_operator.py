@@ -1609,6 +1609,9 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["status_turn_oracle_request_count_before"] == 4
     assert report["proofs"]["async_oracle_jobs"]["status_turn_oracle_request_count_after"] == 4
     assert report["proofs"]["tool_disclosure"]["ok"] is True
+    assert report["proofs"]["tool_disclosure"]["schema_source"] == "registered_core_tool_schemas"
+    assert report["proofs"]["tool_disclosure"]["representative_schema"] is False
+    assert report["proofs"]["tool_disclosure"]["missing_registered_core_tools"] == []
     assert report["proofs"]["tool_disclosure"]["visible_tool_names"] == [
         "tool_call",
         "tool_describe",
@@ -2115,6 +2118,25 @@ def test_voice_operator_validation_rejects_stale_tool_disclosure_core_list():
     assert "progressive_tool_disclosure:stale_hidden_core_tools" in issues
     assert "progressive_tool_disclosure:proof_stale_input_core_tools" in issues
     assert "progressive_tool_disclosure:proof_stale_hidden_core_tools" in issues
+
+
+def test_voice_operator_validation_rejects_representative_tool_disclosure_schema():
+    report = _voice_operator_report()
+    report["tool_disclosure_smoke"]["schema_source"] = "representative_core_tool_schemas"
+    report["tool_disclosure_smoke"]["representative_schema"] = True
+    report["tool_disclosure_smoke"]["missing_registered_core_tools"] = ["terminal"]
+    report["proofs"]["tool_disclosure"]["schema_source"] = "representative_core_tool_schemas"
+    report["proofs"]["tool_disclosure"]["representative_schema"] = True
+    report["proofs"]["tool_disclosure"]["missing_registered_core_tools"] = ["terminal"]
+
+    issues = validate_voice_operator_report(report)
+
+    assert "progressive_tool_disclosure:smoke_schema_source_not_registered" in issues
+    assert "progressive_tool_disclosure:smoke_representative_schema" in issues
+    assert "progressive_tool_disclosure:smoke_missing_registered_core_tools" in issues
+    assert "progressive_tool_disclosure:proof_schema_source_not_registered" in issues
+    assert "progressive_tool_disclosure:proof_representative_schema" in issues
+    assert "progressive_tool_disclosure:proof_missing_registered_core_tools" in issues
 
 
 def test_voice_operator_validation_rejects_completed_result_missing_from_status_view():

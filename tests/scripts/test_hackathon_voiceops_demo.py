@@ -470,6 +470,9 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         "oracle_promoted",
     }
     assert nemoclaw["tool_disclosure"]["ok"] is True
+    assert nemoclaw["tool_disclosure"]["schema_source"] == "registered_core_tool_schemas"
+    assert nemoclaw["tool_disclosure"]["representative_schema"] is False
+    assert nemoclaw["tool_disclosure"]["missing_registered_core_tools"] == []
     assert nemoclaw["tool_disclosure"]["config"] == {"enabled": "on", "defer_core": "all"}
     assert nemoclaw["tool_disclosure"]["visible_tool_names"] == ["tool_call", "tool_describe", "tool_search"]
     assert nemoclaw["tool_disclosure"]["visible_non_bridge_tool_names"] == []

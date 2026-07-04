@@ -2273,6 +2273,14 @@ async def build_plan_run_async(
                 },
                 "tool_disclosure": {
                     "ok": voice_operator["proofs"]["tool_disclosure"]["ok"],
+                    "schema_source": voice_operator["proofs"]["tool_disclosure"].get("schema_source"),
+                    "representative_schema": voice_operator["proofs"]["tool_disclosure"].get(
+                        "representative_schema"
+                    ),
+                    "missing_registered_core_tools": voice_operator["proofs"]["tool_disclosure"].get(
+                        "missing_registered_core_tools"
+                    )
+                    or [],
                     "config": voice_operator["proofs"]["tool_disclosure"]["config"],
                     "input_core_tools": voice_operator["proofs"]["tool_disclosure"].get("input_core_tools")
                     or [],

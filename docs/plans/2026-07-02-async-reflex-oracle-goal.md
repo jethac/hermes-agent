@@ -18,8 +18,8 @@ evidence, and Hermes' active model owns oracle work: tools, memory, files,
 approvals, planning, and durable outcomes. This is allowed to be
 three-tier-ish in implementation, because transcript side channels can arrive
 before, during, or after the interpreter request. Raw audio is the primary
-interpreter input; transcript hypotheses are optional context and fallback
-evidence.
+interpreter input; transcript hypotheses are optional context, or
+fallback/diagnostic context only in explicitly degraded mode.
 
 Current decision: implement this as three-tier sensor fan-in. The reflex owns
 floor control and may emit a Moshi/open-S2S-style witness transcript. The Gemma

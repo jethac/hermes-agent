@@ -14,6 +14,13 @@ attachments. A Moshi/open-S2S transcript, VoiceClaw/OpenClaw text, or classic
 ASR string is a witness attached to that bundle. It is not a separate Hermes
 message, not a scheduler input, and not action authority.
 
+This is the compatibility rule for Moshi-style systems: if a frontend can send
+both waveform and transcript-looking text, Hermes should send both to the Gemma
+interpreter in the same packet. The transcript-looking text records what the
+frontend believed it heard; the waveform remains primary. If the frontend can
+send only text, the packet is degraded text-only compatibility mode, not
+full-KAME evidence and not a high-risk action gate input.
+
 ## Roles
 
 External frontends may provide:

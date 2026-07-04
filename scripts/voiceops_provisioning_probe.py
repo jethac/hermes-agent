@@ -2870,43 +2870,53 @@ def build_kame_evidence_gate() -> dict[str, Any]:
     }
 
 
+def build_registered_core_tool_schema_defs() -> tuple[list[dict[str, Any]], list[str]]:
+    """Return actual registered Hermes core tool schemas for disclosure proof.
+
+    This intentionally bypasses availability checks. VoiceOps tool-pressure
+    proof is about the broad core schema surface that would enter context, not
+    whether this host currently has optional env-gated backends configured.
+    """
+
+    from toolsets import _HERMES_CORE_TOOLS
+    from tools.registry import discover_builtin_tools, registry
+
+    discover_builtin_tools()
+    tool_defs: list[dict[str, Any]] = []
+    missing: list[str] = []
+    for name in sorted(_HERMES_CORE_TOOLS):
+        entry = registry.get_entry(name)
+        if entry is None:
+            missing.append(name)
+            continue
+        schema_with_name = {**entry.schema, "name": entry.name}
+        if entry.dynamic_schema_overrides is not None:
+            try:
+                overrides = entry.dynamic_schema_overrides()
+            except Exception:
+                overrides = None
+            if isinstance(overrides, dict):
+                schema_with_name.update(overrides)
+        tool_defs.append({"type": "function", "function": schema_with_name})
+    return tool_defs, missing
+
+
 def build_tool_disclosure_proof() -> dict[str, Any]:
     from toolsets import _HERMES_CORE_TOOLS
     from tools.tool_search import bridge_tool_schemas, estimate_tokens_from_schemas
 
     core_tools = sorted(_HERMES_CORE_TOOLS)
     visible_tools = list(TOOL_DISCLOSURE_BRIDGE_TOOL_NAMES)
-    core_tool_defs = [
-        {
-            "type": "function",
-            "function": {
-                "name": name,
-                "description": (
-                    f"Hermes core tool {name}. Representative schema for VoiceOps "
-                    "tool-pressure proof."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "Search, command, or user request text."},
-                        "path": {"type": "string", "description": "Optional local path or resource identifier."},
-                        "options": {
-                            "type": "object",
-                            "description": "Optional bounded execution controls.",
-                            "additionalProperties": True,
-                        },
-                    },
-                },
-            },
-        }
-        for name in core_tools
-    ]
+    core_tool_defs, missing_core_tools = build_registered_core_tool_schema_defs()
     input_schema_tokens = estimate_tokens_from_schemas(core_tool_defs)
     visible_schema_tokens = estimate_tokens_from_schemas(bridge_tool_schemas(len(core_tools)))
     return {
         "schema_version": "voiceops.tool_disclosure_proof.v1",
-        "ok": True,
+        "ok": not missing_core_tools and len(core_tool_defs) == len(core_tools),
         "scenario": "all_core_tools_deferred_behind_tool_search",
+        "schema_source": "registered_core_tool_schemas",
+        "representative_schema": False,
+        "missing_registered_core_tools": missing_core_tools,
         "config": {"enabled": "on", "defer_core": "all"},
         "input_core_tools": core_tools,
         "visible_tool_names": visible_tools,

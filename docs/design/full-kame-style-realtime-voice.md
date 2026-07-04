@@ -36,6 +36,14 @@ interpretation, not a parallel ASR turn, not a scheduler, not a fourth agent,
 and not the user's durable transcript until Gemma promotes raw-audio-grounded
 evidence for the active Hermes oracle.
 
+Compatibility decision: "Moshi STT" is acceptable language only at the adapter
+edge. Inside Hermes it must be normalized as witness evidence. The useful shape
+is not reflex plus ASR plus oracle; it is reflex, interpreter, and oracle, with
+Moshi/open-S2S/classic-ASR text attached to the interpreter packet as one of the
+sensor readings for the accepted raw-audio cut. This lets Gemma use a fast
+frontend's best guess without letting the first transcript-looking string win
+the turn.
+
 The endpointer/noise gate is part of the contract, not an implementation
 detail. The reflex should maintain an adaptive energy floor, ignore silence and
 low-energy non-speech packets for barge-in and cut creation, and hand the
@@ -1503,9 +1511,10 @@ audio event or every backchannel. The request should carry the reflex's
 early hypotheses, the interpreter's corrected evidence when available, and any
 auxiliary transcript hypothesis when enabled. The oracle should prefer
 interpreter-promoted evidence for tool arguments. Moshi/S2S or classic ASR
-transcripts are auxiliary witness context or fallback evidence only; they may
-help explain interpreter provenance, but durable text and tool arguments require
-`interpreter_promoted` or `oracle_promoted` authority.
+transcripts are auxiliary witness context, or fallback/diagnostic context only
+in explicitly degraded mode. They may help explain interpreter provenance, but
+durable text and tool arguments require `interpreter_promoted` or
+`oracle_promoted` authority.
 
 `provisional_request_summary` may start from a compact reflex intent so the job
 can be queued without waiting. It is not durable user text and has no tool

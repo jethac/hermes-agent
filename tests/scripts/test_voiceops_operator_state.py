@@ -69,6 +69,9 @@ def test_operator_state_contains_required_dashboard_sections_and_boundaries():
     tool_disclosure = state["tool_disclosure"]
     assert tool_disclosure["schema_version"] == "voiceops.tool_disclosure_proof.v1"
     assert tool_disclosure["ok"] is True
+    assert tool_disclosure["schema_source"] == "registered_core_tool_schemas"
+    assert tool_disclosure["representative_schema"] is False
+    assert tool_disclosure["missing_registered_core_tools"] == []
     assert tool_disclosure["config"] == {"enabled": "on", "defer_core": "all"}
     assert tool_disclosure["visible_tool_names"] == ["tool_call", "tool_describe", "tool_search"]
     assert tool_disclosure["visible_non_bridge_tool_names"] == []

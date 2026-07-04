@@ -595,6 +595,12 @@ def _validate_tool_disclosure(tool_disclosure: Any) -> list[str]:
         issues.append("tool_disclosure_schema_invalid")
     if tool_disclosure.get("ok") is not True:
         issues.append("tool_disclosure_not_ok")
+    if tool_disclosure.get("schema_source") != "registered_core_tool_schemas":
+        issues.append("tool_disclosure_schema_source_not_registered")
+    if tool_disclosure.get("representative_schema") is not False:
+        issues.append("tool_disclosure_representative_schema")
+    if tool_disclosure.get("missing_registered_core_tools"):
+        issues.append("tool_disclosure_missing_registered_core_tools")
     config = tool_disclosure.get("config") if isinstance(tool_disclosure.get("config"), dict) else {}
     if config.get("enabled") != "on":
         issues.append("tool_disclosure_enabled_not_on")

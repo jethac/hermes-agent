@@ -1131,6 +1131,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert Path(voice_result["artifacts"]["live_probe_closure_json"]).exists()
     tool_details = voice_result["details"]["tool_disclosure"]
     assert tool_details == {
+        "schema_source": "registered_core_tool_schemas",
+        "representative_schema": False,
+        "missing_registered_core_tools": [],
         "config": {
             "defer_core": "all",
             "enabled": "on",

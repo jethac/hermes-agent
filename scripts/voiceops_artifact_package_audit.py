@@ -1864,6 +1864,9 @@ def _audit_voice_operator_tool_disclosure_plan_projection(
     projected = details.get("tool_disclosure") if isinstance(details.get("tool_disclosure"), Mapping) else {}
     expected = {
         "ok": proof.get("ok"),
+        "schema_source": proof.get("schema_source"),
+        "representative_schema": proof.get("representative_schema"),
+        "missing_registered_core_tools": proof.get("missing_registered_core_tools") or [],
         "config": proof.get("config"),
         "input_core_tools": proof.get("input_core_tools"),
         "visible_tool_names": proof.get("visible_tool_names"),

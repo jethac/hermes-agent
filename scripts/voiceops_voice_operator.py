@@ -1991,6 +1991,7 @@ def _coverage_from_sidecar_fail_closed_smoke(smoke: Mapping[str, Any]) -> dict[s
 def run_tool_disclosure_smoke() -> dict[str, Any]:
     """Local proof that realtime voice can collapse core tools behind tool_search."""
 
+    from scripts.voiceops_provisioning_probe import build_registered_core_tool_schema_defs
     from toolsets import _HERMES_CORE_TOOLS
     from tools.tool_search import (
         BRIDGE_TOOL_NAMES,
@@ -2000,38 +2001,7 @@ def run_tool_disclosure_smoke() -> dict[str, Any]:
     )
 
     input_core_tools = sorted(_HERMES_CORE_TOOLS)
-    core_tool_defs = [
-        {
-            "type": "function",
-            "function": {
-                "name": name,
-                "description": (
-                    f"Hermes core tool {name}. This representative schema is used only "
-                    "to prove that realtime voice can hide the broad core tool surface "
-                    "behind progressive tool disclosure."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "Search, command, or user request text for this core tool.",
-                        },
-                        "path": {
-                            "type": "string",
-                            "description": "Optional local path or resource identifier.",
-                        },
-                        "options": {
-                            "type": "object",
-                            "description": "Optional bounded execution controls.",
-                            "additionalProperties": True,
-                        },
-                    },
-                },
-            },
-        }
-        for name in input_core_tools
-    ]
+    core_tool_defs, missing_core_tools = build_registered_core_tool_schema_defs()
     config = ToolSearchConfig.from_raw({"enabled": "on", "defer_core": "all"})
     result = assemble_tool_defs(core_tool_defs, context_length=272_000, config=config)
     visible_names = sorted((tool.get("function") or {}).get("name") for tool in result.tool_defs)
@@ -2049,10 +2019,15 @@ def run_tool_disclosure_smoke() -> dict[str, Any]:
         and visible_names == bridge_names
         and hidden_core_names == input_core_tools
         and not visible_non_bridge_names
+        and not missing_core_tools
+        and len(core_tool_defs) == len(input_core_tools)
         and token_reduction_estimate > 0,
         "scenario": "voice_scoped_all_core_tool_deferral",
         "provider_network": False,
         "model_call": False,
+        "schema_source": "registered_core_tool_schemas",
+        "representative_schema": False,
+        "missing_registered_core_tools": missing_core_tools,
         "config": {
             "enabled": config.enabled,
             "defer_core": config.defer_core,
@@ -3390,6 +3365,9 @@ def build_voice_operator_report(
         "tool_disclosure": {
             "ok": tool_disclosure_smoke.get("ok") is True,
             "scenario": tool_disclosure_smoke.get("scenario"),
+            "schema_source": tool_disclosure_smoke.get("schema_source"),
+            "representative_schema": tool_disclosure_smoke.get("representative_schema"),
+            "missing_registered_core_tools": tool_disclosure_smoke.get("missing_registered_core_tools") or [],
             "config": dict(tool_disclosure_smoke.get("config") or {}),
             "input_core_tools": tool_disclosure_smoke.get("input_core_tools") or [],
             "visible_tool_names": tool_disclosure_smoke.get("visible_tool_names") or [],
@@ -3765,6 +3743,12 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
     expected_visible = sorted(["tool_call", "tool_describe", "tool_search"])
     if sorted(tool_disclosure_smoke.get("visible_tool_names") or []) != expected_visible:
         issues.append("progressive_tool_disclosure:unexpected_visible_tools")
+    if tool_disclosure_smoke.get("schema_source") != "registered_core_tool_schemas":
+        issues.append("progressive_tool_disclosure:smoke_schema_source_not_registered")
+    if tool_disclosure_smoke.get("representative_schema") is not False:
+        issues.append("progressive_tool_disclosure:smoke_representative_schema")
+    if tool_disclosure_smoke.get("missing_registered_core_tools"):
+        issues.append("progressive_tool_disclosure:smoke_missing_registered_core_tools")
     smoke_input_core_tools = sorted(tool_disclosure_smoke.get("input_core_tools") or [])
     smoke_hidden_core_tools = sorted(tool_disclosure_smoke.get("hidden_core_tool_names") or [])
     smoke_visible_non_bridge_tools = sorted(tool_disclosure_smoke.get("visible_non_bridge_tool_names") or [])
@@ -3798,6 +3782,12 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
     if proof_input_core_tools != smoke_input_core_tools or proof_hidden_core_tools != smoke_hidden_core_tools:
         issues.append("progressive_tool_disclosure:stale_proof_hidden_core_tools")
     if isinstance(tool_disclosure, Mapping):
+        if tool_disclosure.get("schema_source") != "registered_core_tool_schemas":
+            issues.append("progressive_tool_disclosure:proof_schema_source_not_registered")
+        if tool_disclosure.get("representative_schema") is not False:
+            issues.append("progressive_tool_disclosure:proof_representative_schema")
+        if tool_disclosure.get("missing_registered_core_tools"):
+            issues.append("progressive_tool_disclosure:proof_missing_registered_core_tools")
         if proof_input_core_tools != expected_core_tools:
             issues.append("progressive_tool_disclosure:proof_stale_input_core_tools")
         if proof_hidden_core_tools != expected_core_tools:
