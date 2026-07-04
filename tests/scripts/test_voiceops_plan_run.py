@@ -1382,6 +1382,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_secret_canary_checked"]
         is True
     )
+    assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_name"] == "write_memory"
     assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_spoken"][0] == (
         "Preparing the spend request."
     )

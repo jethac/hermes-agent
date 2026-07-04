@@ -1811,6 +1811,9 @@ async def build_plan_run_async(
                     "unflagged_high_risk_tool_secret_canary_checked": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["unflagged_high_risk_tool_secret_canary_checked"],
+                    "unflagged_high_risk_tool_name": voice_operator["proofs"]["async_oracle_jobs"].get(
+                        "unflagged_high_risk_tool_name"
+                    ),
                     "unflagged_high_risk_tool_spoken": list(
                         voice_operator["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_spoken"]
                     ),

@@ -1242,13 +1242,15 @@ async def _run_terminal_result_policy_smoke() -> dict[str, Any]:
 
 
 async def _run_unflagged_high_risk_tool_smoke() -> dict[str, Any]:
+    tool_name = "write_memory"
+
     class ToolOracle:
         async def stream_answer_for_request(self, _request: Any):
             yield {
                 "event": "tool_call",
-                "tool_name": "stripe_link_purchase",
+                "tool_name": tool_name,
                 "tool_call_id": "call-unflagged-high-risk",
-                "arguments": {"amount": 200, "card": APPROVAL_SECRET_CANARY},
+                "arguments": {"memory": APPROVAL_SECRET_CANARY},
             }
             yield "This unsafe tool result should not be spoken."
 
@@ -1327,6 +1329,7 @@ async def _run_unflagged_high_risk_tool_smoke() -> dict[str, Any]:
         "unflagged_high_risk_tool_spoken_payload_clean": spoken_payload_clean,
         "unflagged_high_risk_tool_failure_spoken": any("KAME action gate failed" in text for text in spoken),
         "unflagged_high_risk_tool_secret_canary_checked": True,
+        "unflagged_high_risk_tool_name": tool_name,
         "unflagged_high_risk_tool_spoken": spoken,
     }
 
@@ -4581,6 +4584,9 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "unflagged_high_risk_tool_secret_canary_checked": unflagged_high_risk_tool_smoke[
             "unflagged_high_risk_tool_secret_canary_checked"
+        ],
+        "unflagged_high_risk_tool_name": unflagged_high_risk_tool_smoke[
+            "unflagged_high_risk_tool_name"
         ],
         "unflagged_high_risk_tool_spoken": unflagged_high_risk_tool_smoke[
             "unflagged_high_risk_tool_spoken"

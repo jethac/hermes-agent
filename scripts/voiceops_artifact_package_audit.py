@@ -2231,6 +2231,7 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "unflagged_high_risk_tool_secret_canary_checked": bool(
                 async_smoke.get("unflagged_high_risk_tool_secret_canary_checked")
             ),
+            "unflagged_high_risk_tool_name": async_smoke.get("unflagged_high_risk_tool_name"),
             "unflagged_high_risk_tool_spoken": async_smoke.get("unflagged_high_risk_tool_spoken") or [],
             "external_frontend_bridge_smoke_ok": bool(async_smoke.get("external_frontend_bridge_smoke_ok")),
             "external_frontend_request_accepted": bool(async_smoke.get("external_frontend_request_accepted")),

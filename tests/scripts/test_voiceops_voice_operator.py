@@ -245,6 +245,7 @@ def _async_oracle_smoke_payload() -> dict:
         "unflagged_high_risk_tool_spoken_payload_clean": True,
         "unflagged_high_risk_tool_failure_spoken": True,
         "unflagged_high_risk_tool_secret_canary_checked": True,
+        "unflagged_high_risk_tool_name": "write_memory",
         "unflagged_high_risk_tool_spoken": [
             "Preparing the spend request.",
             "I couldn't finish Buy service credits: KAME action gate failed; suppressed unapproved high-risk tool event",
@@ -1235,6 +1236,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_spoken_payload_clean"] is True
     assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_failure_spoken"] is True
     assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_secret_canary_checked"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_name"] == "write_memory"
     assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_spoken"][0] == (
         "Preparing the spend request."
     )

@@ -5123,7 +5123,9 @@ _ORACLE_TOOL_ACTION_GATE_NAME_MARKERS = frozenset(
         "edit_file",
         "email_send",
         "external_message",
+        "file_write",
         "link_purchase",
+        "message_send",
         "memory_write",
         "payment",
         "phone",
@@ -5140,6 +5142,7 @@ _ORACLE_TOOL_ACTION_GATE_NAME_MARKERS = frozenset(
         "stripe",
         "whatsapp",
         "write_file",
+        "write_memory",
     }
 )
 

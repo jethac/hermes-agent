@@ -3227,6 +3227,9 @@ def build_voice_operator_report(
             "unflagged_high_risk_tool_secret_canary_checked": bool(
                 async_oracle_smoke.get("unflagged_high_risk_tool_secret_canary_checked")
             ),
+            "unflagged_high_risk_tool_name": async_oracle_smoke.get(
+                "unflagged_high_risk_tool_name"
+            ),
             "unflagged_high_risk_tool_spoken": list(
                 async_oracle_smoke.get("unflagged_high_risk_tool_spoken") or []
             ),

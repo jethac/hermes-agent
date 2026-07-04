@@ -136,6 +136,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["unflagged_high_risk_tool_spoken_payload_clean"] is True
     assert report["unflagged_high_risk_tool_failure_spoken"] is True
     assert report["unflagged_high_risk_tool_secret_canary_checked"] is True
+    assert report["unflagged_high_risk_tool_name"] == "write_memory"
     assert report["unflagged_high_risk_tool_spoken"][0] == "Preparing the spend request."
     assert not any(
         "This unsafe tool result should not be spoken." in text

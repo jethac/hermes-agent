@@ -58,6 +58,7 @@ from agent.realtime_voice_text_engine import (
     _kame_oracle_job_control_operation,
     _kame_oracle_job_status_text,
     _oracle_job_control_active_jobs,
+    _oracle_tool_event_requires_kame_action_gate,
     _payload_has_interpreter_evidence,
     _take_speakable_chunk,
 )
@@ -6628,6 +6629,33 @@ def test_async_oracle_unflagged_high_risk_tool_call_fails_closed(monkeypatch):
         assert spoken == ["Preparing the spend request."]
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "tool_name",
+    [
+        "stripe_link_purchase",
+        "provision_voip_provider",
+        "provider_provisioning",
+        "phone_call",
+        "send_sms",
+        "whatsapp_send",
+        "send_message",
+        "message_send",
+        "external_message",
+        "run_command",
+        "shell_exec",
+        "credential_update",
+        "write_file",
+        "file_write",
+        "memory_write",
+        "write_memory",
+    ],
+)
+def test_async_oracle_high_risk_tool_aliases_require_action_gate(tool_name):
+    assert _oracle_tool_event_requires_kame_action_gate(
+        {"event": "tool_call", "tool_name": tool_name}
+    )
 
 
 def test_async_oracle_unflagged_nested_high_risk_tool_call_fails_closed(monkeypatch):
