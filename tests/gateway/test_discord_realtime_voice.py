@@ -1228,6 +1228,9 @@ def test_discord_realtime_event_tracks_redacted_kame_stack_status():
                 "reflex": {
                     "provider": "moshi",
                     "model": "moshi-reflex",
+                    "role": "live_floor_control",
+                    "authority": "reflex_hypothesis",
+                    "must_not": "tools,durable_transcript,spend,phone,file,memory",
                     "audio_input": "native_audio",
                     "base_url_configured": True,
                     "base_url": "http://reflex.local/secret",
@@ -1239,25 +1242,35 @@ def test_discord_realtime_event_tracks_redacted_kame_stack_status():
                     "base_url_configured": True,
                     "base_url": "http://gemma.local/secret",
                     "role": "raw_audio_evidence_adjudicator",
+                    "authority": "interpreter_promoted",
+                    "must_not": "broad_tools,oracle_model_selection",
                 },
                 "transcript_evidence": {
+                    "role": "auxiliary_transcript_hypothesis",
                     "mode": "speculative",
                     "provider": "nemotron-speech",
                     "model": "fastconformer",
                     "base_url_configured": True,
                     "authority": "hypothesis",
                     "schedule_oracle_from_transcript": False,
+                    "must_not": "schedule_oracle,spend_reason,tool_arguments,durable_user_text",
                 },
                 "oracle": {
+                    "role": "hermes_active_model",
                     "mode": "hermes_active_model",
+                    "authority": "oracle_promoted",
                     "preferred_local_model": "nemotron-3-super",
                     "timeout_seconds": 60.0,
+                    "must_not": "voice_config_oracle_model",
                 },
                 "tts": {
                     "provider": "magpie",
                     "model": "magpie-preview",
+                    "role": "outbound_playback",
+                    "authority": "playback_only",
                     "voice_configured": True,
                     "base_url_configured": True,
+                    "must_not": "transcript_authority,oracle_selection",
                 },
                 "fallback_policy": "fail_closed",
             }
@@ -1269,6 +1282,9 @@ def test_discord_realtime_event_tracks_redacted_kame_stack_status():
     assert stack["reflex"] == {
         "provider": "moshi",
         "model": "moshi-reflex",
+        "role": "live_floor_control",
+        "authority": "reflex_hypothesis",
+        "must_not": "tools,durable_transcript,spend,phone,file,memory",
         "audio_input": "native_audio",
         "base_url_configured": True,
     }
@@ -1278,8 +1294,19 @@ def test_discord_realtime_event_tracks_redacted_kame_stack_status():
         "audio_input": "native_audio",
         "base_url_configured": True,
         "role": "raw_audio_evidence_adjudicator",
+        "authority": "interpreter_promoted",
+        "must_not": "broad_tools,oracle_model_selection",
     }
+    assert stack["transcript_evidence"]["role"] == "auxiliary_transcript_hypothesis"
+    assert stack["transcript_evidence"]["authority"] == "hypothesis"
+    assert stack["transcript_evidence"]["must_not"] == (
+        "schedule_oracle,spend_reason,tool_arguments,durable_user_text"
+    )
     assert stack["oracle"]["mode"] == "hermes_active_model"
+    assert stack["oracle"]["authority"] == "oracle_promoted"
+    assert stack["oracle"]["must_not"] == "voice_config_oracle_model"
+    assert stack["tts"]["authority"] == "playback_only"
+    assert stack["tts"]["must_not"] == "transcript_authority,oracle_selection"
     assert "reflex.local" not in repr(stack)
     assert "gemma.local" not in repr(stack)
 

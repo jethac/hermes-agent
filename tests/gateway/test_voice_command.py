@@ -1040,6 +1040,13 @@ class TestVoiceChannelCommands:
                 "tts_provider": "cartesia",
                 "tts_model": "sonic-2",
                 "tts_voice": "5ee9feff-1265-424a-9d7f-8e4d431a12c7",
+                "kame_stack": {
+                    "reflex": {"authority": "reflex_hypothesis"},
+                    "interpreter": {"authority": "interpreter_promoted"},
+                    "transcript_evidence": {"authority": "hypothesis"},
+                    "oracle": {"authority": "oracle_promoted"},
+                    "tts": {"authority": "playback_only"},
+                },
                 "fallback_policy": "legacy_voice",
                 "streaming_speech": {
                     "queue_depth": 3,
@@ -1114,6 +1121,10 @@ class TestVoiceChannelCommands:
         assert "Oracle: gemma-4-26B-A4B-it" in result
         assert "ASR: nemotron speech-0.6b (mode=on_escalation)" in result
         assert "TTS: cartesia sonic-2 (voice=5ee9feff-1265-424a-9d7f-8e4d431a12c7)" in result
+        assert (
+            "Provider roles: reflex=reflex_hypothesis; interpreter=interpreter_promoted; "
+            "transcript=hypothesis; oracle=oracle_promoted; tts=playback_only"
+        ) in result
         assert "Frontend state: ready; audio_reflex_tts; vllm gemma-4-E2B-it; audio=native_audio; audio_reflex=healthy" in result
         assert "input_source=native_audio" in result
         assert "reflex=vllm" in result
@@ -1937,24 +1948,36 @@ class TestDiscordVoiceChannelMethods:
         assert status["kame_stack"]["reflex"] == {
             "provider": "elevenlabs",
             "model": "realtime-voice",
+            "role": "live_floor_control",
+            "authority": "reflex_hypothesis",
+            "must_not": "tools,durable_transcript,spend,phone,file,memory",
             "audio_input": "auto",
             "base_url_configured": True,
             "timeout_seconds": 0.6,
             "max_audio_seconds": 14.0,
         }
+        assert status["kame_stack"]["interpreter"]["authority"] == "interpreter_promoted"
+        assert status["kame_stack"]["interpreter"]["must_not"] == "broad_tools,oracle_model_selection"
         assert status["kame_stack"]["transcript_evidence"] == {
+            "role": "auxiliary_transcript_hypothesis",
             "mode": "on_escalation",
             "provider": "",
             "model": "",
             "base_url_configured": True,
             "authority": "hypothesis",
             "schedule_oracle_from_transcript": False,
+            "must_not": "schedule_oracle,spend_reason,tool_arguments,durable_user_text",
         }
         assert status["kame_stack"]["oracle"] == {
+            "role": "hermes_active_model",
             "mode": "hermes_active_model",
+            "authority": "oracle_promoted",
             "preferred_local_model": "gemma-4-26B-A4B-it",
             "timeout_seconds": 19.0,
+            "must_not": "voice_config_oracle_model",
         }
+        assert status["kame_stack"]["tts"]["authority"] == "playback_only"
+        assert status["kame_stack"]["tts"]["must_not"] == "transcript_authority,oracle_selection"
         assert status["kame_stack"]["tts"]["base_url_configured"] is True
         assert "interface.local" not in json.dumps(status["kame_stack"])
         assert "asr.local" not in json.dumps(status["kame_stack"])

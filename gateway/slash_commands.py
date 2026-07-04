@@ -108,6 +108,29 @@ def _voice_status_provider_line(
     return f"{label}: {details}"
 
 
+def _voice_status_provider_roles_line(value: Any) -> str:
+    if not isinstance(value, dict) or not value:
+        return ""
+    role_labels = (
+        ("reflex", "reflex"),
+        ("interpreter", "interpreter"),
+        ("transcript_evidence", "transcript"),
+        ("oracle", "oracle"),
+        ("tts", "tts"),
+    )
+    parts: list[str] = []
+    for key, label in role_labels:
+        section = value.get(key)
+        if not isinstance(section, dict):
+            continue
+        authority = str(section.get("authority") or "").strip()
+        if authority:
+            parts.append(f"{label}={authority}")
+    if not parts:
+        return ""
+    return f"Provider roles: {'; '.join(parts)}"
+
+
 def _voice_status_frontend_state_line(value: Any) -> str:
     if not isinstance(value, dict) or not value:
         return ""
@@ -2833,6 +2856,9 @@ class GatewaySlashCommandsMixin:
                     )
                     if tts_line:
                         lines.append(tts_line)
+                    provider_roles_line = _voice_status_provider_roles_line(session.get("kame_stack"))
+                    if provider_roles_line:
+                        lines.append(provider_roles_line)
                     frontend_state_line = _voice_status_frontend_state_line(session.get("frontend_state"))
                     if frontend_state_line:
                         lines.append(frontend_state_line)
