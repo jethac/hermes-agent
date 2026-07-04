@@ -8,6 +8,7 @@ from pathlib import Path
 
 from scripts.voiceops_channel_policy import (
     DEFAULT_OUTPUT_DIR,
+    REQUIRED_KAME_INPUT_ORDER,
     apply_redactions,
     build_channel_policy,
     build_review_packet,
@@ -76,6 +77,15 @@ def test_channel_policy_contains_approval_escalation_audit_and_redaction_rules()
     assert "parent_audit_id" in policy["audit_id_continuity"]["required_fields"]
     assert "source_audit_id" in policy["audit_id_continuity"]["required_fields"]
     assert any("Cross-channel handoff" in rule for rule in policy["audit_id_continuity"]["rules"])
+    gate = policy["kame_action_evidence_gate"]
+    assert gate["gate_id"] == "kame_promoted_evidence_required_for_channel_egress"
+    assert set(gate["accepted_promoted_authorities"]) == {"interpreter_promoted", "oracle_promoted"}
+    assert gate["transcript_hypotheses_authority"] == "hypothesis"
+    assert gate["transcript_hypotheses_tool_authority"] is False
+    assert gate["required_interpreter_input_order"] == REQUIRED_KAME_INPUT_ORDER
+    assert gate["degraded_text_only_allowed_for_action"] is False
+    assert gate["unpromoted_witness_may_enter_payloads"] is False
+    assert all(gate["requires_unpromoted_witness_sink_checks"].values())
     assert {
         "env_assignment_secret",
         "sensitive_url",
@@ -159,6 +169,40 @@ def test_channel_policy_validates_safety_invariants():
         rule for rule in missing_redactions["redaction_rules"] if rule["rule_id"] != "phone_number"
     ]
     assert validate_policy(missing_redactions) == ["missing_redaction_rules:phone_number"]
+
+
+def test_channel_policy_validates_kame_action_evidence_gate():
+    policy = build_channel_policy()
+
+    missing_gate = json.loads(json.dumps(policy))
+    missing_gate.pop("kame_action_evidence_gate")
+    assert validate_policy(missing_gate) == ["missing_kame_action_evidence_gate"]
+
+    unsafe = json.loads(json.dumps(policy))
+    gate = unsafe["kame_action_evidence_gate"]
+    gate["required_for_routes"].remove("approved_phone_handoff_call")
+    gate["required_lineage_fields"].remove("evidence_merge_key")
+    gate["accepted_promoted_authorities"] = ["interpreter_promoted"]
+    gate["transcript_hypotheses_authority"] = "verified"
+    gate["transcript_hypotheses_tool_authority"] = True
+    gate["required_interpreter_input_order"] = ["transcript_hypotheses", "raw_audio"]
+    gate["requires_witness_adjudication"] = False
+    gate["requires_unpromoted_witness_sink_checks"]["phone_clean"] = False
+    gate["degraded_text_only_allowed_for_action"] = True
+    gate["unpromoted_witness_may_enter_payloads"] = True
+
+    assert validate_policy(unsafe) == [
+        "kame_gate_missing_routes:approved_phone_handoff_call",
+        "kame_gate_missing_lineage_fields:evidence_merge_key",
+        "kame_gate_promoted_authorities_mismatch",
+        "kame_gate_transcript_hypotheses_authority_not_hypothesis",
+        "kame_gate_transcript_hypotheses_tool_authority_not_false",
+        "kame_gate_interpreter_input_order_mismatch",
+        "kame_gate_missing_witness_adjudication",
+        "kame_gate_missing_unpromoted_sink_checks:phone_clean",
+        "kame_gate_degraded_text_only_allows_action",
+        "kame_gate_unpromoted_witness_allows_payloads",
+    ]
 
 
 def test_channel_policy_rejects_non_artifact_mode_flags():
@@ -416,6 +460,11 @@ def test_write_channel_policy_artifacts(tmp_path):
     assert review_payload["review_status"] == "pending_human_review"
     assert review_payload["real_egress_enabled"] is False
     assert review_payload["changes_policy"] is False
+    assert review_payload["kame_action_evidence_gate"]["gate_id"] == policy["kame_action_evidence_gate"]["gate_id"]
+    assert review_payload["kame_action_evidence_gate"]["accepted_promoted_authorities"] == [
+        "interpreter_promoted",
+        "oracle_promoted",
+    ]
     assert "approve_live_egress_after_external_credentials_are_bound" in review_payload["decision_options"]
     assert {signoff["role"] for signoff in review_payload["required_signoffs"]} == {
         "business_owner",
@@ -426,19 +475,27 @@ def test_write_channel_policy_artifacts(tmp_path):
     channels = {channel["channel_id"]: channel for channel in review_payload["per_channel_review"]}
     assert set(channels) == {"discord", "whatsapp", "phone_sms"}
     assert channels["phone_sms"]["live_egress_enabled"] is False
+    assert (
+        channels["phone_sms"]["kame_evidence_gate_to_confirm"]
+        == "kame_promoted_evidence_required_for_channel_egress"
+    )
     assert "approved_phone_handoff_call" in channels["phone_sms"]["approval_routes_to_confirm"]
     assert "unapproved_voice_call" in channels["phone_sms"]["blocked_capabilities_to_confirm"]
     assert any("source_audit_id" in gate for gate in review_payload["egress_enablement_gates"])
+    assert any("interpreter_promoted or oracle_promoted" in gate for gate in review_payload["egress_enablement_gates"])
+    assert any("Unpromoted Moshi/Open-S2S" in gate for gate in review_payload["egress_enablement_gates"])
     assert any("mark real_egress_enabled true" in item for item in review_payload["operator_must_not"])
     assert any("--package-audit" in command for command in review_payload["review_commands"])
     assert "VoiceOps Milestone 3 Channel Policy" in markdown
     assert "Policy ID" in markdown
     assert "Channel Authorization" in markdown
     assert "Audit ID Continuity" in markdown
+    assert "KAME Action Evidence Gate" in markdown
     assert "Redaction Rules" in markdown
     assert "VoiceOps Milestone 3 Channel Policy Review" in review_markdown
     assert "Required Signoffs" in review_markdown
     assert "Per-Channel Review" in review_markdown
+    assert "KAME Action Evidence Gate" in review_markdown
     assert "Operator Must Not" in review_markdown
 
 
@@ -453,8 +510,13 @@ def test_channel_policy_review_packet_is_artifact_only_and_per_channel():
     assert review["review_status"] == policy["scope"]["review_status"]
     assert all(channel["review_status"] == "pending_human_review" for channel in review["per_channel_review"])
     assert all(channel["live_egress_enabled"] is False for channel in review["per_channel_review"])
+    assert all(
+        channel["kame_evidence_gate_to_confirm"] == "kame_promoted_evidence_required_for_channel_egress"
+        for channel in review["per_channel_review"]
+    )
     assert any("voice call" in item for item in review["operator_must_not"])
     assert any("spend_provisioning_or_credential" in gate for gate in review["egress_enablement_gates"])
+    assert any("interpreter_promoted or oracle_promoted" in gate for gate in review["egress_enablement_gates"])
 
 
 def test_channel_policy_cli_smoke(tmp_path):

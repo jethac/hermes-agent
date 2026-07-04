@@ -1402,6 +1402,38 @@ def test_package_audit_rejects_missing_channel_policy_review_action(tmp_path):
     assert "demo_handoff:missing_channel_policy_review_phase" in report["issues"]
 
 
+def test_package_audit_rejects_weakened_channel_policy_kame_gate(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    review_path = artifact_root / "voiceops-channel-policy" / "current" / "channel-policy-review.json"
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    review["kame_action_evidence_gate"]["accepted_promoted_authorities"] = ["interpreter_promoted"]
+    review["kame_action_evidence_gate"]["required_interpreter_input_order"] = [
+        "transcript_hypotheses",
+        "raw_audio",
+    ]
+    review["kame_action_evidence_gate"]["required_lineage_fields"].remove("evidence_merge_key")
+    review["kame_action_evidence_gate"]["requires_unpromoted_witness_sink_checks"]["phone_clean"] = False
+    review["kame_action_evidence_gate"]["degraded_text_only_allowed_for_action"] = True
+    review["kame_action_evidence_gate"]["unpromoted_witness_may_enter_payloads"] = True
+    review["per_channel_review"][0]["kame_evidence_gate_to_confirm"] = "missing-gate"
+    review["per_channel_review"][1]["checklist"] = ["Confirm channel owner and operator-on-call identities."]
+    _write_json(review_path, review)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "channel_policy_review:kame_action_evidence_gate_mismatch" in report["issues"]
+    assert "channel_policy_review:kame_gate_promoted_authorities_mismatch" in report["issues"]
+    assert "channel_policy_review:kame_gate_input_order_mismatch" in report["issues"]
+    assert "channel_policy_review:kame_gate_missing_lineage:evidence_merge_key" in report["issues"]
+    assert "channel_policy_review:kame_gate_missing_unpromoted_sink_checks:phone_clean" in report["issues"]
+    assert "channel_policy_review:kame_gate_degraded_text_allows_action" in report["issues"]
+    assert "channel_policy_review:kame_gate_unpromoted_witness_allows_payloads" in report["issues"]
+    assert "channel_policy_review:discord:kame_evidence_gate_mismatch" in report["issues"]
+    assert "channel_policy_review:whatsapp:missing_promoted_evidence_checklist" in report["issues"]
+    assert "channel_policy_review:whatsapp:missing_unpromoted_witness_checklist" in report["issues"]
+
+
 def test_package_audit_rejects_forged_post_approval_receipt_validation(tmp_path):
     artifact_root = _generate_package(tmp_path)
     scaffold_path = (

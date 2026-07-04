@@ -141,6 +141,25 @@ HIGH_RISK_ROUTE_TRIGGER_TERMS = ("payment", "spend", "provisioning", "credential
 REQUIRED_AUDIT_ID_FORMAT = "vops-m3-{channel_id}-{utc_yyyymmddThhmmssZ}-{sequence}"
 REQUIRED_AUDIT_ID_FORMAT_FIELDS = {"channel_id", "utc_yyyymmddThhmmssZ", "sequence"}
 AUDIT_EVENT_PATTERN = re.compile(r"^channel_policy\.[a-z0-9_]+(?:\.[a-z0-9_]+)+$")
+REQUIRED_KAME_LINEAGE_FIELDS = {
+    "turn_id",
+    "audio_segment_ref",
+    "evidence_bundle_id",
+    "evidence_merge_key",
+    "source_audit_id",
+}
+REQUIRED_KAME_PROMOTED_AUTHORITIES = {"interpreter_promoted", "oracle_promoted"}
+REQUIRED_KAME_INPUT_ORDER = ["raw_audio", "metadata", "reflex", "transcript_hypotheses"]
+REQUIRED_UNPROMOTED_WITNESS_SINK_CHECKS = {
+    "spend_clean",
+    "phone_clean",
+    "nemoclaw_clean",
+    "tool_clean",
+    "memory_clean",
+    "file_clean",
+    "message_clean",
+    "durable_history_clean",
+}
 
 
 def default_approval_route_map() -> dict[str, dict[str, str]]:
@@ -510,6 +529,39 @@ def build_channel_policy() -> dict[str, Any]:
         "approval_routing": [asdict(route) for route in routes],
         "approval_route_map": default_approval_route_map(),
         "escalation_policy": [asdict(step) for step in escalations],
+        "kame_action_evidence_gate": {
+            "gate_id": "kame_promoted_evidence_required_for_channel_egress",
+            "required_for_routes": [
+                "approved_phone_handoff_call",
+                "customer_visible_outbound",
+                "sensitive_context_replay",
+                "spend_provisioning_or_credential",
+            ],
+            "required_lineage_fields": [
+                "turn_id",
+                "audio_segment_ref",
+                "evidence_bundle_id",
+                "evidence_merge_key",
+                "source_audit_id",
+            ],
+            "accepted_promoted_authorities": ["interpreter_promoted", "oracle_promoted"],
+            "transcript_hypotheses_authority": "hypothesis",
+            "transcript_hypotheses_tool_authority": False,
+            "required_interpreter_input_order": REQUIRED_KAME_INPUT_ORDER,
+            "requires_witness_adjudication": True,
+            "requires_unpromoted_witness_sink_checks": {
+                "spend_clean": True,
+                "phone_clean": True,
+                "nemoclaw_clean": True,
+                "tool_clean": True,
+                "memory_clean": True,
+                "file_clean": True,
+                "message_clean": True,
+                "durable_history_clean": True,
+            },
+            "degraded_text_only_allowed_for_action": False,
+            "unpromoted_witness_may_enter_payloads": False,
+        },
         "audit_id_continuity": {
             "audit_id_format": "vops-m3-{channel_id}-{utc_yyyymmddThhmmssZ}-{sequence}",
             "required_fields": [
@@ -538,6 +590,7 @@ def build_review_packet(policy: dict[str, Any]) -> dict[str, Any]:
     """Build the human signoff packet for enabling future live egress."""
 
     channel_rows: list[dict[str, Any]] = []
+    kame_gate = policy["kame_action_evidence_gate"]
     for channel in policy["channel_authorization"]:
         channel_id = channel["channel_id"]
         route_map = policy["approval_route_map"][channel_id]
@@ -551,10 +604,13 @@ def build_review_packet(policy: dict[str, Any]) -> dict[str, Any]:
                 "approval_routes_to_confirm": {
                     approval_item: route_map[approval_item] for approval_item in channel["approval_required_for"]
                 },
+                "kame_evidence_gate_to_confirm": kame_gate["gate_id"],
                 "blocked_capabilities_to_confirm": channel["prohibited_actions"],
                 "checklist": [
                     "Confirm channel owner and operator-on-call identities.",
                     "Confirm inbound source_audit_id is present before drafting outbound content.",
+                    "Confirm outbound payloads cite interpreter_promoted or oracle_promoted KAME evidence.",
+                    "Confirm unpromoted witness transcript text is absent from action payload sinks.",
                     "Confirm redaction rules are applied before display, persistence, or handoff.",
                     "Confirm approval route before any customer-visible send or call.",
                     "Confirm no blocked capability is executed through this channel.",
@@ -574,6 +630,7 @@ def build_review_packet(policy: dict[str, Any]) -> dict[str, Any]:
         "real_egress_enabled": policy["scope"]["real_egress_enabled"],
         "changes_policy": False,
         "artifact_only": True,
+        "kame_action_evidence_gate": policy["kame_action_evidence_gate"],
         "decision_options": [
             "approve_artifact_for_demo_recording",
             "approve_dry_run_only",
@@ -612,6 +669,8 @@ def build_review_packet(policy: dict[str, Any]) -> dict[str, Any]:
             "Sensitive context replay must use sensitive_context_replay with dual approval.",
             "Payment, provisioning, credential, and account mutation intents must use spend_provisioning_or_credential and deny/escalate by default.",
             "Discord, WhatsApp, SMS, and phone sends must have a post-action receipt or blocked-action audit event.",
+            "Every outbound Discord, WhatsApp, SMS, phone, spend, provisioning, memory, file, or external-message payload must cite interpreter_promoted or oracle_promoted evidence.",
+            "Unpromoted Moshi/Open-S2S, VoiceClaw/OpenClaw, reflex, or classic-ASR witness text must be absent from spend, phone, NemoClaw, tool, memory, file, message, and durable-history sinks.",
         ],
         "operator_must_not": [
             "send Discord, WhatsApp, SMS, or phone traffic from this generated packet",
@@ -799,6 +858,45 @@ def validate_policy(policy: dict[str, Any]) -> list[str]:
         if not any(all(term in rule for term in required_terms) for rule in audit_rules):
             issues.append(f"missing_audit_rule:{requirement_id}")
 
+    kame_gate = policy.get("kame_action_evidence_gate") if isinstance(policy.get("kame_action_evidence_gate"), dict) else {}
+    if not kame_gate:
+        issues.append("missing_kame_action_evidence_gate")
+    else:
+        required_routes = {
+            "approved_phone_handoff_call",
+            "customer_visible_outbound",
+            "sensitive_context_replay",
+            "spend_provisioning_or_credential",
+        }
+        missing_routes = required_routes - set(kame_gate.get("required_for_routes") or [])
+        if missing_routes:
+            issues.append(f"kame_gate_missing_routes:{','.join(sorted(missing_routes))}")
+        missing_lineage = REQUIRED_KAME_LINEAGE_FIELDS - set(kame_gate.get("required_lineage_fields") or [])
+        if missing_lineage:
+            issues.append(f"kame_gate_missing_lineage_fields:{','.join(sorted(missing_lineage))}")
+        if set(kame_gate.get("accepted_promoted_authorities") or []) != REQUIRED_KAME_PROMOTED_AUTHORITIES:
+            issues.append("kame_gate_promoted_authorities_mismatch")
+        if kame_gate.get("transcript_hypotheses_authority") != "hypothesis":
+            issues.append("kame_gate_transcript_hypotheses_authority_not_hypothesis")
+        if kame_gate.get("transcript_hypotheses_tool_authority") is not False:
+            issues.append("kame_gate_transcript_hypotheses_tool_authority_not_false")
+        if kame_gate.get("required_interpreter_input_order") != REQUIRED_KAME_INPUT_ORDER:
+            issues.append("kame_gate_interpreter_input_order_mismatch")
+        if kame_gate.get("requires_witness_adjudication") is not True:
+            issues.append("kame_gate_missing_witness_adjudication")
+        sink_checks = kame_gate.get("requires_unpromoted_witness_sink_checks")
+        if not isinstance(sink_checks, dict):
+            sink_checks = {}
+        missing_sink_checks = {
+            sink for sink in REQUIRED_UNPROMOTED_WITNESS_SINK_CHECKS if sink_checks.get(sink) is not True
+        }
+        if missing_sink_checks:
+            issues.append(f"kame_gate_missing_unpromoted_sink_checks:{','.join(sorted(missing_sink_checks))}")
+        if kame_gate.get("degraded_text_only_allowed_for_action") is not False:
+            issues.append("kame_gate_degraded_text_only_allows_action")
+        if kame_gate.get("unpromoted_witness_may_enter_payloads") is not False:
+            issues.append("kame_gate_unpromoted_witness_allows_payloads")
+
     redaction_rules = policy.get("redaction_rules") or []
     if not redaction_rules:
         issues.append("missing_redaction_rules")
@@ -897,6 +995,14 @@ def _markdown(policy: dict[str, Any]) -> str:
             f"- {step['level']}: {step['trigger']} -> {step['destination_role']} "
             f"within {step['max_response_minutes']} minutes"
         )
+    gate = policy["kame_action_evidence_gate"]
+    lines.extend(["", "## KAME Action Evidence Gate", ""])
+    lines.append(f"- Gate ID: `{gate['gate_id']}`")
+    lines.append(f"- Required routes: {', '.join(gate['required_for_routes'])}")
+    lines.append(f"- Accepted promoted authorities: {', '.join(gate['accepted_promoted_authorities'])}")
+    lines.append(f"- Required interpreter input order: {', '.join(gate['required_interpreter_input_order'])}")
+    lines.append("- Transcript hypotheses remain `authority = hypothesis` and `tool_authority = false`.")
+    lines.append("- Unpromoted witness text must be clean for spend, phone, NemoClaw, tool, memory, file, message, and durable history sinks.")
     lines.extend(["", "## Audit ID Continuity", ""])
     lines.append(f"- Format: `{policy['audit_id_continuity']['audit_id_format']}`")
     for rule in policy["audit_id_continuity"]["rules"]:
@@ -955,6 +1061,14 @@ def _review_markdown(review: dict[str, Any]) -> str:
     lines.extend(["## Egress Enablement Gates", ""])
     for gate in review["egress_enablement_gates"]:
         lines.append(f"- {gate}")
+    kame_gate = review["kame_action_evidence_gate"]
+    lines.extend(["", "## KAME Action Evidence Gate", ""])
+    lines.append(f"- Gate ID: `{kame_gate['gate_id']}`")
+    lines.append(f"- Required routes: {', '.join(kame_gate['required_for_routes'])}")
+    lines.append(f"- Accepted promoted authorities: {', '.join(kame_gate['accepted_promoted_authorities'])}")
+    lines.append(f"- Required lineage fields: {', '.join(kame_gate['required_lineage_fields'])}")
+    lines.append(f"- Required interpreter input order: {', '.join(kame_gate['required_interpreter_input_order'])}")
+    lines.append("- Transcript hypotheses are reviewable context only; they cannot authorize channel egress.")
     lines.extend(["", "## Operator Must Not", ""])
     for item in review["operator_must_not"]:
         lines.append(f"- {item}")

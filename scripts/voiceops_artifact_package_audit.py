@@ -22,7 +22,14 @@ from typing import Any, Mapping
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.voiceops_channel_policy import CHANNEL_IDS, validate_policy
+from scripts.voiceops_channel_policy import (
+    CHANNEL_IDS,
+    REQUIRED_KAME_INPUT_ORDER,
+    REQUIRED_KAME_LINEAGE_FIELDS,
+    REQUIRED_KAME_PROMOTED_AUTHORITIES,
+    REQUIRED_UNPROMOTED_WITNESS_SINK_CHECKS,
+    validate_policy,
+)
 from scripts.voiceops_operator_state import validate_operator_state
 from scripts.voiceops_provisioning_probe import load_preflight_evidence, validate_post_approval_receipts
 from scripts.voiceops_spark_matrix import build_matrix
@@ -1629,6 +1636,33 @@ def _audit_channel_policy(policy: Mapping[str, Any], review: Mapping[str, Any], 
         issues.append("channel_policy_review:real_egress_enabled_not_false")
     if review.get("changes_policy") is not False:
         issues.append("channel_policy_review:changes_policy_not_false")
+    policy_kame_gate = policy.get("kame_action_evidence_gate") if isinstance(policy.get("kame_action_evidence_gate"), Mapping) else {}
+    review_kame_gate = review.get("kame_action_evidence_gate") if isinstance(review.get("kame_action_evidence_gate"), Mapping) else {}
+    if dict(review_kame_gate) != dict(policy_kame_gate):
+        issues.append("channel_policy_review:kame_action_evidence_gate_mismatch")
+    if review_kame_gate:
+        if set(review_kame_gate.get("accepted_promoted_authorities") or []) != REQUIRED_KAME_PROMOTED_AUTHORITIES:
+            issues.append("channel_policy_review:kame_gate_promoted_authorities_mismatch")
+        if review_kame_gate.get("required_interpreter_input_order") != REQUIRED_KAME_INPUT_ORDER:
+            issues.append("channel_policy_review:kame_gate_input_order_mismatch")
+        missing_lineage = REQUIRED_KAME_LINEAGE_FIELDS - set(review_kame_gate.get("required_lineage_fields") or [])
+        if missing_lineage:
+            issues.append(f"channel_policy_review:kame_gate_missing_lineage:{','.join(sorted(missing_lineage))}")
+        sink_checks = review_kame_gate.get("requires_unpromoted_witness_sink_checks")
+        if not isinstance(sink_checks, Mapping):
+            sink_checks = {}
+        missing_sink_checks = {
+            sink for sink in REQUIRED_UNPROMOTED_WITNESS_SINK_CHECKS if sink_checks.get(sink) is not True
+        }
+        if missing_sink_checks:
+            issues.append(
+                "channel_policy_review:kame_gate_missing_unpromoted_sink_checks:"
+                + ",".join(sorted(missing_sink_checks))
+            )
+        if review_kame_gate.get("degraded_text_only_allowed_for_action") is not False:
+            issues.append("channel_policy_review:kame_gate_degraded_text_allows_action")
+        if review_kame_gate.get("unpromoted_witness_may_enter_payloads") is not False:
+            issues.append("channel_policy_review:kame_gate_unpromoted_witness_allows_payloads")
     decision_options = set(review.get("decision_options") or [])
     if {"request_changes", "deny", "approve_dry_run_only"} - decision_options:
         issues.append("channel_policy_review:decision_options_missing_safe_choices")
@@ -1650,6 +1684,13 @@ def _audit_channel_policy(policy: Mapping[str, Any], review: Mapping[str, Any], 
         route_map = policy.get("approval_route_map") if isinstance(policy.get("approval_route_map"), Mapping) else {}
         if dict(channel.get("approval_routes_to_confirm") or {}) != dict(route_map.get(channel_id) or {}):
             issues.append(f"channel_policy_review:{channel_id}:approval_routes_mismatch")
+        if channel.get("kame_evidence_gate_to_confirm") != policy_kame_gate.get("gate_id"):
+            issues.append(f"channel_policy_review:{channel_id}:kame_evidence_gate_mismatch")
+        checklist = [str(item).lower() for item in channel.get("checklist") or []]
+        if not any("interpreter_promoted" in item and "oracle_promoted" in item for item in checklist):
+            issues.append(f"channel_policy_review:{channel_id}:missing_promoted_evidence_checklist")
+        if not any("unpromoted witness" in item and "absent" in item for item in checklist):
+            issues.append(f"channel_policy_review:{channel_id}:missing_unpromoted_witness_checklist")
         if set(channel.get("blocked_capabilities_to_confirm") or []) != set(policy_channel.get("prohibited_actions") or []):
             issues.append(f"channel_policy_review:{channel_id}:blocked_capabilities_mismatch")
     phone_review = review_channels.get("phone_sms", {})
