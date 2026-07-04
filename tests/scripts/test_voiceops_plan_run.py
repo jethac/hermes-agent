@@ -1440,6 +1440,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_tool_authority_false"]
         is True
     )
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_role_context"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_promotion_required"] is True
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_protocol"] == "kame_session_v1"
     assert (
         voice_result["details"]["async_oracle_smoke"]["external_frontend_protocol_contract"]
@@ -1677,7 +1679,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "source": "moshi",
         "kind": "frontend_witness_hypothesis",
         "text": "what is three to the power of seventeen",
+        "role": "witness_context",
         "authority": "hypothesis",
+        "promotion_required": "interpreter_promoted_or_oracle_promoted",
         "tool_authority": False,
         "confidence": 0.88,
         "arrival_phase": "with_raw_audio",

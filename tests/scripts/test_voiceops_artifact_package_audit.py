@@ -384,6 +384,8 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
         "channel_id": "wrong-channel"
     }
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_tool_authority_false"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_role_context"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_promotion_required"] = False
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_single_bundle_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_tool_authority"] = True
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_tool_authority_false"] = False
@@ -558,6 +560,14 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_witness_tool_authority_false_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_witness_role_context_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_witness_promotion_required_mismatch"
         in report["issues"]
     )
     assert (

@@ -1953,6 +1953,12 @@ async def build_plan_run_async(
                     "external_frontend_witness_tool_authority_false": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_witness_tool_authority_false"],
+                    "external_frontend_witness_role_context": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_witness_role_context"
+                    ],
+                    "external_frontend_witness_promotion_required": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_witness_promotion_required"],
                     "external_frontend_durable_user_messages_empty": voice_operator["proofs"]["async_oracle_jobs"][
                         "external_frontend_durable_user_messages_empty"
                     ],

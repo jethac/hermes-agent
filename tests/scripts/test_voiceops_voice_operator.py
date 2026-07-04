@@ -303,7 +303,9 @@ def _async_oracle_smoke_payload() -> dict:
                 "source": "moshi",
                 "kind": "frontend_witness_hypothesis",
                 "text": "prepare an external kame handoff",
+                "role": "witness_context",
                 "authority": "hypothesis",
+                "promotion_required": "interpreter_promoted_or_oracle_promoted",
                 "tool_authority": False,
                 "confidence": 0.78,
                 "latency_ms": 140,
@@ -329,7 +331,9 @@ def _async_oracle_smoke_payload() -> dict:
             "source": "moshi",
             "kind": "frontend_witness_hypothesis",
             "text": "prepare an external kame handoff",
+            "role": "witness_context",
             "authority": "hypothesis",
+            "promotion_required": "interpreter_promoted_or_oracle_promoted",
             "tool_authority": False,
             "confidence": 0.78,
             "latency_ms": 140,
@@ -366,6 +370,8 @@ def _async_oracle_smoke_payload() -> dict:
             "surface": "desk_voice",
         },
         "external_frontend_witness_tool_authority_false": True,
+        "external_frontend_witness_role_context": True,
+        "external_frontend_witness_promotion_required": True,
         "external_frontend_hypothesis_not_durable_oracle_text": True,
         "external_frontend_durable_user_messages_empty": True,
         "external_frontend_durable_oracle_text_absent": True,
@@ -1312,6 +1318,18 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     )
     assert (
         report["proofs"]["async_oracle_jobs"]["external_frontend_auxiliary_transcript_hypotheses"][0][
+            "role"
+        ]
+        == "witness_context"
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_auxiliary_transcript_hypotheses"][0][
+            "promotion_required"
+        ]
+        == "interpreter_promoted_or_oracle_promoted"
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_auxiliary_transcript_hypotheses"][0][
             "kind"
         ]
         == "frontend_witness_hypothesis"
@@ -1346,6 +1364,8 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         is False
     )
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_witness_tool_authority_false"] is True
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_witness_role_context"] is True
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_witness_promotion_required"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_hypothesis_not_durable_oracle_text"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_durable_user_messages_empty"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_durable_oracle_text_absent"] is True

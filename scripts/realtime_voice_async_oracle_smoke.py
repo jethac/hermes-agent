@@ -1672,8 +1672,20 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
     witness_kind = str(first_auxiliary_hypothesis.get("kind") or "")
     witness_kind_frontend_hypothesis = witness_kind == "frontend_witness_hypothesis"
     witness_metadata = dict(first_auxiliary_hypothesis)
+    witness_role_context = all(
+        item.get("role") == "witness_context"
+        for item in auxiliary_hypotheses
+        if isinstance(item, Mapping)
+    )
+    witness_promotion_required = all(
+        item.get("promotion_required") == "interpreter_promoted_or_oracle_promoted"
+        for item in auxiliary_hypotheses
+        if isinstance(item, Mapping)
+    )
     witness_metadata_complete = (
         witness_metadata.get("source") == "moshi"
+        and witness_metadata.get("role") == "witness_context"
+        and witness_metadata.get("promotion_required") == "interpreter_promoted_or_oracle_promoted"
         and witness_metadata.get("confidence") == 0.78
         and witness_metadata.get("latency_ms") == 140
         and witness_metadata.get("partial") is False
@@ -1691,7 +1703,9 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and getattr(request, "audio_time_range_ms", ()) == (100, 2100)
         and bool(auxiliary_hypotheses)
         and first_auxiliary_hypothesis.get("source") == "moshi"
+        and witness_role_context
         and first_auxiliary_hypothesis.get("authority") == "hypothesis"
+        and witness_promotion_required
         and first_auxiliary_hypothesis.get("tool_authority") is False
         and witness_kind_frontend_hypothesis
         and witness_metadata_complete
@@ -1851,6 +1865,10 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
             for item in auxiliary_hypotheses
             if isinstance(item, Mapping)
         )
+        if request is not None
+        else False,
+        "external_frontend_witness_role_context": witness_role_context if request is not None else False,
+        "external_frontend_witness_promotion_required": witness_promotion_required
         if request is not None
         else False,
         "external_frontend_hypothesis_not_durable_oracle_text": durable_hypothesis_not_promoted,
@@ -4748,6 +4766,12 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "external_frontend_witness_tool_authority_false": external_frontend_bridge_smoke[
             "external_frontend_witness_tool_authority_false"
+        ],
+        "external_frontend_witness_role_context": external_frontend_bridge_smoke[
+            "external_frontend_witness_role_context"
+        ],
+        "external_frontend_witness_promotion_required": external_frontend_bridge_smoke[
+            "external_frontend_witness_promotion_required"
         ],
         "external_frontend_hypothesis_not_durable_oracle_text": external_frontend_bridge_smoke[
             "external_frontend_hypothesis_not_durable_oracle_text"

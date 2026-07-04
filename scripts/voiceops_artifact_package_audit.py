@@ -2336,6 +2336,12 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "external_frontend_witness_tool_authority_false": bool(
                 async_smoke.get("external_frontend_witness_tool_authority_false")
             ),
+            "external_frontend_witness_role_context": bool(
+                async_smoke.get("external_frontend_witness_role_context")
+            ),
+            "external_frontend_witness_promotion_required": bool(
+                async_smoke.get("external_frontend_witness_promotion_required")
+            ),
             "external_frontend_direct_tool_authority_exposed": bool(
                 async_smoke.get("external_frontend_direct_tool_authority_exposed")
             ),

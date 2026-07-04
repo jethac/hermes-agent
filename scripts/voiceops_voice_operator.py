@@ -3369,6 +3369,12 @@ def build_voice_operator_report(
             "external_frontend_witness_tool_authority_false": bool(
                 async_oracle_smoke.get("external_frontend_witness_tool_authority_false")
             ),
+            "external_frontend_witness_role_context": bool(
+                async_oracle_smoke.get("external_frontend_witness_role_context")
+            ),
+            "external_frontend_witness_promotion_required": bool(
+                async_oracle_smoke.get("external_frontend_witness_promotion_required")
+            ),
             "external_frontend_hypothesis_not_durable_oracle_text": bool(
                 async_oracle_smoke.get("external_frontend_hypothesis_not_durable_oracle_text")
             ),

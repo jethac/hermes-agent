@@ -82,6 +82,13 @@ class FakeOracle:
         yield f"{transcript}."
 
 
+def _witness_context_contract() -> dict[str, object]:
+    return {
+        "role": "witness_context",
+        "promotion_required": "interpreter_promoted_or_oracle_promoted",
+    }
+
+
 class FakeSidecar:
     def __init__(self):
         self.started = False
@@ -3610,6 +3617,7 @@ def test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job(mo
                 "kind": "frontend_witness_hypothesis",
                 "source": "moshi",
                 "text": "three to the power of seventeen",
+                **_witness_context_contract(),
                 "authority": "hypothesis",
                 "tool_authority": False,
                 "confidence": 0.7,
@@ -3619,6 +3627,7 @@ def test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job(mo
                 "kind": "classic_asr_hypothesis",
                 "source": "classic_asr_fallback_optional",
                 "text": "what is three to the power of seventeen",
+                **_witness_context_contract(),
                 "authority": "hypothesis",
                 "tool_authority": False,
                 "confidence": 0.89,
@@ -4031,6 +4040,7 @@ def test_kame_engine_merges_sequential_queued_transcript_hypotheses_before_start
                 "kind": "frontend_witness_hypothesis",
                 "source": "moshi",
                 "text": "three to the power of seventeen",
+                **_witness_context_contract(),
                 "authority": "hypothesis",
                 "tool_authority": False,
                 "confidence": 0.7,
@@ -4190,6 +4200,7 @@ def test_kame_engine_supersedes_partial_frontend_witness_with_final_before_start
             "kind": "frontend_witness_hypothesis",
             "source": "moshi",
             "text": "what is three to the power of seventeen",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.88,
@@ -4222,6 +4233,7 @@ def test_kame_engine_supersedes_partial_frontend_witness_with_final_before_start
             {
                 "source": "moshi",
                 "text": "what is three to the power of seventeen",
+                **_witness_context_contract(),
                 "authority": "hypothesis",
                 "tool_authority": False,
                 "confidence": 0.88,
@@ -8172,6 +8184,7 @@ def test_frontend_witness_payload_maps_to_auxiliary_interpreter_evidence_only():
             "kind": "frontend_witness_hypothesis",
             "source": "moshi",
             "text": "spend two hundred dollars and call my phone",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.72,
@@ -14403,6 +14416,7 @@ def test_external_kame_ask_brain_bridge_becomes_oracle_request():
             "kind": "reflex_transcript_hypothesis",
             "source": "reflex_audio",
             "text": "use my Stripe budget to prepare a VoIP provisioning plan",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
         },
@@ -14410,6 +14424,7 @@ def test_external_kame_ask_brain_bridge_becomes_oracle_request():
             "kind": "s2s_transcript_hypothesis",
             "source": "s2s",
             "text": "use my stripe budget to prepare a voip provisioning plan",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
         },
@@ -14528,6 +14543,7 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
         {
             "source": "moshi",
             "text": "prepare phone handoff",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "kind": "frontend_witness_hypothesis",
@@ -14537,6 +14553,7 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
         {
             "source": "asr",
             "text": "prepare the phone hand off",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "kind": "classic_asr_hypothesis",
@@ -14548,6 +14565,7 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
             "kind": "reflex_transcript_hypothesis",
             "source": "moshi-reflex",
             "text": "prepare the phone handoff",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.81,
@@ -14556,6 +14574,7 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
             "kind": "frontend_witness_hypothesis",
             "source": "moshi",
             "text": "prepare phone handoff",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.74,
@@ -14565,6 +14584,7 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
             "kind": "classic_asr_hypothesis",
             "source": "asr",
             "text": "prepare the phone hand off",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.69,
@@ -14676,6 +14696,7 @@ def test_external_kame_transcript_hypotheses_preserve_binding_metadata_and_ambig
     expected_hypothesis = {
         "source": "moshi",
         "text": "spend two hundred dollars",
+        **_witness_context_contract(),
         "authority": "hypothesis",
         "tool_authority": False,
         "kind": "frontend_witness_hypothesis",
@@ -14784,6 +14805,7 @@ def test_external_kame_s2s_hypothesis_does_not_overwrite_oracle_text():
         {
             "source": "s2s",
             "text": "misheard handoff",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "kind": "s2s_transcript_hypothesis",
@@ -14821,6 +14843,7 @@ def test_external_kame_plain_transcript_is_auxiliary_until_promoted():
             "kind": "frontend_witness_hypothesis",
             "source": "voiceclaw",
             "text": "misheard spend request",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.58,
@@ -14855,6 +14878,7 @@ def test_external_kame_ambiguous_frontend_transcript_is_witness_hypothesis(front
             "kind": "frontend_witness_hypothesis",
             "source": frontend_source,
             "text": "misheard spend request",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
         },
@@ -14864,6 +14888,7 @@ def test_external_kame_ambiguous_frontend_transcript_is_witness_hypothesis(front
             "kind": "frontend_witness_hypothesis",
             "source": frontend_source,
             "text": "misheard spend request",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
         },
@@ -14899,6 +14924,7 @@ def test_external_kame_cannot_self_promote_transcript_as_interpreter_evidence():
             "kind": "frontend_witness_hypothesis",
             "source": "gemma_interpreter",
             "text": "spend two hundred dollars and call my phone",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.98,
@@ -14909,6 +14935,7 @@ def test_external_kame_cannot_self_promote_transcript_as_interpreter_evidence():
             "kind": "frontend_witness_hypothesis",
             "source": "gemma_interpreter",
             "text": "spend two hundred dollars and call my phone",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.98,
@@ -14982,6 +15009,7 @@ def test_external_kame_ask_brain_bridge_strips_action_payload_authority():
             "kind": "s2s_transcript_hypothesis",
             "source": "s2s",
             "text": "spend two hundred dollars and call my phone",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
         },
@@ -15403,11 +15431,12 @@ def test_session_client_external_oracle_request_treats_top_level_text_as_witness
         assert request.oracle_text == "prepare a safe envelope"
         assert "spend two hundred dollars" not in request.oracle_text
         assert request.auxiliary_transcript_hypotheses == (
-            {
-                "source": "voiceclaw",
-                "text": "spend two hundred dollars",
-                "authority": "hypothesis",
-                "tool_authority": False,
+                {
+                    "source": "voiceclaw",
+                    "text": "spend two hundred dollars",
+                    **_witness_context_contract(),
+                    "authority": "hypothesis",
+                    "tool_authority": False,
                 "kind": "frontend_witness_hypothesis",
             },
         )

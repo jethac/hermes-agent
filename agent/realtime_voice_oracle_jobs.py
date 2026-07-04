@@ -19,6 +19,8 @@ from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_kame import (
     INTERPRETER_PROMPT_INPUT_ORDER,
     INTERPRETER_PROMPT_POLICY,
+    KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
+    KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
     KAME_WITNESS_ARRIVAL_PHASES,
     KameOracleRequest,
     kame_evidence_bundle_id,
@@ -1137,7 +1139,9 @@ def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
             "kind": "reflex_transcript_hypothesis",
             "source": job.reflex_transcript_source or "reflex_audio",
             "text": job.reflex_transcript_hypothesis,
+            "role": KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
             "authority": "hypothesis",
+            "promotion_required": KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
             "tool_authority": False,
         }
         if job.reflex_transcript_confidence is not None:
@@ -1159,7 +1163,9 @@ def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
             "kind": _compact_evidence_text(value.get("kind"), limit=80) or _job_transcript_hypothesis_kind(source),
             "source": source,
             "text": text,
+            "role": KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
             "authority": "hypothesis",
+            "promotion_required": KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
             "tool_authority": False,
         }
         confidence = _compact_confidence(value.get("confidence"))  # type: ignore[arg-type]
@@ -1683,7 +1689,9 @@ def _compact_auxiliary_transcript_hypotheses(
         item: dict[str, Any] = {
             "source": source,
             "text": text,
+            "role": KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
             "authority": "hypothesis",
+            "promotion_required": KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
             "tool_authority": False,
         }
         kind = _compact_evidence_text(value.get("kind"), limit=80)

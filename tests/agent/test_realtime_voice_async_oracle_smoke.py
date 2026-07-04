@@ -192,7 +192,12 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_audio_segment_ref"] == "artifact://voiceclaw/turn-1.wav"
     assert report["external_frontend_audio_time_range_ms"] == [100, 2100]
     assert report["external_frontend_auxiliary_transcript_hypotheses"][0]["source"] == "moshi"
+    assert report["external_frontend_auxiliary_transcript_hypotheses"][0]["role"] == "witness_context"
     assert report["external_frontend_auxiliary_transcript_hypotheses"][0]["authority"] == "hypothesis"
+    assert (
+        report["external_frontend_auxiliary_transcript_hypotheses"][0]["promotion_required"]
+        == "interpreter_promoted_or_oracle_promoted"
+    )
     assert report["external_frontend_auxiliary_transcript_hypotheses"][0]["tool_authority"] is False
     assert report["external_frontend_witness_metadata_complete"] is True
     assert report["external_frontend_witness_confidence"] == 0.78
@@ -202,6 +207,8 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_witness_speaker"]["channel_user_id"] == "jetha-redacted"
     assert report["external_frontend_witness_channel"]["channel_id"] == "general-redacted"
     assert report["external_frontend_witness_tool_authority_false"] is True
+    assert report["external_frontend_witness_role_context"] is True
+    assert report["external_frontend_witness_promotion_required"] is True
     assert report["external_frontend_hypothesis_not_durable_oracle_text"] is True
     assert report["external_frontend_durable_user_messages_empty"] is True
     assert report["external_frontend_durable_oracle_text_absent"] is True
@@ -407,7 +414,9 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
         "kind": "frontend_witness_hypothesis",
         "source": "moshi",
         "text": "what is three to the power of seventeen",
+        "role": "witness_context",
         "authority": "hypothesis",
+        "promotion_required": "interpreter_promoted_or_oracle_promoted",
         "tool_authority": False,
         "confidence": 0.88,
         "arrival_phase": "with_raw_audio",

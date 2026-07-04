@@ -112,6 +112,8 @@ INTERPRETER_PROMPT_POLICY_VERSION = "raw_audio_compare_v1"
 KAME_WITNESS_ARRIVAL_PHASES = frozenset(
     {"before_raw_audio", "with_raw_audio", "after_interpreter_start"}
 )
+KAME_TRANSCRIPT_HYPOTHESIS_ROLE = "witness_context"
+KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED = "interpreter_promoted_or_oracle_promoted"
 INTERPRETER_PROMPT_POLICY = {
     "version": INTERPRETER_PROMPT_POLICY_VERSION,
     "primary_evidence": "raw_audio",
@@ -580,7 +582,9 @@ class KameOracleRequest:
                 "kind": "reflex_transcript_hypothesis",
                 "source": reflex_source,
                 "text": reflex_text,
+                "role": KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
                 "authority": "hypothesis",
+                "promotion_required": KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
                 "tool_authority": False,
             }
             if reflex_confidence is not None:
@@ -592,7 +596,9 @@ class KameOracleRequest:
                 "kind": "classic_asr_hypothesis",
                 "source": self.asr_transcript_source or "asr",
                 "text": self.asr_transcript.strip(),
+                "role": KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
                 "authority": "hypothesis",
+                "promotion_required": KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
                 "tool_authority": False,
             }
             if self.asr_transcript_confidence is not None:
@@ -1223,7 +1229,9 @@ def _canonical_transcript_hypothesis(value: object) -> dict[str, Any]:
         "kind": kind,
         "source": source,
         "text": text,
+        "role": KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
         "authority": "hypothesis",
+        "promotion_required": KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
         "tool_authority": False,
     }
     confidence = _confidence(value.get("confidence"))
@@ -1489,7 +1497,9 @@ def _auxiliary_transcript_hypothesis(value: object) -> dict[str, Any]:
         return {
             "source": "unknown",
             "text": text,
+            "role": KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
             "authority": "hypothesis",
+            "promotion_required": KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
             "tool_authority": False,
         } if text else {}
     if not isinstance(value, Mapping):
@@ -1505,7 +1515,9 @@ def _auxiliary_transcript_hypothesis(value: object) -> dict[str, Any]:
     hypothesis: dict[str, Any] = {
         "source": source,
         "text": text,
+        "role": KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
         "authority": "hypothesis",
+        "promotion_required": KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
         "tool_authority": False,
     }
     hypothesis["kind"] = _optional_text(value.get("kind")) or _transcript_hypothesis_kind(

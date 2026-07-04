@@ -20,6 +20,13 @@ from agent.realtime_voice_oracle_jobs import (
 from agent.realtime_voice_text_engine import _oracle_request_for_job
 
 
+def _witness_context_contract() -> dict[str, object]:
+    return {
+        "role": "witness_context",
+        "promotion_required": "interpreter_promoted_or_oracle_promoted",
+    }
+
+
 def _request(text: str, *, route: KameRoute = KameRoute.ORACLE_DIRECT) -> KameOracleRequest:
     return KameOracleRequest(
         session_id="voice-session-1",
@@ -971,6 +978,7 @@ async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witn
         {
             "source": "moshi",
             "text": "provision the phone account",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "kind": "frontend_witness_hypothesis",
@@ -984,6 +992,7 @@ async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witn
         {
             "source": "moshi",
             "text": "reuse the stale caption",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "kind": "frontend_witness_hypothesis",
@@ -997,6 +1006,7 @@ async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witn
         {
             "source": "voiceclaw",
             "text": "wrong room command",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "kind": "frontend_witness_hypothesis",

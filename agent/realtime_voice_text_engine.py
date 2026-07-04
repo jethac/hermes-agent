@@ -29,6 +29,8 @@ from agent.realtime_voice import (
 )
 from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_kame import (
+    KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
+    KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
     KameOracleRequest,
     KameRoute,
     kame_external_brain_request_to_oracle_request,
@@ -704,19 +706,38 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
         )
 
     async def _handle_external_oracle_request_event(self, event: VoiceEvent) -> bool:
-        return await self._handle_external_oracle_bridge_event(event, default_tool="ask_brain")
+        return await self._handle_external_oracle_bridge_event(
+            event,
+            default_tool="ask_brain",
+            require_protocol=True,
+        )
 
     async def _handle_external_oracle_hint_event(self, event: VoiceEvent) -> bool:
-        return await self._handle_external_oracle_bridge_event(event, default_tool="")
+        return await self._handle_external_oracle_bridge_event(
+            event,
+            default_tool="",
+            require_protocol=False,
+        )
 
-    async def _handle_external_oracle_bridge_event(self, event: VoiceEvent, *, default_tool: str) -> bool:
+    async def _handle_external_oracle_bridge_event(
+        self,
+        event: VoiceEvent,
+        *,
+        default_tool: str,
+        require_protocol: bool,
+    ) -> bool:
         payload = dict(event.payload)
         tool = str(payload.get("tool") or payload.get("tool_name") or default_tool).strip()
         source = str(payload.get("provider") or payload.get("source") or payload.get("transport") or "").strip()
         if tool not in {"ask_brain", "ask_hermes_oracle", "agent_consult", "openclaw_agent_consult"}:
             return False
         arguments = _external_kame_bridge_arguments(payload)
-        validation_errors = _external_kame_bridge_validation_errors(payload, arguments)
+        protocol = str(payload.get("protocol") or arguments.get("protocol") or "").strip()
+        validation_errors = (
+            _external_kame_bridge_validation_errors(payload, arguments)
+            if require_protocol or protocol
+            else ()
+        )
         if validation_errors:
             tool_result_payload = {
                 "provider": source or "external_kame_frontend",
@@ -4530,25 +4551,37 @@ def _transcript_hypothesis_from_value(
     confidence: Any = None,
 ) -> Any:
     if isinstance(value, Mapping):
+        enriched = _with_witness_context_contract(value)
         if source or confidence is not None:
-            enriched = dict(value)
             if source and not enriched.get("source") and not enriched.get("provider"):
                 enriched["source"] = source
             if confidence is not None and "confidence" not in enriched:
                 enriched["confidence"] = confidence
             return enriched
-        return value
+        return enriched
     text = str(value or "").strip()
     if not text:
         return None
     hypothesis: dict[str, Any] = {
         "source": str(source or default_source),
         "text": text,
+        "role": KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
         "authority": "hypothesis",
+        "promotion_required": KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
+        "tool_authority": False,
     }
     if confidence is not None:
         hypothesis["confidence"] = confidence
     return hypothesis
+
+
+def _with_witness_context_contract(value: Mapping[str, Any]) -> dict[str, Any]:
+    enriched = dict(value)
+    enriched["role"] = KAME_TRANSCRIPT_HYPOTHESIS_ROLE
+    enriched["authority"] = "hypothesis"
+    enriched["promotion_required"] = KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED
+    enriched["tool_authority"] = False
+    return enriched
 
 
 def _auxiliary_transcript_hypotheses_from_payload(payload: Mapping[str, Any]) -> list[Mapping[str, Any]]:
@@ -4559,7 +4592,10 @@ def _auxiliary_transcript_hypotheses_from_payload(payload: Mapping[str, Any]) ->
             "kind": "frontend_witness_hypothesis",
             "source": str(payload.get("transcript_source") or payload.get("source") or "frontend_witness"),
             "text": str(payload.get("text") or payload.get("transcript") or payload.get("hypothesis") or "").strip(),
+            "role": KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
             "authority": "hypothesis",
+            "promotion_required": KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
+            "tool_authority": False,
         }
         confidence = _interpreter_confidence_from_payload(payload.get("confidence"))
         if confidence is not None:
@@ -4567,9 +4603,9 @@ def _auxiliary_transcript_hypotheses_from_payload(payload: Mapping[str, Any]) ->
         _copy_witness_hypothesis_audit_fields(payload, hypothesis)
         hypotheses.append(hypothesis)
     if isinstance(value, list):
-        hypotheses.extend(item for item in value if isinstance(item, Mapping))
+        hypotheses.extend(_with_witness_context_contract(item) for item in value if isinstance(item, Mapping))
     elif isinstance(value, Mapping):
-        hypotheses.append(value)
+        hypotheses.append(_with_witness_context_contract(value))
     for key, source in (
         ("classic_asr_hypothesis", "classic_asr_fallback_optional"),
         ("asr_transcript_hypothesis", "classic_asr_fallback_optional"),
