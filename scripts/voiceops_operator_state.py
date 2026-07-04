@@ -610,6 +610,13 @@ def _validate_tool_disclosure(tool_disclosure: Any) -> list[str]:
         issues.append("tool_disclosure_broad_core_tools_visible")
     hidden_tools = set(tool_disclosure.get("hidden_core_tool_names") or [])
     input_core_tools = set(tool_disclosure.get("input_core_tools") or [])
+    from toolsets import _HERMES_CORE_TOOLS
+
+    expected_core_tools = set(_HERMES_CORE_TOOLS)
+    if input_core_tools != expected_core_tools:
+        issues.append("tool_disclosure_stale_input_core_tools")
+    if hidden_tools != expected_core_tools:
+        issues.append("tool_disclosure_stale_hidden_core_tools")
     for tool_name in input_core_tools or {"read_file", "terminal"}:
         if tool_name not in hidden_tools:
             issues.append(f"tool_disclosure_hidden_core_tool_missing:{tool_name}")

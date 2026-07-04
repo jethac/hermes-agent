@@ -2274,10 +2274,14 @@ async def build_plan_run_async(
                 "tool_disclosure": {
                     "ok": voice_operator["proofs"]["tool_disclosure"]["ok"],
                     "config": voice_operator["proofs"]["tool_disclosure"]["config"],
+                    "input_core_tools": voice_operator["proofs"]["tool_disclosure"].get("input_core_tools")
+                    or [],
                     "visible_tool_names": voice_operator["proofs"]["tool_disclosure"]["visible_tool_names"],
                     "visible_non_bridge_tool_names": voice_operator["proofs"]["tool_disclosure"].get(
                         "visible_non_bridge_tool_names"
                     )
+                    or [],
+                    "bridge_tool_names": voice_operator["proofs"]["tool_disclosure"].get("bridge_tool_names")
                     or [],
                     "hidden_core_tool_names": voice_operator["proofs"]["tool_disclosure"][
                         "hidden_core_tool_names"
@@ -2288,6 +2292,7 @@ async def build_plan_run_async(
                     "hidden_core_tool_count": voice_operator["proofs"]["tool_disclosure"].get(
                         "hidden_core_tool_count"
                     ),
+                    "bridge_tool_count": voice_operator["proofs"]["tool_disclosure"].get("bridge_tool_count"),
                     "core_tools_hidden_all": voice_operator["proofs"]["tool_disclosure"].get(
                         "core_tools_hidden_all"
                     ),
@@ -2295,6 +2300,13 @@ async def build_plan_run_async(
                         "broad_core_tools_visible"
                     ),
                     "deferred_count": voice_operator["proofs"]["tool_disclosure"]["deferred_count"],
+                    "deferred_tokens": voice_operator["proofs"]["tool_disclosure"].get("deferred_tokens"),
+                    "input_schema_tokens": voice_operator["proofs"]["tool_disclosure"].get(
+                        "input_schema_tokens"
+                    ),
+                    "visible_schema_tokens": voice_operator["proofs"]["tool_disclosure"].get(
+                        "visible_schema_tokens"
+                    ),
                     "token_reduction_estimate": voice_operator["proofs"]["tool_disclosure"].get(
                         "token_reduction_estimate"
                     ),

@@ -274,6 +274,26 @@ def test_package_audit_rejects_ephemeral_tool_router_plan_projection_drift(tmp_p
     )
 
 
+def test_package_audit_rejects_tool_disclosure_plan_projection_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
+    plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
+    voice_result = next(
+        result
+        for result in plan_run["results"]
+        if result["milestone"] == "milestone_1_real_voice_operator"
+    )
+    voice_result["details"]["tool_disclosure"]["input_core_tools"] = ["read_file"]
+    voice_result["details"]["tool_disclosure"]["visible_schema_tokens"] = 0
+    _write_json(plan_run_path, plan_run)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "plan_run:voice_operator.tool_disclosure.input_core_tools_mismatch" in report["issues"]
+    assert "plan_run:voice_operator.tool_disclosure.visible_schema_tokens_mismatch" in report["issues"]
+
+
 def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     artifact_root = _generate_package(tmp_path)
     readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"

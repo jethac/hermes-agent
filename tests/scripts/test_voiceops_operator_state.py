@@ -210,6 +210,17 @@ def test_operator_state_validates_blocked_capabilities_and_budget_controls():
         "tool_disclosure_visible_tool_missing:tool_search",
     ]
 
+    stale_tool_disclosure = json.loads(json.dumps(state))
+    stale_tool_disclosure["tool_disclosure"]["input_core_tools"] = ["read_file"]
+    stale_tool_disclosure["tool_disclosure"]["hidden_core_tool_names"] = ["read_file"]
+    stale_tool_disclosure["tool_disclosure"]["input_core_tool_count"] = 1
+    stale_tool_disclosure["tool_disclosure"]["hidden_core_tool_count"] = 1
+    stale_tool_disclosure["tool_disclosure"]["deferred_count"] = 1
+    assert set(validate_operator_state(stale_tool_disclosure)) == {
+        "tool_disclosure_stale_input_core_tools",
+        "tool_disclosure_stale_hidden_core_tools",
+    }
+
     mismatched_approvals = json.loads(json.dumps(state))
     mismatched_approvals["pending_approvals"][0]["budget_impact_cents"] = 1
     assert validate_operator_state(mismatched_approvals) == ["pending_approval_budget_mismatch"]

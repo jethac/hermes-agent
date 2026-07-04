@@ -2096,6 +2096,27 @@ def test_voice_operator_validation_rejects_tool_disclosure_proof_ref_mismatch():
     assert "progressive_tool_disclosure:stale_proof_external_test_refs" in issues
 
 
+def test_voice_operator_validation_rejects_stale_tool_disclosure_core_list():
+    report = _voice_operator_report()
+    report["tool_disclosure_smoke"]["input_core_tools"] = ["read_file"]
+    report["tool_disclosure_smoke"]["hidden_core_tool_names"] = ["read_file"]
+    report["tool_disclosure_smoke"]["input_core_tool_count"] = 1
+    report["tool_disclosure_smoke"]["hidden_core_tool_count"] = 1
+    report["tool_disclosure_smoke"]["deferred_count"] = 1
+    report["proofs"]["tool_disclosure"]["input_core_tools"] = ["read_file"]
+    report["proofs"]["tool_disclosure"]["hidden_core_tool_names"] = ["read_file"]
+    report["proofs"]["tool_disclosure"]["input_core_tool_count"] = 1
+    report["proofs"]["tool_disclosure"]["hidden_core_tool_count"] = 1
+    report["proofs"]["tool_disclosure"]["deferred_count"] = 1
+
+    issues = validate_voice_operator_report(report)
+
+    assert "progressive_tool_disclosure:stale_input_core_tools" in issues
+    assert "progressive_tool_disclosure:stale_hidden_core_tools" in issues
+    assert "progressive_tool_disclosure:proof_stale_input_core_tools" in issues
+    assert "progressive_tool_disclosure:proof_stale_hidden_core_tools" in issues
+
+
 def test_voice_operator_validation_rejects_completed_result_missing_from_status_view():
     report = _voice_operator_report()
     report["async_oracle_smoke"]["completed_result_status_visible"] = False

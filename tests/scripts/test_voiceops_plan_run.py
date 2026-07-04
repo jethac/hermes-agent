@@ -1136,17 +1136,25 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
             "enabled": "on",
         },
         "broad_core_tools_visible": False,
+        "bridge_tool_count": 3,
+        "bridge_tool_names": ["tool_call", "tool_describe", "tool_search"],
         "core_tools_hidden_all": True,
         "deferred_count": len(_HERMES_CORE_TOOLS),
+        "deferred_tokens": tool_details["deferred_tokens"],
         "hidden_core_tool_count": len(_HERMES_CORE_TOOLS),
         "hidden_core_tool_names": sorted(_HERMES_CORE_TOOLS),
         "input_core_tool_count": len(_HERMES_CORE_TOOLS),
+        "input_core_tools": sorted(_HERMES_CORE_TOOLS),
+        "input_schema_tokens": tool_details["input_schema_tokens"],
         "ok": True,
         "test_ref_count": 6,
         "token_reduction_estimate": tool_details["token_reduction_estimate"],
+        "visible_schema_tokens": tool_details["visible_schema_tokens"],
         "visible_non_bridge_tool_names": [],
         "visible_tool_names": ["tool_call", "tool_describe", "tool_search"],
     }
+    assert tool_details["deferred_tokens"] > 0
+    assert tool_details["input_schema_tokens"] > tool_details["visible_schema_tokens"]
     assert tool_details["token_reduction_estimate"] > 0
     assert voice_result["details"]["ephemeral_tool_router"] == {
         "ok": True,

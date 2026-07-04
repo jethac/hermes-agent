@@ -1787,6 +1787,11 @@ def _audit_voice_operator_artifact_consistency(
         if readiness.get(field) != standalone_payload:
             issues.append(f"voice_operator_readiness:{field}_standalone_artifact_mismatch")
     _audit_voice_operator_proof_consistency(readiness=readiness, issues=issues)
+    _audit_voice_operator_tool_disclosure_plan_projection(
+        readiness=readiness,
+        plan_run=plan_run,
+        issues=issues,
+    )
     _audit_voice_operator_ephemeral_router_plan_projection(
         readiness=readiness,
         plan_run=plan_run,
@@ -1832,6 +1837,54 @@ def _audit_voice_operator_ephemeral_router_plan_projection(
     for field, expected_value in expected.items():
         if projected.get(field) != expected_value:
             issues.append(f"plan_run:voice_operator.ephemeral_tool_router.{field}_mismatch")
+
+
+def _audit_voice_operator_tool_disclosure_plan_projection(
+    *,
+    readiness: Mapping[str, Any],
+    plan_run: Mapping[str, Any],
+    issues: list[str],
+) -> None:
+    proof = (
+        readiness.get("proofs", {}).get("tool_disclosure")
+        if isinstance(readiness.get("proofs"), Mapping)
+        and isinstance(readiness.get("proofs", {}).get("tool_disclosure"), Mapping)
+        else {}
+    )
+    voice_result = next(
+        (
+            result
+            for result in plan_run.get("results", [])
+            if isinstance(result, Mapping)
+            and result.get("milestone") == "milestone_1_real_voice_operator"
+        ),
+        {},
+    )
+    details = voice_result.get("details") if isinstance(voice_result.get("details"), Mapping) else {}
+    projected = details.get("tool_disclosure") if isinstance(details.get("tool_disclosure"), Mapping) else {}
+    expected = {
+        "ok": proof.get("ok"),
+        "config": proof.get("config"),
+        "input_core_tools": proof.get("input_core_tools"),
+        "visible_tool_names": proof.get("visible_tool_names"),
+        "visible_non_bridge_tool_names": proof.get("visible_non_bridge_tool_names") or [],
+        "bridge_tool_names": proof.get("bridge_tool_names") or [],
+        "hidden_core_tool_names": proof.get("hidden_core_tool_names"),
+        "input_core_tool_count": proof.get("input_core_tool_count"),
+        "hidden_core_tool_count": proof.get("hidden_core_tool_count"),
+        "bridge_tool_count": proof.get("bridge_tool_count"),
+        "core_tools_hidden_all": proof.get("core_tools_hidden_all"),
+        "broad_core_tools_visible": proof.get("broad_core_tools_visible"),
+        "deferred_count": proof.get("deferred_count"),
+        "deferred_tokens": proof.get("deferred_tokens"),
+        "input_schema_tokens": proof.get("input_schema_tokens"),
+        "visible_schema_tokens": proof.get("visible_schema_tokens"),
+        "token_reduction_estimate": proof.get("token_reduction_estimate"),
+        "test_ref_count": len(proof.get("external_test_refs") or []),
+    }
+    for field, expected_value in expected.items():
+        if projected.get(field) != expected_value:
+            issues.append(f"plan_run:voice_operator.tool_disclosure.{field}_mismatch")
 
 
 def _compare_proof_fields(

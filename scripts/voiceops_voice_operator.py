@@ -3768,8 +3768,15 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
     smoke_input_core_tools = sorted(tool_disclosure_smoke.get("input_core_tools") or [])
     smoke_hidden_core_tools = sorted(tool_disclosure_smoke.get("hidden_core_tool_names") or [])
     smoke_visible_non_bridge_tools = sorted(tool_disclosure_smoke.get("visible_non_bridge_tool_names") or [])
+    from toolsets import _HERMES_CORE_TOOLS
+
+    expected_core_tools = sorted(_HERMES_CORE_TOOLS)
     if not smoke_input_core_tools:
         issues.append("progressive_tool_disclosure:missing_input_core_tools")
+    if smoke_input_core_tools != expected_core_tools:
+        issues.append("progressive_tool_disclosure:stale_input_core_tools")
+    if smoke_hidden_core_tools != expected_core_tools:
+        issues.append("progressive_tool_disclosure:stale_hidden_core_tools")
     if smoke_hidden_core_tools != smoke_input_core_tools:
         issues.append("progressive_tool_disclosure:core_tools_not_hidden")
     if smoke_visible_non_bridge_tools:
@@ -3791,6 +3798,10 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
     if proof_input_core_tools != smoke_input_core_tools or proof_hidden_core_tools != smoke_hidden_core_tools:
         issues.append("progressive_tool_disclosure:stale_proof_hidden_core_tools")
     if isinstance(tool_disclosure, Mapping):
+        if proof_input_core_tools != expected_core_tools:
+            issues.append("progressive_tool_disclosure:proof_stale_input_core_tools")
+        if proof_hidden_core_tools != expected_core_tools:
+            issues.append("progressive_tool_disclosure:proof_stale_hidden_core_tools")
         if tool_disclosure.get("core_tools_hidden_all") is not True:
             issues.append("progressive_tool_disclosure:proof_core_tools_hidden_all_not_true")
         if tool_disclosure.get("broad_core_tools_visible") is not False:
