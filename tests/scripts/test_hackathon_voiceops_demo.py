@@ -413,7 +413,17 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "treat Moshi/S2S/ASR text as verified without checking raw audio" in provider_roles["interpreter"]["must_not"]
     assert provider_roles["oracle"]["authority"] == "oracle_promoted"
     assert provider_roles["oracle"]["selected_label"] == payload["spark_stack"]["oracle"]["model"]
-    assert "VoiceOps-specific oracle_model setting" in json.dumps(provider_roles["oracle"]["must_not"])
+    oracle_must_not = json.dumps(provider_roles["oracle"]["must_not"])
+    assert "VoiceOps-specific oracle selector fields" in oracle_must_not
+    for selector in (
+        "oracle_model",
+        "preferred_local_oracle_model",
+        "oracle_provider",
+        "oracle_provider_name",
+        "oracle_base_url",
+        "oracle_api_mode",
+    ):
+        assert selector in oracle_must_not
     assert provider_roles["auxiliary_transcript_evidence"]["authority"] == "hypothesis"
     assert provider_roles["outbound_tts"]["authority"] == "playback_only"
     assert provider_roles["degraded_fallback"]["authority"] == "fallback_text_or_diagnostic_only"

@@ -1236,7 +1236,7 @@ def _provider_role_matrix(active_model: str, reflex_model: str, interpreter_mode
                 "durable user-visible outcome",
             ],
             "must_not": [
-                "be configured through a VoiceOps-specific oracle_model setting",
+                "be configured through VoiceOps-specific oracle selector fields such as oracle_model, preferred_local_oracle_model, oracle_provider, oracle_provider_name, oracle_base_url, or oracle_api_mode",
                 "act on hypothesis-only transcript text for high-risk actions",
                 "count hosted fallback as one-Spark readiness proof",
             ],

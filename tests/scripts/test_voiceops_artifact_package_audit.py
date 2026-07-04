@@ -1176,7 +1176,14 @@ def test_package_audit_rejects_provider_role_matrix_drift(tmp_path):
         in report["issues"]
     )
     assert "provider_role_matrix:auxiliary_transcript_evidence:missing_high_risk_boundary" in report["issues"]
-    assert "provider_role_matrix:oracle:missing_oracle_model_boundary" in report["issues"]
+    assert "provider_role_matrix:oracle:missing_voice_scoped_oracle_selector_boundary" in report["issues"]
+    assert "provider_role_matrix:oracle:missing_oracle_selector_boundary:oracle_model" in report["issues"]
+    assert (
+        "provider_role_matrix:oracle:missing_oracle_selector_boundary:preferred_local_oracle_model"
+        in report["issues"]
+    )
+    assert "provider_role_matrix:oracle:missing_oracle_selector_boundary:oracle_provider" in report["issues"]
+    assert "provider_role_matrix:oracle:missing_oracle_selector_boundary:oracle_base_url" in report["issues"]
     assert "dashboard:missing_provider_role_token:Provider Roles" in report["issues"]
 
 

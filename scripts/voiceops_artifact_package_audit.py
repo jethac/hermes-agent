@@ -48,6 +48,15 @@ EXPECTED_PROVIDER_ROLE_AUTHORITIES = {
     "outbound_tts": "playback_only",
     "degraded_fallback": "fallback_text_or_diagnostic_only",
 }
+
+VOICE_SCOPED_ORACLE_SELECTOR_BOUNDARY_TOKENS = (
+    "oracle_model",
+    "preferred_local_oracle_model",
+    "oracle_provider",
+    "oracle_provider_name",
+    "oracle_base_url",
+    "oracle_api_mode",
+)
 EXPECTED_SPARK_SCAFFOLD_LINT_ISSUES = {
     "collector_attestation_example_only_not_accepted",
     "collector_attestation_invalid:collector_version",
@@ -737,8 +746,14 @@ def _audit_provider_role_matrix(
                 issues.append(f"provider_role_matrix:{role}:{field}_missing")
 
     oracle_must_not = role_items.get("oracle", {}).get("must_not") if isinstance(role_items.get("oracle"), Mapping) else []
-    if not any("oracle_model" in str(value) for value in oracle_must_not or []):
-        issues.append("provider_role_matrix:oracle:missing_oracle_model_boundary")
+    oracle_boundary_text = " ".join(str(value) for value in oracle_must_not or [])
+    missing_oracle_boundary_tokens = [
+        token for token in VOICE_SCOPED_ORACLE_SELECTOR_BOUNDARY_TOKENS if token not in oracle_boundary_text
+    ]
+    if missing_oracle_boundary_tokens:
+        issues.append("provider_role_matrix:oracle:missing_voice_scoped_oracle_selector_boundary")
+        for token in missing_oracle_boundary_tokens:
+            issues.append(f"provider_role_matrix:oracle:missing_oracle_selector_boundary:{token}")
     aux_must_not = (
         role_items.get("auxiliary_transcript_evidence", {}).get("must_not")
         if isinstance(role_items.get("auxiliary_transcript_evidence"), Mapping)
