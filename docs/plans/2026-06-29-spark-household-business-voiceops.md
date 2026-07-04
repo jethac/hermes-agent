@@ -342,6 +342,14 @@ clients. Transport adapters should normalize channel-specific audio, text,
 playback, interruption, authorization, and handoff events into the same internal
 session contract before any reflex or oracle policy runs.
 
+The concrete session contract is `docs/kame-session-v1.md`. For hackathon and
+headless proof purposes, it must show that Moshi/open-S2S witness text can
+arrive before, with, or after the accepted audio cut and still attach to the
+same raw-audio evidence bundle. The visible product story is not "Moshi did
+STT, then Hermes acted"; it is "the reflex answered quickly, the interpreter
+compared raw voice with witness text, and only promoted evidence reached the
+Hermes oracle and action gates."
+
 VoiceClaw/OpenClaw lessons to absorb:
 
 - a realtime voice frontend can act as a true reflex if it has only a narrow
@@ -448,6 +456,13 @@ not as the message Hermes acted on. The safe story for judges is: the reflex
 answers quickly, Gemma compares raw audio and witness text, then Hermes' active
 `/model` receives only promoted wording plus labeled evidence before Stripe,
 NemoClaw, phone, memory, file, or messaging actions can proceed.
+
+The proof should cover all witness timing cases: witness-before-cut,
+witness-with-cut, and witness-after-cut. In each case, the same `turn_id`,
+`audio_segment_ref`, `evidence_bundle_id`, and `evidence_merge_key` should
+survive, partial text should be superseded by same-source final text in active
+interpreter context, and no duplicate oracle job or durable user message should
+be created from the witness alone.
 
 ### Interpreter
 

@@ -9,6 +9,11 @@ VoiceClaw/OpenClaw-style frontends, phone/SIP, WhatsApp voice, desktop mic, and
 future clients. It lets a fast frontend act as the reflex without inheriting
 Hermes' tools or durable transcript authority.
 
+The canonical voice turn is one raw-audio evidence bundle with optional sensor
+attachments. A Moshi/open-S2S transcript, VoiceClaw/OpenClaw text, or classic
+ASR string is a witness attached to that bundle. It is not a separate Hermes
+message, not a scheduler input, and not action authority.
+
 ## Roles
 
 External frontends may provide:
@@ -27,6 +32,17 @@ memory, payment, provisioning, phone, message, or credential tools.
 
 Every spoken turn should use one `turn_id`. If raw audio is available, every
 witness transcript for that speech cut must share the same `audio_segment_ref`.
+
+The frontend may send evidence in any of these orders:
+
+- witness text before the accepted audio cut exists
+- witness text in the same packet as the accepted audio cut
+- witness text after the interpreter request has already started
+
+All three cases must converge on the same `turn_id`, `audio_segment_ref`,
+`evidence_bundle_id`, and `evidence_merge_key`. Early witness text is held on a
+pending bundle. Late witness text is appended as late evidence on the existing
+bundle. Neither case may create a duplicate oracle job or durable user turn.
 
 Minimum external oracle request shape:
 
@@ -73,12 +89,20 @@ Minimum external oracle request shape:
       "partial": false,
       "confidence": 0.78,
       "latency_ms": 140,
+      "audio_time_range_ms": [120, 1840],
+      "speaker_guess": {"platform": "discord", "channel_user_id": "redacted-user"},
+      "channel_guess": {"transport": "discord_voice", "channel_id": "redacted-channel"},
       "authority": "hypothesis",
       "tool_authority": false
     }
   ]
 }
 ```
+
+`arguments.query` and `arguments.intent` are provisional frontend route/context
+fields. They are allowed to help create a job envelope or a spoken
+acknowledgement, but they are not durable user text, not `oracle_text`, and not
+tool/action authority unless promoted by interpreter or oracle evidence.
 
 If the adapter cannot prove whether transcript-looking text came from the live
 reflex model or a sibling caption/S2S lane, it must use
@@ -98,6 +122,53 @@ When raw audio exists, transcript hypotheses are attached to that same turn as
 interpreter context. They do not create a second Hermes turn, do not schedule a
 parallel oracle request, and do not become durable transcript text unless the
 interpreter or oracle explicitly promotes them.
+
+The interpreter request should preserve input ordering:
+
+1. primary raw audio reference and timing
+2. speaker/channel/VAD/energy metadata
+3. reflex route and acknowledgement already spoken
+4. transcript hypotheses from Moshi/open-S2S, VoiceClaw/OpenClaw, reflex, or
+   classic ASR
+
+This ordering is part of the trust model. It tells the interpreter that
+transcript-looking text is context for comparing against the waveform, not the
+user message of record.
+
+## Transcript Hypothesis Semantics
+
+Adapters should prefer these `kind` values:
+
+- `frontend_witness_hypothesis`: ambiguous transcript-looking output from a
+  Moshi/open-S2S, VoiceClaw, OpenClaw, or hosted realtime frontend when the
+  exact producer is not proven.
+- `reflex_transcript_hypothesis`: text proven to come from the live reflex
+  model's own hearing.
+- `s2s_transcript_hypothesis`: text proven to come from a distinct S2S caption
+  or transcript side channel.
+- `classic_asr_hypothesis`: text from a dedicated ASR provider retained for
+  captions, diagnostics, literal checks, or degraded fallback.
+
+Every hypothesis must carry `authority = "hypothesis"` and
+`tool_authority = false`. Source names such as `moshi`, `openclaw`,
+`voiceclaw`, `riva`, or `cartesia` are provenance, not authority labels.
+
+Partial hypotheses are active only until a same-source, same-kind final
+hypothesis for the same speech cut arrives. The final hypothesis replaces the
+partial in active interpreter context; the partial survives only as superseded
+provenance for audit and latency debugging.
+
+The interpreter must adjudicate each active hypothesis with one of:
+
+- `accepted_as_supporting_evidence`
+- `corrected_by_audio`
+- `rejected_or_diagnostic_only`
+
+Only accepted or corrected hypotheses may contribute to promoted interpreter
+fields, and only after the interpreter emits those promoted fields. Rejected or
+diagnostic hypotheses remain visible in audit records but cannot become durable
+history, tool arguments, spend reasons, provider selections, phone payloads,
+memory writes, file writes, or external messages.
 
 ## Output Events
 
@@ -125,6 +196,8 @@ and final results without treating witness text as durable user history.
   text remains diagnostic and has no scheduling or tool authority.
 - Text-only external requests are degraded compatibility mode.
 - `ask_brain` maps to a typed Hermes oracle job, not a hidden chat turn.
+- `arguments.query` and `arguments.intent` are provisional route/context fields,
+  not verified user text.
 - Frontend witness text cannot become `oracle_text`, spend reason, provider
   selection, NemoClaw action packet, phone payload, tool argument, memory write,
   file write, external message, or durable user history without
@@ -144,8 +217,17 @@ audit should expose:
 - shared `turn_id`, `audio_segment_ref`, `evidence_bundle_id`, and
   `evidence_merge_key`
 - transcript hypotheses with `tool_authority = false`
+- interpreter prompt/input order showing raw audio before witness text
+- witness arrival phase: before cut, with cut, or after interpreter start
 - witness metadata for source, confidence, latency, partial/final state,
   audio time range, speaker guess, and channel guess when available
+- transcript-only degraded mode rejected for full-KAME/action gates
 - terminal correlation by `tool_call_id`
 - audit-id continuity from request to status and terminal event
 - direct-tool authority absence
+- timing-order proof for witness-before-cut, witness-with-cut, and
+  witness-after-cut cases
+- interpreter adjudication outcome for every active transcript hypothesis
+- sink checks proving rejected or unpromoted witness text did not enter spend,
+  provider, NemoClaw, phone, tool, memory, file, message, or durable-history
+  payloads

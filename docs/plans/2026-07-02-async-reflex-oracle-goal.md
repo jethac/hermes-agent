@@ -38,6 +38,15 @@ believed it heard, especially for clipped starts, names, numbers, and
 code-switching, but it is not the transcript of record and it must not create a
 parallel oracle turn.
 
+Protocol decision: use `docs/kame-session-v1.md` as the packet contract for
+external and internal realtime frontends. The adapter may receive Moshi/open-S2S
+or classic-ASR witness text before the accepted audio cut, with the cut, or
+after the interpreter has started. All three cases must attach to one
+`turn_id`, one `audio_segment_ref`, one `evidence_bundle_id`, and one
+`evidence_merge_key`. The scheduler must hold early witness text on the pending
+bundle and append late witness text to the existing bundle; it must not create a
+duplicate oracle job or durable user turn.
+
 The Moshi transcript is useful context, not control. It should help Gemma detect
 clipped prefixes, names, numbers, code-switching, and hallucinated commands,
 but it must remain `frontend_witness_hypothesis` or another explicit
@@ -205,6 +214,12 @@ optional classic ASR hypothesis, VAD/energy timing, and the clipped waveform.
 Those observations merge by `turn_id` and `audio_segment_ref` before oracle
 authority. The interpreter, not the first transcript to arrive, decides what
 wording can become durable or tool-critical.
+
+Partial/final corollary: transcript hypotheses are source/kind scoped. A final
+same-source, same-kind hypothesis replaces the partial in active interpreter
+context, while the partial remains superseded provenance for audit and latency
+debugging. A partial such as "hey" must not become a durable Hermes turn, an
+oracle job, or an action argument when a later final for the same cut exists.
 
 Runtime identity rule: keep two ids. `evidence_bundle_id` is stable across late
 audio attachment for the same speech cut, while `evidence_merge_key` is the

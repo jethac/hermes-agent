@@ -149,6 +149,16 @@ context: it cannot schedule a separate Hermes turn, cannot become durable chat
 history, and cannot authorize tools, spend, calls, memory, files, or messages
 unless Gemma promotes raw-audio-grounded evidence for the active oracle.
 
+2026-07-04 protocol decision: the transport-neutral packet is
+`kame_session_v1`. A Moshi/open-S2S witness can arrive before the accepted cut,
+with the accepted cut, or after the interpreter request has started, but all
+three timing cases must merge into the same `turn_id`, `audio_segment_ref`,
+`evidence_bundle_id`, and `evidence_merge_key`. The active interpreter context
+contains at most one same-source, same-kind final hypothesis for a speech cut;
+partials are retained only as superseded provenance. The acceptance proof must
+show witness-before-cut, witness-with-cut, and witness-after-cut cases without
+duplicate oracle jobs or durable user turns.
+
 | Tier | Primary input | Immediate output | Authority boundary |
 | --- | --- | --- | --- |
 | Reflex | live audio, VAD/energy, current session state | acknowledgement, barge-in, route, rough intent, optional witness transcript | floor control only; provisional `reflex_hypothesis` |
@@ -318,9 +328,15 @@ Every headless or recorded proof of this design should show the same facts:
 - transcript hypotheses with `kind`, `source`, timing/confidence when
   available, partial/final state, `authority = "hypothesis"`, and
   `tool_authority = false`
+- `witness_arrival_phase` for before-cut, with-cut, and after-interpreter-start
+  evidence timing
+- `raw_audio_interpreter_evidence_observed = true` for full-KAME acceptance
 - interpreter adjudication for each witness:
   `accepted_as_supporting_evidence`, `corrected_by_audio`, or
   `rejected_or_diagnostic_only`
+- `transcript_only_witness_rejected_for_full_kame = true` when raw audio is
+  missing
+- no duplicate oracle job or durable user turn from transcript hypotheses alone
 - promoted `interpreter_corrected_transcript`, normalized intent, entities, and
   confidence before those fields reach the active Hermes oracle
 - sink-specific checks proving unpromoted witness text did not enter Stripe
@@ -1665,9 +1681,10 @@ timeout_ms = 2000
 late_bind_to_oracle_jobs = true
 
 [voice.realtime.transcript_evidence]
-mode = "from_reflex"
+mode = "witness_hypotheses"
 dedicated_asr_mode = "disabled"
-sources = ["reflex", "moshi"]
+sources = ["reflex", "frontend_witness"]
+# Provider names such as "moshi" belong in each hypothesis source field.
 ambiguous_frontend_text_kind = "frontend_witness_hypothesis"
 # Add "asr" only for explicit fallback, diagnostics, or literal-evidence checks.
 attach_to_interpreter_bundle = true

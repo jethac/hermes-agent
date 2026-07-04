@@ -317,8 +317,9 @@ non-authoritative handling of ElevenLabs transcripts.
 - `en,ja` is the production preset. Other languages can be advertised with
   `HERMES_ELEVENLABS_OUTPUT_LANGUAGES`, but they should not be claimed as
   production-ready until smoke evidence exists for them.
-- Gemma/audio frontends and native speech-to-speech providers should implement
-  the same sidecar bridge contract while preserving raw audio references.
+- Gemma/audio interpreters and native speech-to-speech frontends should
+  implement the same sidecar bridge contract while preserving raw audio
+  references.
   Moshi/OpenClaw/VoiceClaw transcript-like text should be attached as labeled
   hypotheses beside raw audio and must not become durable user text,
   `oracle_text`, or tool-critical arguments without interpreter/oracle promotion.
