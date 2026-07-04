@@ -1663,6 +1663,11 @@ def _audit_channel_policy(policy: Mapping[str, Any], review: Mapping[str, Any], 
         for channel in policy.get("channel_authorization", [])
         if isinstance(channel, Mapping)
     }
+    policy_routes = {
+        str(route.get("route_id")): route
+        for route in policy.get("approval_routing", [])
+        if isinstance(route, Mapping)
+    }
     if review.get("schema_version") != "voiceops.multi_channel_policy_review.v1":
         issues.append("channel_policy_review:schema_version_mismatch")
     if review.get("artifact_id") != "voiceops-m3-channel-policy-review":
@@ -1746,6 +1751,12 @@ def _audit_channel_policy(policy: Mapping[str, Any], review: Mapping[str, Any], 
         route_map = policy.get("approval_route_map") if isinstance(policy.get("approval_route_map"), Mapping) else {}
         if dict(channel.get("approval_routes_to_confirm") or {}) != dict(route_map.get(channel_id) or {}):
             issues.append(f"channel_policy_review:{channel_id}:approval_routes_mismatch")
+        expected_payload_classes = {
+            approval_item: policy_routes.get(str(route_id), {}).get("payload_classes")
+            for approval_item, route_id in dict(route_map.get(channel_id) or {}).items()
+        }
+        if dict(channel.get("route_payload_classes_to_confirm") or {}) != expected_payload_classes:
+            issues.append(f"channel_policy_review:{channel_id}:route_payload_classes_mismatch")
         if channel.get("kame_evidence_gate_to_confirm") != policy_kame_gate.get("gate_id"):
             issues.append(f"channel_policy_review:{channel_id}:kame_evidence_gate_mismatch")
         checklist = [str(item).lower() for item in channel.get("checklist") or []]

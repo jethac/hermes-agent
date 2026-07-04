@@ -376,6 +376,16 @@ source artifact hash, and collector attestation agree. The manifest path is
 metadata, not authority; the source artifact must be self-describing so a copied
 or renamed JSON file cannot satisfy setup proof by position alone.
 
+2026-07-05 channel route-payload amendment: channel approval routes must declare
+what kind of payload they can carry before any operator review can approve live
+egress. Each route must include a payload policy, allowed payload classes,
+`payload_digest_required = true`, and `raw_witness_text_allowed = false`.
+Customer-visible routes may carry only redacted approved payload classes.
+Phone-handoff routes may carry references and summaries, not raw phone numbers
+or transcript text. Spend, provisioning, credential, and account-mutation routes
+must keep `outbound_payload_allowed = false` and may emit only blocked-intent or
+operator-escalation evidence.
+
 2026-07-04 frontend-witness amendment: when a Moshi/open-S2S frontend exposes
 an "STT" string, Hermes should classify it as a frontend witness transcript, not
 as a dedicated ASR result. The preferred packet is raw audio plus witness text in

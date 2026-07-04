@@ -85,18 +85,27 @@ REQUIRED_APPROVAL_ROUTES = {
         "default_decision": "hold_for_human_approval",
         "min_approval_count": 1,
         "escalation_level": "level_1",
+        "payload_policy": "phone_handoff_reference_only",
+        "payload_classes": {"phone_handoff_context_ref", "redacted_call_summary", "approval_request"},
+        "outbound_payload_allowed": True,
     },
     "customer_visible_outbound": {
         "applies_to": set(CHANNEL_IDS),
         "default_decision": "hold_for_human_approval",
         "min_approval_count": 1,
         "escalation_level": "level_1",
+        "payload_policy": "customer_visible_redacted",
+        "payload_classes": {"redacted_customer_message", "draft_reply", "approval_request"},
+        "outbound_payload_allowed": True,
     },
     "sensitive_context_replay": {
         "applies_to": set(CHANNEL_IDS),
         "default_decision": "hold_for_dual_approval",
         "min_approval_count": 2,
         "escalation_level": "level_2",
+        "payload_policy": "sensitive_context_reference_only",
+        "payload_classes": {"redacted_context_summary", "identifier_reference", "approval_request"},
+        "outbound_payload_allowed": True,
     },
     "spend_provisioning_or_credential": {
         "applies_to": set(CHANNEL_IDS),
@@ -104,8 +113,12 @@ REQUIRED_APPROVAL_ROUTES = {
         "min_approval_count": 2,
         "escalation_level": "level_3",
         "approver_roles": {"business_owner", "security_owner"},
+        "payload_policy": "blocked_intent_no_channel_egress",
+        "payload_classes": {"blocked_intent_summary", "operator_escalation_notice"},
+        "outbound_payload_allowed": False,
     },
 }
+REQUIRED_STATUS_ONLY_PAYLOAD_CLASSES = {"redacted_internal_status", "policy_acknowledgement"}
 REQUIRED_ESCALATIONS = {
     "level_1": {
         "destination_role": "channel_owner",
@@ -231,6 +244,11 @@ class ApprovalRoute:
     ttl_minutes: int
     escalation_level: str
     audit_event: str
+    payload_policy: str
+    payload_classes: list[str]
+    outbound_payload_allowed: bool
+    raw_witness_text_allowed: bool
+    payload_digest_required: bool
 
 
 @dataclass(frozen=True)
@@ -356,6 +374,11 @@ def default_approval_routes() -> list[ApprovalRoute]:
             ttl_minutes=0,
             escalation_level="none",
             audit_event="channel_policy.status_only.allow",
+            payload_policy="internal_status_only",
+            payload_classes=["redacted_internal_status", "policy_acknowledgement"],
+            outbound_payload_allowed=True,
+            raw_witness_text_allowed=False,
+            payload_digest_required=True,
         ),
         ApprovalRoute(
             route_id="customer_visible_outbound",
@@ -367,6 +390,11 @@ def default_approval_routes() -> list[ApprovalRoute]:
             ttl_minutes=15,
             escalation_level="level_1",
             audit_event="channel_policy.customer_visible.request_approval",
+            payload_policy="customer_visible_redacted",
+            payload_classes=["redacted_customer_message", "draft_reply", "approval_request"],
+            outbound_payload_allowed=True,
+            raw_witness_text_allowed=False,
+            payload_digest_required=True,
         ),
         ApprovalRoute(
             route_id="sensitive_context_replay",
@@ -378,6 +406,11 @@ def default_approval_routes() -> list[ApprovalRoute]:
             ttl_minutes=30,
             escalation_level="level_2",
             audit_event="channel_policy.sensitive_context.request_approval",
+            payload_policy="sensitive_context_reference_only",
+            payload_classes=["redacted_context_summary", "identifier_reference", "approval_request"],
+            outbound_payload_allowed=True,
+            raw_witness_text_allowed=False,
+            payload_digest_required=True,
         ),
         ApprovalRoute(
             route_id="approved_phone_handoff_call",
@@ -389,6 +422,11 @@ def default_approval_routes() -> list[ApprovalRoute]:
             ttl_minutes=10,
             escalation_level="level_1",
             audit_event="channel_policy.phone_handoff.request_approval",
+            payload_policy="phone_handoff_reference_only",
+            payload_classes=["phone_handoff_context_ref", "redacted_call_summary", "approval_request"],
+            outbound_payload_allowed=True,
+            raw_witness_text_allowed=False,
+            payload_digest_required=True,
         ),
         ApprovalRoute(
             route_id="spend_provisioning_or_credential",
@@ -400,6 +438,11 @@ def default_approval_routes() -> list[ApprovalRoute]:
             ttl_minutes=60,
             escalation_level="level_3",
             audit_event="channel_policy.blocked_capability.escalate",
+            payload_policy="blocked_intent_no_channel_egress",
+            payload_classes=["blocked_intent_summary", "operator_escalation_notice"],
+            outbound_payload_allowed=False,
+            raw_witness_text_allowed=False,
+            payload_digest_required=True,
         ),
     ]
 
@@ -632,6 +675,7 @@ def build_review_packet(policy: dict[str, Any]) -> dict[str, Any]:
 
     channel_rows: list[dict[str, Any]] = []
     kame_gate = policy["kame_action_evidence_gate"]
+    routes_by_id = {route["route_id"]: route for route in policy["approval_routing"]}
     for channel in policy["channel_authorization"]:
         channel_id = channel["channel_id"]
         route_map = policy["approval_route_map"][channel_id]
@@ -645,12 +689,17 @@ def build_review_packet(policy: dict[str, Any]) -> dict[str, Any]:
                 "approval_routes_to_confirm": {
                     approval_item: route_map[approval_item] for approval_item in channel["approval_required_for"]
                 },
+                "route_payload_classes_to_confirm": {
+                    approval_item: routes_by_id[route_map[approval_item]]["payload_classes"]
+                    for approval_item in channel["approval_required_for"]
+                },
                 "kame_evidence_gate_to_confirm": kame_gate["gate_id"],
                 "blocked_capabilities_to_confirm": channel["prohibited_actions"],
                 "checklist": [
                     "Confirm channel owner and operator-on-call identities.",
                     "Confirm inbound source_audit_id is present before drafting outbound content.",
                     "Confirm outbound payloads cite interpreter_promoted or oracle_promoted KAME evidence.",
+                    "Confirm route payload classes match the approved payload policy before any egress.",
                     "Confirm transcript hypotheses carry source, text_digest, arrival_phase, latency, confidence when available, and speaker/channel binding.",
                     "Confirm unpromoted witness transcript text is absent from action payload sinks.",
                     "Confirm redaction rules are applied before display, persistence, or handoff.",
@@ -835,6 +884,15 @@ def validate_policy(policy: dict[str, Any]) -> list[str]:
             missing_approvers = set(contract.get("approver_roles", set())) - set(route.get("approver_roles") or [])
             if missing_approvers:
                 issues.append(f"missing_route_approvers:{required_route}:{','.join(sorted(missing_approvers))}")
+            if route.get("payload_policy") != contract["payload_policy"]:
+                issues.append(f"unsafe_route_payload_policy:{required_route}")
+            missing_payload_classes = set(contract["payload_classes"]) - set(route.get("payload_classes") or [])
+            if missing_payload_classes:
+                issues.append(
+                    f"missing_route_payload_classes:{required_route}:{','.join(sorted(missing_payload_classes))}"
+                )
+            if route.get("outbound_payload_allowed") is not contract["outbound_payload_allowed"]:
+                issues.append(f"unsafe_route_outbound_payload_allowed:{required_route}")
 
         escalation_levels = {
             str(step.get("level") or "") for step in policy.get("escalation_policy", []) if step.get("level")
@@ -846,6 +904,22 @@ def validate_policy(policy: dict[str, Any]) -> list[str]:
                 issues.append(f"approval_route_missing_audit_event:{route_id}")
             elif not AUDIT_EVENT_PATTERN.match(audit_event):
                 issues.append(f"approval_route_invalid_audit_event:{route_id}")
+            payload_classes = set(route.get("payload_classes") or [])
+            if not payload_classes:
+                issues.append(f"missing_route_payload_classes:{route_id}")
+            if route.get("raw_witness_text_allowed") is not False:
+                issues.append(f"unsafe_route_raw_witness_text_allowed:{route_id}")
+            if route.get("payload_digest_required") is not True:
+                issues.append(f"missing_route_payload_digest:{route_id}")
+            if route_id == "status_only":
+                missing_status_payload_classes = REQUIRED_STATUS_ONLY_PAYLOAD_CLASSES - payload_classes
+                if missing_status_payload_classes:
+                    issues.append(
+                        "missing_route_payload_classes:status_only:"
+                        + ",".join(sorted(missing_status_payload_classes))
+                    )
+                if route.get("payload_policy") != "internal_status_only":
+                    issues.append("unsafe_route_payload_policy:status_only")
             escalation_level = str(route.get("escalation_level") or "")
             if escalation_level and escalation_level != "none" and escalation_level not in escalation_levels:
                 issues.append(f"approval_route_missing_escalation_level:{route_id}:{escalation_level}")
@@ -860,6 +934,8 @@ def validate_policy(policy: dict[str, Any]) -> list[str]:
                     issues.append(f"unsafe_high_risk_route_decision:{route_id}")
                 if approval_count < 2:
                     issues.append(f"unsafe_high_risk_route_approval_count:{route_id}")
+                if route.get("outbound_payload_allowed") is not False:
+                    issues.append(f"unsafe_high_risk_route_allows_outbound_payload:{route_id}")
 
     if not policy.get("escalation_policy"):
         issues.append("missing_escalation_policy")
@@ -1037,13 +1113,14 @@ def _markdown(policy: dict[str, Any]) -> str:
     lines.extend(["", "## Approval Routing", ""])
     lines.extend(
         _markdown_table(
-            ["Route", "Applies To", "Decision", "Approvers", "Escalation"],
+            ["Route", "Applies To", "Decision", "Payload Policy", "Payload Classes", "Escalation"],
             [
                 [
                     route["route_id"],
                     ", ".join(route["applies_to"]),
                     route["default_decision"],
-                    ", ".join(route["approver_roles"]) or "none",
+                    route["payload_policy"],
+                    ", ".join(route["payload_classes"]),
                     route["escalation_level"],
                 ]
                 for route in policy["approval_routing"]
@@ -1066,6 +1143,7 @@ def _markdown(policy: dict[str, Any]) -> str:
     lines.append("- Transcript hypotheses remain `authority = hypothesis` and `tool_authority = false`.")
     lines.append("- Channel egress may reference transcript hypotheses by metadata/digest only; raw witness text is not allowed as outbound payload content.")
     lines.append("- Unpromoted witness text must be clean for spend, phone, NemoClaw, tool, memory, file, message, and durable history sinks.")
+    lines.append("- Every route must declare payload classes, require payload_digest, and reject raw witness text as payload material.")
     lines.extend(["", "## Audit ID Continuity", ""])
     lines.append(f"- Format: `{policy['audit_id_continuity']['audit_id_format']}`")
     for rule in policy["audit_id_continuity"]["rules"]:
@@ -1116,7 +1194,8 @@ def _review_markdown(review: dict[str, Any]) -> str:
             ]
         )
         for approval_item, route_id in channel["approval_routes_to_confirm"].items():
-            lines.append(f"  - {approval_item}: `{route_id}`")
+            payload_classes = ", ".join(channel["route_payload_classes_to_confirm"][approval_item])
+            lines.append(f"  - {approval_item}: `{route_id}` ({payload_classes})")
         lines.append("- Checklist:")
         for item in channel["checklist"]:
             lines.append(f"  - {item}")

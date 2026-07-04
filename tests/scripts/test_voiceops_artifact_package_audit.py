@@ -2199,6 +2199,7 @@ def test_package_audit_rejects_channel_policy_review_route_drift(tmp_path):
     review = json.loads(review_path.read_text(encoding="utf-8"))
     phone_review = next(channel for channel in review["per_channel_review"] if channel["channel_id"] == "phone_sms")
     phone_review["approval_routes_to_confirm"].pop("approved_phone_handoff_call")
+    phone_review["route_payload_classes_to_confirm"].pop("approved_phone_handoff_call")
     phone_review["required_evidence"] = []
     phone_review["blocked_capabilities_to_confirm"] = []
     _write_json(review_path, review)
@@ -2207,6 +2208,7 @@ def test_package_audit_rejects_channel_policy_review_route_drift(tmp_path):
 
     assert report["ok"] is False
     assert "channel_policy_review:phone_sms:approval_routes_mismatch" in report["issues"]
+    assert "channel_policy_review:phone_sms:route_payload_classes_mismatch" in report["issues"]
     assert "channel_policy_review:phone_sms:required_evidence_mismatch" in report["issues"]
     assert "channel_policy_review:phone_sms:blocked_capabilities_mismatch" in report["issues"]
 

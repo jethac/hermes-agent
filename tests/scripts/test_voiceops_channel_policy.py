@@ -69,11 +69,19 @@ def test_channel_policy_contains_approval_escalation_audit_and_redaction_rules()
     assert route_map["phone_sms"]["approved_phone_handoff_call"] == "approved_phone_handoff_call"
     assert routes["customer_visible_outbound"]["default_decision"] == "hold_for_human_approval"
     assert routes["customer_visible_outbound"]["required_approval_count"] == 1
+    assert routes["customer_visible_outbound"]["payload_policy"] == "customer_visible_redacted"
+    assert "redacted_customer_message" in routes["customer_visible_outbound"]["payload_classes"]
+    assert routes["customer_visible_outbound"]["raw_witness_text_allowed"] is False
+    assert routes["customer_visible_outbound"]["payload_digest_required"] is True
     assert routes["approved_phone_handoff_call"]["default_decision"] == "hold_for_human_approval"
     assert routes["approved_phone_handoff_call"]["required_approval_count"] == 1
     assert routes["approved_phone_handoff_call"]["applies_to"] == ["phone_sms"]
+    assert routes["approved_phone_handoff_call"]["payload_policy"] == "phone_handoff_reference_only"
+    assert "phone_handoff_context_ref" in routes["approved_phone_handoff_call"]["payload_classes"]
     assert routes["spend_provisioning_or_credential"]["default_decision"] == "deny_and_escalate"
     assert routes["spend_provisioning_or_credential"]["escalation_level"] == "level_3"
+    assert routes["spend_provisioning_or_credential"]["payload_policy"] == "blocked_intent_no_channel_egress"
+    assert routes["spend_provisioning_or_credential"]["outbound_payload_allowed"] is False
     assert escalations["level_2"]["destination_role"] == "incident_commander"
     assert "preserve_audit_chain" in escalations["level_2"]["permitted_actions"]
     assert "parent_audit_id" in policy["audit_id_continuity"]["required_fields"]
@@ -315,6 +323,32 @@ def test_channel_policy_validates_spend_provisioning_route_semantics():
     ]
 
 
+def test_channel_policy_validates_route_payload_evidence_contract():
+    policy = build_channel_policy()
+    unsafe = json.loads(json.dumps(policy))
+    customer_route = next(route for route in unsafe["approval_routing"] if route["route_id"] == "customer_visible_outbound")
+    customer_route["payload_policy"] = "raw_transcript_text"
+    customer_route["payload_classes"] = ["raw_witness_text"]
+    customer_route["raw_witness_text_allowed"] = True
+    customer_route["payload_digest_required"] = False
+    status_route = next(route for route in unsafe["approval_routing"] if route["route_id"] == "status_only")
+    status_route["payload_classes"] = ["redacted_internal_status"]
+    blocked_route = next(
+        route for route in unsafe["approval_routing"] if route["route_id"] == "spend_provisioning_or_credential"
+    )
+    blocked_route["outbound_payload_allowed"] = True
+
+    assert set(validate_policy(unsafe)) == {
+        "unsafe_route_payload_policy:customer_visible_outbound",
+        "missing_route_payload_classes:customer_visible_outbound:approval_request,draft_reply,redacted_customer_message",
+        "unsafe_route_raw_witness_text_allowed:customer_visible_outbound",
+        "missing_route_payload_digest:customer_visible_outbound",
+        "missing_route_payload_classes:status_only:policy_acknowledgement",
+        "unsafe_route_outbound_payload_allowed:spend_provisioning_or_credential",
+        "unsafe_high_risk_route_allows_outbound_payload:spend_provisioning_or_credential",
+    }
+
+
 def test_channel_policy_validates_phone_handoff_route_is_phone_only():
     policy = build_channel_policy()
     unsafe = json.loads(json.dumps(policy))
@@ -501,6 +535,10 @@ def test_write_channel_policy_artifacts(tmp_path):
         channels["phone_sms"]["kame_evidence_gate_to_confirm"]
         == "kame_promoted_evidence_required_for_channel_egress"
     )
+    assert "route_payload_classes_to_confirm" in channels["phone_sms"]
+    assert "phone_handoff_context_ref" in channels["phone_sms"]["route_payload_classes_to_confirm"][
+        "approved_phone_handoff_call"
+    ]
     assert "approved_phone_handoff_call" in channels["phone_sms"]["approval_routes_to_confirm"]
     assert "unapproved_voice_call" in channels["phone_sms"]["blocked_capabilities_to_confirm"]
     assert any("source_audit_id" in gate for gate in review_payload["egress_enablement_gates"])
@@ -541,6 +579,7 @@ def test_channel_policy_review_packet_is_artifact_only_and_per_channel():
         channel["kame_evidence_gate_to_confirm"] == "kame_promoted_evidence_required_for_channel_egress"
         for channel in review["per_channel_review"]
     )
+    assert all("route_payload_classes_to_confirm" in channel for channel in review["per_channel_review"])
     assert any("voice call" in item for item in review["operator_must_not"])
     assert any("spend_provisioning_or_credential" in gate for gate in review["egress_enablement_gates"])
     assert any("interpreter_promoted or oracle_promoted" in gate for gate in review["egress_enablement_gates"])

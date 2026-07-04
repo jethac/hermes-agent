@@ -403,6 +403,12 @@ Target KAME layout:
   preflight gates, and approval artifacts. A packet that invents a new action or
   swaps in a shell-like command is invalid even if its internal command hashes
   and approval contracts are self-consistent.
+- Channel route-payload rule: every Discord, WhatsApp, SMS, phone, spend,
+  provisioning, credential, and status route must declare its payload policy,
+  allowed payload classes, payload digest requirement, and raw-witness-text
+  prohibition. High-risk spend, provisioning, credential, and account-mutation
+  routes must deny channel egress by default; they can emit only blocked-intent
+  or operator-escalation evidence, not customer-visible payloads.
 - Operator-state rule: pending approval records must carry the same promoted
   KAME evidence used by the NemoClaw packet, plus a reference to the artifact's
   tool-disclosure proof. The operator-state artifact itself must include that
