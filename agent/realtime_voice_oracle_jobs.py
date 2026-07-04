@@ -1052,9 +1052,9 @@ def _job_evidence_authority(job: OracleJob) -> dict[str, str]:
     if job.audio_segment_ref:
         authority["raw_audio"] = "primary_audio"
     if job.reflex_transcript_hypothesis:
-        authority["reflex_transcript_hypothesis"] = "reflex_hypothesis"
+        authority["reflex_transcript_hypothesis"] = "hypothesis"
     if job.auxiliary_transcript_hypotheses:
-        authority["auxiliary_transcript_hypotheses"] = "auxiliary_hypothesis"
+        authority["auxiliary_transcript_hypotheses"] = "hypothesis"
     if job.interpreter_corrected_transcript:
         authority["interpreter_corrected_transcript"] = "interpreter_promoted"
     if job.interpreter_normalized_intent:
@@ -1119,7 +1119,7 @@ def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
             "kind": "reflex_transcript_hypothesis",
             "source": job.reflex_transcript_source or "reflex_audio",
             "text": job.reflex_transcript_hypothesis,
-            "authority": "reflex_hypothesis",
+            "authority": "hypothesis",
             "tool_authority": False,
         }
         if job.reflex_transcript_confidence is not None:
@@ -1139,7 +1139,7 @@ def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
             "kind": _compact_evidence_text(value.get("kind"), limit=80) or _job_transcript_hypothesis_kind(source),
             "source": source,
             "text": text,
-            "authority": "auxiliary_hypothesis",
+            "authority": "hypothesis",
             "tool_authority": False,
         }
         confidence = _compact_confidence(value.get("confidence"))  # type: ignore[arg-type]
@@ -1404,10 +1404,10 @@ def _interpreter_evidence_authority(evidence: Mapping[str, Any]) -> dict[str, st
     if evidence.get("audio_segment_ref"):
         authority["raw_audio"] = "primary_audio"
     if evidence.get("reflex_transcript_hypothesis"):
-        authority["reflex_transcript_hypothesis"] = "reflex_hypothesis"
+        authority["reflex_transcript_hypothesis"] = "hypothesis"
     auxiliary = evidence.get("auxiliary_transcript_hypotheses")
     if isinstance(auxiliary, tuple) and auxiliary:
-        authority["auxiliary_transcript_hypotheses"] = "auxiliary_hypothesis"
+        authority["auxiliary_transcript_hypotheses"] = "hypothesis"
     if evidence.get("speaker"):
         authority["speaker_metadata"] = "diagnostic_only"
     if evidence.get("channel"):

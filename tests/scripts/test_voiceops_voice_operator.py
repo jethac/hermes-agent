@@ -203,7 +203,7 @@ def _async_oracle_smoke_payload() -> dict:
         "queued_interpreter_fold_in_evidence_authority": {
             "intent": "interpreter_promoted",
             "oracle_text": "interpreter_promoted",
-            "reflex_transcript_hypothesis": "reflex_hypothesis",
+            "reflex_transcript_hypothesis": "hypothesis",
             "transcript": "interpreter_promoted",
         },
         "verbose_result_spoken_bounded": True,
@@ -650,7 +650,7 @@ def _async_oracle_smoke_payload() -> dict:
             "source": "moshi",
             "kind": "frontend_witness_hypothesis",
             "text": "what is three to the power of seventeen",
-            "authority": "auxiliary_hypothesis",
+            "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.88,
             "partial": False,
@@ -679,7 +679,7 @@ def _async_oracle_smoke_payload() -> dict:
             "interpreter_evidence_not_consumed_before_irreversible_action",
         ],
         "runtime_kame_action_gate_hypothesis_only_rejected_authorities": [
-            "auxiliary_hypothesis",
+            "hypothesis",
             "reflex_hypothesis",
         ],
         "runtime_kame_action_gate_degraded_text_only_ok": False,
@@ -688,7 +688,7 @@ def _async_oracle_smoke_payload() -> dict:
             "interpreter_evidence_not_consumed_before_irreversible_action",
         ],
         "runtime_kame_action_gate_degraded_text_only_rejected_authorities": [
-            "auxiliary_hypothesis",
+            "hypothesis",
             "reflex_hypothesis",
         ],
         "runtime_kame_action_gate_degraded_text_only_status": "degraded_text_only",
@@ -1405,7 +1405,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         "source": "moshi",
         "kind": "frontend_witness_hypothesis",
         "text": "what is three to the power of seventeen",
-        "authority": "auxiliary_hypothesis",
+        "authority": "hypothesis",
         "tool_authority": False,
         "confidence": 0.88,
         "partial": False,
@@ -1515,7 +1515,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     ]["runtime_kame_action_gate_hypothesis_only_issues"]
     assert set(
         report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_hypothesis_only_rejected_authorities"]
-    ) >= {"reflex_hypothesis", "auxiliary_hypothesis"}
+    ) >= {"reflex_hypothesis", "hypothesis"}
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_degraded_text_only_ok"] is False
     assert (
         report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_degraded_text_only_status"]
@@ -1548,7 +1548,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         report["proofs"]["async_oracle_jobs"][
             "runtime_kame_action_gate_degraded_text_only_rejected_authorities"
         ]
-    ) >= {"reflex_hypothesis", "auxiliary_hypothesis"}
+    ) >= {"reflex_hypothesis", "hypothesis"}
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_promoted_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_promoted_issues"] == []
     assert report["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_promoted_authorities"] == [

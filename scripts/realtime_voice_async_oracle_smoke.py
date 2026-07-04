@@ -1737,7 +1737,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and int(status_bundle.get("transcript_hypotheses_count") or 0) >= 1
         and status_bundle.get("audio_segment_ref") == "artifact://voiceclaw/turn-1.wav"
         and status_bundle.get("authority", {}).get("raw_audio") == "primary_audio"
-        and status_bundle.get("authority", {}).get("auxiliary_transcript_hypotheses") == "auxiliary_hypothesis"
+        and status_bundle.get("authority", {}).get("auxiliary_transcript_hypotheses") == "hypothesis"
     )
     durable_session = RealtimeVoiceSession(
         RealtimeVoiceSessionConfig(session_id="voice-smoke-external-frontend"),
@@ -2041,7 +2041,7 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
         and status_bundle.get("turn_id") == "voice-smoke-unpromoted-hypothesis:2"
         and status_bundle.get("transcript_hypotheses_count") == 2
         and status_bundle.get("interpreter_evidence_count") == 1
-        and status_bundle.get("authority", {}).get("auxiliary_transcript_hypotheses") == "auxiliary_hypothesis"
+        and status_bundle.get("authority", {}).get("auxiliary_transcript_hypotheses") == "hypothesis"
         and "interpreter_corrected_transcript" not in status_bundle.get("authority", {})
     )
     promoted = (
@@ -3143,7 +3143,7 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
         and unsafe_gate.get("ok") is False
         and "missing_promoted_evidence" in unsafe_issues
         and "interpreter_evidence_not_consumed_before_irreversible_action" in unsafe_issues
-        and set(unsafe_rejected) >= {"reflex_hypothesis", "auxiliary_hypothesis"}
+        and set(unsafe_rejected) >= {"reflex_hypothesis", "hypothesis"}
         and unsafe_gate.get("tool_disclosure_ref") == "tool_disclosure"
     )
     safe_ok = (
@@ -3165,7 +3165,7 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
         and int(degraded_bundle.get("transcript_hypotheses_count") or 0) >= 1
         and "missing_promoted_evidence" in degraded_issues
         and "interpreter_evidence_not_consumed_before_irreversible_action" in degraded_issues
-        and set(degraded_rejected) >= {"reflex_hypothesis", "auxiliary_hypothesis"}
+        and set(degraded_rejected) >= {"reflex_hypothesis", "hypothesis"}
         and degraded_gate.get("tool_disclosure_ref") == "tool_disclosure"
     )
     self_attested_ok = (

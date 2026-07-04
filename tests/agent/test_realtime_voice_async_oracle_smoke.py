@@ -362,7 +362,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
         "kind": "frontend_witness_hypothesis",
         "source": "moshi",
         "text": "what is three to the power of seventeen",
-        "authority": "auxiliary_hypothesis",
+        "authority": "hypothesis",
         "tool_authority": False,
         "confidence": 0.88,
         "partial": False,
@@ -392,7 +392,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     )
     assert set(report["runtime_kame_action_gate_hypothesis_only_rejected_authorities"]) >= {
         "reflex_hypothesis",
-        "auxiliary_hypothesis",
+        "hypothesis",
     }
     assert report["runtime_kame_action_gate_degraded_text_only_ok"] is False
     assert report["runtime_kame_action_gate_degraded_text_only_status"] == "degraded_text_only"
@@ -405,7 +405,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     )
     assert set(report["runtime_kame_action_gate_degraded_text_only_rejected_authorities"]) >= {
         "reflex_hypothesis",
-        "auxiliary_hypothesis",
+        "hypothesis",
     }
     assert report["runtime_kame_action_gate_promoted_ok"] is True
     assert report["runtime_kame_action_gate_promoted_issues"] == []

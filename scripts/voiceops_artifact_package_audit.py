@@ -44,7 +44,7 @@ EXPECTED_PROVIDER_ROLE_AUTHORITIES = {
     "reflex": "reflex_hypothesis",
     "interpreter": "interpreter_promoted",
     "oracle": "oracle_promoted",
-    "auxiliary_transcript_evidence": "auxiliary_hypothesis",
+    "auxiliary_transcript_evidence": "hypothesis",
     "outbound_tts": "playback_only",
     "degraded_fallback": "fallback_text_or_diagnostic_only",
 }

@@ -927,10 +927,11 @@ job envelope with explicit evidence fields:
   cancellation, and terminal result delivery
 
 Every evidence field should also carry an authority label. The minimum labels
-are `primary_audio`, `reflex_hypothesis`, `frontend_witness_hypothesis`,
-`auxiliary_hypothesis`, `interpreter_promoted`, `oracle_promoted`, and
-`diagnostic_only`. `frontend_witness_hypothesis` is the preferred label for
-ambiguous Moshi/OpenClaw/VoiceClaw transcript-looking text. The scheduler may
+are `primary_audio`, `reflex_hypothesis`, `hypothesis`,
+`interpreter_promoted`, `oracle_promoted`, and `diagnostic_only`.
+Transcript-like side channels use `authority = "hypothesis"` plus a `kind`
+such as `frontend_witness_hypothesis`, `reflex_transcript_hypothesis`,
+`s2s_transcript_hypothesis`, or `classic_asr_hypothesis`. The scheduler may
 use provisional reflex intent to create a queue envelope or narrate work, but
 durable replay must make clear which fields were hypotheses and which field
 actually drove the oracle/tool action.

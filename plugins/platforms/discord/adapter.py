@@ -499,6 +499,7 @@ def _discord_voice_evidence_authority(value: Any) -> Dict[str, str]:
         return {}
     allowed = {
         "primary_audio",
+        "hypothesis",
         "reflex_hypothesis",
         "auxiliary_hypothesis",
         "interpreter_promoted",

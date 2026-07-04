@@ -1251,7 +1251,7 @@ def _provider_role_matrix(active_model: str, reflex_model: str, interpreter_mode
             "role": "auxiliary_transcript_evidence",
             "selected_label": "Moshi/open-S2S witness text, Nemotron/Riva ASR, or classic ASR when enabled",
             "candidate_class": "optional transcript hypothesis source",
-            "authority": "auxiliary_hypothesis",
+            "authority": "hypothesis",
             "primary_signal": "provider text with source, timing, confidence, partial/final state, and speaker/channel context",
             "allowed_outputs": [
                 "caption",

@@ -224,8 +224,8 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
             "intent": "reflex_hypothesis",
             "oracle_text": "reflex_hypothesis",
             "raw_audio": "primary_audio",
-            "reflex_transcript_hypothesis": "reflex_hypothesis",
-            "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+            "reflex_transcript_hypothesis": "hypothesis",
+            "auxiliary_transcript_hypotheses": "hypothesis",
             "interpreter_corrected_transcript": "interpreter_promoted",
             "interpreter_normalized_intent": "interpreter_promoted",
         },
@@ -239,8 +239,8 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
         "intent": "reflex_hypothesis",
         "oracle_text": "reflex_hypothesis",
         "raw_audio": "primary_audio",
-        "reflex_transcript_hypothesis": "reflex_hypothesis",
-        "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+        "reflex_transcript_hypothesis": "hypothesis",
+        "auxiliary_transcript_hypotheses": "hypothesis",
         "interpreter_corrected_transcript": "interpreter_promoted",
         "interpreter_normalized_intent": "interpreter_promoted",
     }
@@ -252,7 +252,7 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
     assert job_status["transcript_hypotheses_count"] == 3
     assert job_status["transcript_hypotheses"][0]["kind"] == "reflex_transcript_hypothesis"
     assert job_status["transcript_hypotheses"][0]["source"] == "reflex_audio"
-    assert job_status["transcript_hypotheses"][0]["authority"] == "reflex_hypothesis"
+    assert job_status["transcript_hypotheses"][0]["authority"] == "hypothesis"
     assert job_status["transcript_hypotheses"][0]["confidence"] == 0.71
     assert job_status["transcript_hypotheses"][0]["text"].startswith("three to the power of seventeen with")
     assert "sk_test" not in job_status["transcript_hypotheses"][0]["text"]
@@ -261,7 +261,7 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
             "kind": "frontend_witness_hypothesis",
             "source": "moshi",
             "text": "three to the power of seventeen",
-            "authority": "auxiliary_hypothesis",
+            "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.78,
         },
@@ -269,7 +269,7 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
             "kind": "classic_asr_hypothesis",
             "source": "asr",
             "text": "what is three to the power of seventeen",
-            "authority": "auxiliary_hypothesis",
+            "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.92,
         },
@@ -734,8 +734,8 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
     )
     assert updated.interpreter_evidence[0]["evidence_authority"] == {
         "raw_audio": "primary_audio",
-        "reflex_transcript_hypothesis": "reflex_hypothesis",
-        "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+        "reflex_transcript_hypothesis": "hypothesis",
+        "auxiliary_transcript_hypotheses": "hypothesis",
         "speaker_metadata": "diagnostic_only",
         "channel_metadata": "diagnostic_only",
         "interpreter_corrected_transcript": "interpreter_promoted",
@@ -779,7 +779,7 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
     assert queued_status["evidence_bundle"]["transcript_hypotheses_count"] == 2
     assert queued_status["evidence_bundle"]["interpreter_evidence_count"] == 1
     assert queued_status["evidence_bundle"]["authority"]["raw_audio"] == "primary_audio"
-    assert queued_status["evidence_bundle"]["authority"]["auxiliary_transcript_hypotheses"] == "auxiliary_hypothesis"
+    assert queued_status["evidence_bundle"]["authority"]["auxiliary_transcript_hypotheses"] == "hypothesis"
     assert queued_status["evidence_bundle"]["authority"]["interpreter_corrected_transcript"] == "interpreter_promoted"
     assert queued_status["speaker"] == {
         "platform": "discord",
@@ -831,6 +831,7 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
     assert oracle_request.channel_metadata == queued_status["channel"]
     assert oracle_request.auxiliary_transcript_hypotheses == (
         {
+            "kind": "frontend_witness_hypothesis",
             "source": "moshi",
             "text": "three to the power of seventeen",
             "authority": "hypothesis",
@@ -838,6 +839,7 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
             "confidence": 0.71,
         },
         {
+            "kind": "classic_asr_hypothesis",
             "source": "classic_asr_fallback_optional",
             "text": "what is three to the power of seventeen",
             "authority": "hypothesis",
@@ -1102,8 +1104,8 @@ async def test_interpreter_evidence_late_for_running_job_is_status_visible():
     assert updated.interpreter_evidence[0]["late"] is True
     assert updated.interpreter_evidence[0]["evidence_authority"] == {
         "raw_audio": "primary_audio",
-        "reflex_transcript_hypothesis": "reflex_hypothesis",
-        "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+        "reflex_transcript_hypothesis": "hypothesis",
+        "auxiliary_transcript_hypotheses": "hypothesis",
         "speaker_metadata": "diagnostic_only",
         "channel_metadata": "diagnostic_only",
         "interpreter_corrected_transcript": "interpreter_promoted",
@@ -1242,14 +1244,14 @@ async def test_hypothesis_only_interpreter_evidence_does_not_promote_oracle_text
     assert updated.interpreter_normalized_intent == ""
     assert updated.interpreter_evidence[0]["evidence_authority"] == {
         "raw_audio": "primary_audio",
-        "reflex_transcript_hypothesis": "reflex_hypothesis",
-        "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+        "reflex_transcript_hypothesis": "hypothesis",
+        "auxiliary_transcript_hypotheses": "hypothesis",
         "speaker_metadata": "diagnostic_only",
         "channel_metadata": "diagnostic_only",
         "interpreter_disagreements": "diagnostic_only",
     }
-    assert running_status["evidence_authority"]["reflex_transcript_hypothesis"] == "reflex_hypothesis"
-    assert running_status["evidence_authority"]["auxiliary_transcript_hypotheses"] == "auxiliary_hypothesis"
+    assert running_status["evidence_authority"]["reflex_transcript_hypothesis"] == "hypothesis"
+    assert running_status["evidence_authority"]["auxiliary_transcript_hypotheses"] == "hypothesis"
     assert "interpreter_corrected_transcript" not in running_status["evidence_authority"]
     assert "interpreter_normalized_intent" not in running_status["evidence_authority"]
     assert running_status["evidence_bundle"]["status"] == "primary_audio"

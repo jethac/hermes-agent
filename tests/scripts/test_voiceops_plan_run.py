@@ -1601,7 +1601,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "source": "moshi",
         "kind": "frontend_witness_hypothesis",
         "text": "what is three to the power of seventeen",
-        "authority": "auxiliary_hypothesis",
+        "authority": "hypothesis",
         "tool_authority": False,
         "confidence": 0.88,
         "partial": False,

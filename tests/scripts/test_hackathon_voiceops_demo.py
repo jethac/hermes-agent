@@ -414,7 +414,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert provider_roles["oracle"]["authority"] == "oracle_promoted"
     assert provider_roles["oracle"]["selected_label"] == payload["spark_stack"]["oracle"]["model"]
     assert "VoiceOps-specific oracle_model setting" in json.dumps(provider_roles["oracle"]["must_not"])
-    assert provider_roles["auxiliary_transcript_evidence"]["authority"] == "auxiliary_hypothesis"
+    assert provider_roles["auxiliary_transcript_evidence"]["authority"] == "hypothesis"
     assert provider_roles["outbound_tts"]["authority"] == "playback_only"
     assert provider_roles["degraded_fallback"]["authority"] == "fallback_text_or_diagnostic_only"
     assert payload["sponsor_stack"]["stripe_skills"]["skills"] == ["stripe-projects", "stripe-link-cli", "mpp-agent"]
@@ -770,17 +770,17 @@ def test_voiceops_nemoclaw_validation_rejects_unpromoted_action_evidence():
     packet = prepare_voiceops_action_packet_from_demo(demo, readiness)["nemoclaw_action_packet"]
     packet["approval_required_actions"][0]["kame_evidence"]["promoted_fields"]["provider_selection"][
         "evidence_label"
-    ] = "auxiliary_hypothesis"
+    ] = "hypothesis"
 
     validation = validate_nemoclaw_action_packet(packet)
 
     assert validation["status"] == "invalid"
     assert (
-        "provision-voip-provider:promoted_field_authority_invalid:provider_selection:auxiliary_hypothesis"
+        "provision-voip-provider:promoted_field_authority_invalid:provider_selection:hypothesis"
         in validation["validation_issues"]
     )
     assert (
-        "provision-voip-provider:promoted_field_uses_rejected_authority:auxiliary_hypothesis"
+        "provision-voip-provider:promoted_field_uses_rejected_authority:hypothesis"
         in validation["validation_issues"]
     )
 

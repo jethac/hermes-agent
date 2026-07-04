@@ -1437,8 +1437,8 @@ def test_discord_realtime_event_tracks_oracle_job_status():
             "interpreter_evidence_delivery_status": "delivered",
             "evidence_authority": {
                 "raw_audio": "primary_audio",
-                "reflex_transcript_hypothesis": "reflex_hypothesis",
-                "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+                "reflex_transcript_hypothesis": "hypothesis",
+                "auxiliary_transcript_hypotheses": "hypothesis",
                 "interpreter_corrected_transcript": "interpreter_promoted",
                 "unsafe_extra": "http://do-not-copy.local",
             },
@@ -1490,8 +1490,8 @@ def test_discord_realtime_event_tracks_oracle_job_status():
             "interpreter_evidence_delivery_status": "delivered",
             "evidence_authority": {
                 "raw_audio": "primary_audio",
-                "reflex_transcript_hypothesis": "reflex_hypothesis",
-                "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+                "reflex_transcript_hypothesis": "hypothesis",
+                "auxiliary_transcript_hypotheses": "hypothesis",
                 "interpreter_corrected_transcript": "interpreter_promoted",
             },
             "latest_interpreter_evidence_authority": {
@@ -1585,8 +1585,8 @@ def test_voice_status_oracle_job_lines_are_compact():
                     "interpreter_evidence_delivery_status": "delivered",
                     "evidence_authority": {
                         "raw_audio": "primary_audio",
-                        "reflex_transcript_hypothesis": "reflex_hypothesis",
-                        "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+                        "reflex_transcript_hypothesis": "hypothesis",
+                        "auxiliary_transcript_hypotheses": "hypothesis",
                         "interpreter_corrected_transcript": "interpreter_promoted",
                     },
                 },
@@ -1606,7 +1606,7 @@ def test_voice_status_oracle_job_lines_are_compact():
     assert lines == [
         "Oracle jobs: active=3/4, running=1, queued=2, waiting_for_approval=1, cancel_requested=1",
         "Oracle job: voice-oracle-001 running - Checking the deployment status. | update: include the staging region too.",
-        "Oracle job: voice-oracle-002 waiting_for_approval - Waiting for Stripe spend approval. | evidence: delivered, late, x1, authority=audio/interpreter/reflex/aux",
+        "Oracle job: voice-oracle-002 waiting_for_approval - Waiting for Stripe spend approval. | evidence: delivered, late, x1, authority=audio/interpreter/hypothesis",
         "Oracle job: voice-oracle-003 cancel_requested - Stopping the stale deployment check. | evidence: latest=audio/diagnostic",
     ]
 

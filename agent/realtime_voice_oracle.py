@@ -637,7 +637,7 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
             for key, value in evidence_authority.items()
         )
         parts.append(
-            f"Evidence authority labels: {labels}. Treat primary_audio and interpreter_promoted fields as higher authority than reflex_hypothesis or auxiliary_hypothesis fields."
+            f"Evidence authority labels: {labels}. Treat primary_audio, interpreter_promoted, and oracle_promoted fields as higher authority than hypothesis transcript records."
         )
     if interface_already_said:
         parts.append(f"The voice reflex already told the user: {interface_already_said}")
@@ -770,6 +770,7 @@ def _metadata_evidence_authority(value: object) -> dict[str, str]:
     authority: dict[str, str] = {}
     allowed = {
         "primary_audio",
+        "hypothesis",
         "reflex_hypothesis",
         "auxiliary_hypothesis",
         "interpreter_promoted",

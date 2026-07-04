@@ -1696,7 +1696,7 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and "interpreter_evidence_not_consumed_before_irreversible_action"
         in (smoke.get("runtime_kame_action_gate_degraded_text_only_issues") or [])
         and set(smoke.get("runtime_kame_action_gate_degraded_text_only_rejected_authorities") or [])
-        >= {"reflex_hypothesis", "auxiliary_hypothesis"},
+        >= {"reflex_hypothesis", "hypothesis"},
         "runtime_kame_action_gate_enforced": smoke.get("runtime_kame_action_gate_smoke_ok") is True
         and smoke.get("runtime_kame_action_gate_hypothesis_only_ok") is False
         and "missing_promoted_evidence"
@@ -1704,7 +1704,7 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and "interpreter_evidence_not_consumed_before_irreversible_action"
         in (smoke.get("runtime_kame_action_gate_hypothesis_only_issues") or [])
         and set(smoke.get("runtime_kame_action_gate_hypothesis_only_rejected_authorities") or [])
-        >= {"reflex_hypothesis", "auxiliary_hypothesis"}
+        >= {"reflex_hypothesis", "hypothesis"}
         and smoke.get("runtime_kame_action_gate_degraded_text_only_ok") is False
         and smoke.get("runtime_kame_action_gate_degraded_text_only_status") == "degraded_text_only"
         and smoke.get("runtime_kame_action_gate_degraded_text_only_raw_audio_available") is False

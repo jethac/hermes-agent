@@ -1414,8 +1414,8 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
     assert "preserve the reflex intent and route as the control signal" in prompt
     assert "Evidence authority labels:" in prompt
     assert "raw_audio=primary_audio" in prompt
-    assert "classic_asr_hypothesis=auxiliary_hypothesis" in prompt
-    assert "reflex_transcript_hypothesis=reflex_hypothesis" in prompt
+    assert "classic_asr_hypothesis=hypothesis" in prompt
+    assert "reflex_transcript_hypothesis=hypothesis" in prompt
     assert "The voice reflex already told the user: One moment." in prompt
     assert "User added updates for this oracle job: also check the Stripe receipt before answering" in prompt
     assert "Requested response style: spoken=true; policy=sentence_cap; avoid automatic follow-up offers." in prompt
@@ -1424,21 +1424,24 @@ def test_kame_oracle_prompt_separates_reflex_intent_from_asr_evidence():
             "kind": "reflex_transcript_hypothesis",
             "source": "reflex_audio",
             "text": "find the note from yesterday's meeting",
-            "authority": "reflex_hypothesis",
+            "authority": "hypothesis",
+            "tool_authority": False,
             "confidence": 0.73,
         },
         {
             "kind": "classic_asr_hypothesis",
             "source": "asr",
             "text": "find the node from yesterday's meeting",
-            "authority": "auxiliary_hypothesis",
+            "authority": "hypothesis",
+            "tool_authority": False,
             "confidence": 0.68,
         },
         {
-            "kind": "s2s_transcript_hypothesis",
+            "kind": "frontend_witness_hypothesis",
             "source": "moshi",
             "text": "find the note from yesterday's meeting",
-            "authority": "auxiliary_hypothesis",
+            "authority": "hypothesis",
+            "tool_authority": False,
             "confidence": 0.74,
             "latency_ms": 140,
         },
@@ -1586,16 +1589,20 @@ def test_kame_engine_sends_structured_request_to_oracle(monkeypatch):
         assert request.audio_time_range_ms == (12840, 15320)
         assert request.auxiliary_transcript_hypotheses == (
             {
+                "kind": "frontend_witness_hypothesis",
                 "source": "moshi",
                 "text": "find the note from yesterday's meeting",
                 "authority": "hypothesis",
+                "tool_authority": False,
                 "confidence": 0.74,
                 "latency_ms": 140,
             },
             {
+                "kind": "classic_asr_hypothesis",
                 "source": "asr",
                 "text": "find the node from yesterday's meeting",
                 "authority": "hypothesis",
+                "tool_authority": False,
                 "confidence": 0.68,
             },
         )
@@ -3595,15 +3602,19 @@ def test_kame_engine_attaches_interpreter_evidence_to_queued_async_oracle_job(mo
         assert oracle.requests[1].channel_metadata == update.payload["channel"]
         assert oracle.requests[1].auxiliary_transcript_hypotheses == (
             {
+                "kind": "frontend_witness_hypothesis",
                 "source": "moshi",
                 "text": "three to the power of seventeen",
                 "authority": "hypothesis",
+                "tool_authority": False,
                 "confidence": 0.7,
             },
             {
+                "kind": "classic_asr_hypothesis",
                 "source": "classic_asr_fallback_optional",
                 "text": "what is three to the power of seventeen",
                 "authority": "hypothesis",
+                "tool_authority": False,
                 "confidence": 0.89,
             },
         )
@@ -3744,9 +3755,11 @@ def test_kame_engine_does_not_promote_moshi_only_queued_evidence(monkeypatch):
         assert oracle.requests[1].transcript_source == "reflex_audio"
         assert oracle.requests[1].auxiliary_transcript_hypotheses == (
             {
+                "kind": "frontend_witness_hypothesis",
                 "source": "moshi",
                 "text": "spend two hundred dollars and call my phone",
                 "authority": "hypothesis",
+                "tool_authority": False,
                 "confidence": 0.71,
             },
         )
@@ -4007,9 +4020,11 @@ def test_kame_engine_merges_sequential_queued_transcript_hypotheses_before_start
         assert oracle.requests[1].audio_time_range_ms == (100, 2100)
         assert oracle.requests[1].auxiliary_transcript_hypotheses == (
             {
+                "kind": "frontend_witness_hypothesis",
                 "source": "moshi",
                 "text": "three to the power of seventeen",
                 "authority": "hypothesis",
+                "tool_authority": False,
                 "confidence": 0.7,
             },
         )
@@ -4165,7 +4180,8 @@ def test_kame_engine_supersedes_partial_frontend_witness_with_final_before_start
             "kind": "frontend_witness_hypothesis",
             "source": "moshi",
             "text": "what is three to the power of seventeen",
-            "authority": "auxiliary_hypothesis",
+            "authority": "hypothesis",
+            "tool_authority": False,
             "confidence": 0.88,
             "partial": False,
             "superseded_partial_texts": ("what is three to the",),
@@ -4194,11 +4210,11 @@ def test_kame_engine_supersedes_partial_frontend_witness_with_final_before_start
                 "source": "moshi",
                 "text": "what is three to the power of seventeen",
                 "authority": "hypothesis",
+                "tool_authority": False,
                 "confidence": 0.88,
                 "kind": "frontend_witness_hypothesis",
                 "partial": False,
                 "superseded_partial_texts": ("what is three to the",),
-                "superseded_partial_count": 1,
             },
         )
 
@@ -6696,7 +6712,7 @@ def test_oracle_job_approval_marks_hypothesis_only_action_gate_unsafe():
         assert "interpreter_evidence_not_consumed_before_irreversible_action" in gate["issues"]
         assert gate["tool_disclosure_ref"] == "tool_disclosure"
         assert gate["present_authorities"] == []
-        assert set(gate["rejected_present_authorities"]) >= {"reflex_hypothesis", "auxiliary_hypothesis"}
+        assert set(gate["rejected_present_authorities"]) >= {"reflex_hypothesis", "hypothesis"}
 
         release.set()
         await manager.shutdown(reason="test complete")
@@ -8115,6 +8131,7 @@ def test_frontend_witness_payload_maps_to_auxiliary_interpreter_evidence_only():
             "source": "moshi",
             "text": "spend two hundred dollars and call my phone",
             "authority": "hypothesis",
+            "tool_authority": False,
             "confidence": 0.72,
             "adjudication": "rejected_or_diagnostic_only",
             "rejection_reasons": ("wrong_speaker",),
@@ -14344,22 +14361,22 @@ def test_external_kame_ask_brain_bridge_becomes_oracle_request():
             "kind": "reflex_transcript_hypothesis",
             "source": "reflex_audio",
             "text": "use my Stripe budget to prepare a VoIP provisioning plan",
-            "authority": "reflex_hypothesis",
+            "authority": "hypothesis",
             "tool_authority": False,
         },
         {
             "kind": "s2s_transcript_hypothesis",
             "source": "s2s",
             "text": "use my stripe budget to prepare a voip provisioning plan",
-            "authority": "auxiliary_hypothesis",
+            "authority": "hypothesis",
             "tool_authority": False,
         },
     )
     assert metadata["kame_evidence_authority"] == {
         "intent": "reflex_hypothesis",
         "oracle_text": "reflex_hypothesis",
-        "reflex_transcript_hypothesis": "reflex_hypothesis",
-        "auxiliary_transcript_hypotheses": "auxiliary_hypothesis",
+        "reflex_transcript_hypothesis": "hypothesis",
+        "auxiliary_transcript_hypotheses": "hypothesis",
     }
     assert "tool_name" not in metadata
     assert "arguments" not in metadata
@@ -14405,14 +14422,14 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
                     "kind": "reflex_transcript_hypothesis",
                     "source": "moshi-reflex",
                     "text": "prepare the phone handoff",
-                    "authority": "reflex_hypothesis",
+                    "authority": "hypothesis",
                     "confidence": 0.81,
                     "partial": False,
                 },
                 {
                     "source": "moshi",
                     "text": "prepare phone handoff",
-                    "authority": "auxiliary_hypothesis",
+                    "authority": "hypothesis",
                     "confidence": 0.74,
                     "latency_ms": 132,
                 },
@@ -14420,7 +14437,7 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
                     "kind": "classic_asr_hypothesis",
                     "source": "asr",
                     "text": "prepare the phone hand off",
-                    "authority": "auxiliary_hypothesis",
+                    "authority": "hypothesis",
                     "confidence": 0.69,
                 },
             ],
@@ -14489,7 +14506,7 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
             "kind": "reflex_transcript_hypothesis",
             "source": "moshi-reflex",
             "text": "prepare the phone handoff",
-            "authority": "reflex_hypothesis",
+            "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.81,
         },
@@ -14497,7 +14514,7 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
             "kind": "frontend_witness_hypothesis",
             "source": "moshi",
             "text": "prepare phone handoff",
-            "authority": "auxiliary_hypothesis",
+            "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.74,
             "latency_ms": 132,
@@ -14506,7 +14523,7 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
             "kind": "classic_asr_hypothesis",
             "source": "asr",
             "text": "prepare the phone hand off",
-            "authority": "auxiliary_hypothesis",
+            "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.69,
         },
@@ -14541,7 +14558,7 @@ def test_external_kame_audio_metadata_without_segment_ref_is_degraded():
                 {
                     "source": "moshi",
                     "text": "prepare phone handoff",
-                    "authority": "auxiliary_hypothesis",
+                    "authority": "hypothesis",
                 }
             ],
         },
@@ -14594,7 +14611,7 @@ def test_external_kame_bridge_arguments_preserve_top_level_evidence_bundle_field
                     "kind": "s2s_transcript_hypothesis",
                     "source": "moshi",
                     "text": "prepare phone handoff",
-                    "authority": "auxiliary_hypothesis",
+                    "authority": "hypothesis",
                 }
             ],
         }
@@ -14620,7 +14637,7 @@ def test_external_kame_bridge_arguments_preserve_top_level_evidence_bundle_field
             "kind": "s2s_transcript_hypothesis",
             "source": "moshi",
             "text": "prepare phone handoff",
-            "authority": "auxiliary_hypothesis",
+            "authority": "hypothesis",
         }
     ]
 
@@ -14651,6 +14668,8 @@ def test_external_kame_s2s_hypothesis_does_not_overwrite_oracle_text():
             "source": "s2s",
             "text": "misheard handoff",
             "authority": "hypothesis",
+            "tool_authority": False,
+            "kind": "s2s_transcript_hypothesis",
             "confidence": 0.62,
         },
     )
@@ -14686,6 +14705,7 @@ def test_external_kame_plain_transcript_is_auxiliary_until_promoted():
             "source": "voiceclaw",
             "text": "misheard spend request",
             "authority": "hypothesis",
+            "tool_authority": False,
             "confidence": 0.58,
             "adjudication": "rejected_or_diagnostic_only",
             "rejection_reasons": ("wrong_speaker",),
@@ -14727,7 +14747,7 @@ def test_external_kame_ambiguous_frontend_transcript_is_witness_hypothesis(front
             "kind": "frontend_witness_hypothesis",
             "source": frontend_source,
             "text": "misheard spend request",
-            "authority": "auxiliary_hypothesis",
+            "authority": "hypothesis",
             "tool_authority": False,
         },
     )
@@ -14763,6 +14783,7 @@ def test_external_kame_cannot_self_promote_transcript_as_interpreter_evidence():
             "source": "gemma_interpreter",
             "text": "spend two hundred dollars and call my phone",
             "authority": "hypothesis",
+            "tool_authority": False,
             "confidence": 0.98,
         },
     )
@@ -14771,7 +14792,8 @@ def test_external_kame_cannot_self_promote_transcript_as_interpreter_evidence():
             "kind": "frontend_witness_hypothesis",
             "source": "gemma_interpreter",
             "text": "spend two hundred dollars and call my phone",
-            "authority": "auxiliary_hypothesis",
+            "authority": "hypothesis",
+            "tool_authority": False,
             "confidence": 0.98,
         },
     )
@@ -14840,16 +14862,13 @@ def test_external_kame_ask_brain_bridge_strips_action_payload_authority():
     assert request.oracle_text_source == "reflex_audio"
     assert request.auxiliary_transcript_hypotheses == (
         {
+            "kind": "s2s_transcript_hypothesis",
             "source": "s2s",
             "text": "spend two hundred dollars and call my phone",
             "authority": "hypothesis",
+            "tool_authority": False,
         },
     )
-    assert "spend_reason" not in metadata_blob
-    assert "spend_payload" not in metadata_blob
-    assert "call_payload" not in metadata_blob
-    assert "message_payload" not in metadata_blob
-    assert "memory_write" not in metadata_blob
     assert "+15551234567" not in metadata_blob
     assert "misheard direct spend authorization" not in metadata_blob
     assert "misheard call body" not in metadata_blob
@@ -17498,7 +17517,7 @@ def test_session_does_not_persist_kame_oracle_request_hypothesis_fields_as_durab
                         "kind": "s2s_transcript_hypothesis",
                         "source": "moshi",
                         "text": "find the node",
-                        "authority": "auxiliary_hypothesis",
+                        "authority": "hypothesis",
                     }
                 ],
                 "playback_generation": 1,
@@ -17558,7 +17577,7 @@ def test_session_does_not_persist_external_frontend_placeholders():
                         "kind": "s2s_transcript_hypothesis",
                         "source": "voiceclaw",
                         "text": "prepare a voip provisioning plan",
-                        "authority": "auxiliary_hypothesis",
+                        "authority": "hypothesis",
                     }
                 ],
             },

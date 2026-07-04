@@ -300,6 +300,7 @@ def _voice_status_evidence_authority_label(value: Any) -> str:
         ("oracle_promoted", "oracle"),
         ("reflex_hypothesis", "reflex"),
         ("auxiliary_hypothesis", "aux"),
+        ("hypothesis", "hypothesis"),
         ("diagnostic_only", "diagnostic"),
     ]
     parts = [short for label, short in ordered if label in labels]

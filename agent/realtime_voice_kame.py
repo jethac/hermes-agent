@@ -551,13 +551,13 @@ class KameOracleRequest:
         if self.transcript:
             authority["transcript"] = _kame_source_authority(self.transcript_source, default="reflex_hypothesis")
             if self.transcript_source == "reflex_audio":
-                authority["reflex_transcript_hypothesis"] = "reflex_hypothesis"
+                authority["reflex_transcript_hypothesis"] = "hypothesis"
         if self.asr_transcript:
-            authority["classic_asr_hypothesis"] = "auxiliary_hypothesis"
+            authority["classic_asr_hypothesis"] = "hypothesis"
         if self.reflex_transcript_hypothesis:
-            authority["reflex_transcript_hypothesis"] = "reflex_hypothesis"
+            authority["reflex_transcript_hypothesis"] = "hypothesis"
         if self.auxiliary_transcript_hypotheses:
-            authority["auxiliary_transcript_hypotheses"] = "auxiliary_hypothesis"
+            authority["auxiliary_transcript_hypotheses"] = "hypothesis"
         return authority
 
     @property
@@ -577,7 +577,7 @@ class KameOracleRequest:
                 "kind": "reflex_transcript_hypothesis",
                 "source": reflex_source,
                 "text": reflex_text,
-                "authority": "reflex_hypothesis",
+                "authority": "hypothesis",
                 "tool_authority": False,
             }
             if reflex_confidence is not None:
@@ -589,7 +589,7 @@ class KameOracleRequest:
                 "kind": "classic_asr_hypothesis",
                 "source": self.asr_transcript_source or "asr",
                 "text": self.asr_transcript.strip(),
-                "authority": "auxiliary_hypothesis",
+                "authority": "hypothesis",
                 "tool_authority": False,
             }
             if self.asr_transcript_confidence is not None:
@@ -612,7 +612,7 @@ class KameOracleRequest:
                 or _transcript_hypothesis_kind(source, default="s2s_transcript_hypothesis"),
                 "source": source,
                 "text": text,
-                "authority": "auxiliary_hypothesis",
+                "authority": "hypothesis",
                 "tool_authority": False,
             }
             confidence = _confidence(hypothesis.get("confidence"))
@@ -1221,12 +1221,12 @@ def _canonical_transcript_hypothesis(value: object) -> dict[str, Any]:
         source,
         default="s2s_transcript_hypothesis",
     )
-    authority = _canonical_transcript_hypothesis_authority(value, kind=kind, source=source)
     hypothesis: dict[str, Any] = {
         "kind": kind,
         "source": source,
         "text": text,
-        "authority": authority,
+        "authority": "hypothesis",
+        "tool_authority": False,
     }
     confidence = _confidence(value.get("confidence"))
     if confidence is not None:
@@ -1247,20 +1247,6 @@ def _canonical_transcript_hypothesis(value: object) -> dict[str, Any]:
     if rejection_reasons:
         hypothesis["rejection_reasons"] = rejection_reasons
     return hypothesis
-
-
-def _canonical_transcript_hypothesis_authority(
-    value: Mapping[str, Any],
-    *,
-    kind: str,
-    source: str,
-) -> str:
-    authority = _optional_text(value.get("authority"))
-    if authority in {"reflex_hypothesis", "auxiliary_hypothesis"}:
-        return authority
-    if _optional_text(kind) == "reflex_transcript_hypothesis" or "reflex" in _optional_text(source).lower():
-        return "reflex_hypothesis"
-    return "auxiliary_hypothesis"
 
 
 def _canonical_reflex_transcript_hypothesis(
