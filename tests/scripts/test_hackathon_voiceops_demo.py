@@ -394,7 +394,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "Gemma" not in payload["spark_stack"]["reflex"]["model"]
     assert payload["spark_stack"]["interpreter"]["model"].startswith("Gemma 4 E2B")
     assert payload["spark_stack"]["interpreter"]["authority"].endswith("no direct tool or spend authority")
-    assert "optional auxiliary transcript-hypothesis evidence" in payload["spark_stack"]["speech"]["asr"]
+    assert "optional witness/fallback transcript-hypothesis evidence" in payload["spark_stack"]["speech"]["asr"]
     assert "durable transcript evidence" not in payload["spark_stack"]["speech"]["asr"]
     provider_roles = {item["role"]: item for item in payload["provider_role_matrix"]}
     assert set(provider_roles) == {
@@ -693,7 +693,7 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
     assert "Stripe Skills" in writeup
     assert "@NousResearch" in writeup
     assert "Remaining Closure Gates" in writeup
-    assert "optional auxiliary transcript-hypothesis evidence" in writeup
+    assert "optional witness/fallback transcript-hypothesis evidence" in writeup
     assert "durable transcript evidence" not in writeup
     assert "live_discord_voice_operator" in writeup
     assert "spend_and_provisioning_preflight" in writeup

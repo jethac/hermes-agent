@@ -320,7 +320,7 @@ Acceptance gates:
 | --- | --- |
 | Bridge prerequisite check | Passes strict mode |
 | Alpha evidence runs | 3/3 pass |
-| Optional auxiliary transcript-hypothesis latency | Under 300ms where provider evidence exposes it; not a KAME closure gate |
+| Optional witness/fallback transcript-hypothesis latency | Under 300ms where provider evidence exposes it; not a KAME closure gate |
 | Speech end / reflex acknowledgement to first audio | Under 1500ms end-to-end; transcript timing is auxiliary |
 | Barge-in | Stop/cancel under 150ms target |
 | Model-facing context | Hermes never claims it cannot hear/speak while in voice mode |

@@ -177,7 +177,7 @@ def default_candidates() -> list[Candidate]:
             engine="local NeMo/Riva-style streaming ASR",
             locality="local_spark",
             priority=1,
-            purpose="auxiliary transcript hypothesis lane for the interpreter/oracle evidence bundle, not durable truth or the reflex driver",
+            purpose="optional witness/fallback transcript hypothesis lane for the interpreter/oracle evidence bundle, not durable truth or the reflex driver",
             required_targets=_targets(
                 ("asr_delta_ms", "<=", 120, "ms"),
                 ("final_transcript_ms", "<=", 900, "ms"),
@@ -1600,7 +1600,7 @@ def _stack_smoke_source_artifact_shape() -> list[dict[str, Any]]:
                 {
                     "authority": "hypothesis",
                     "source": "classic_asr_fallback_optional",
-                    "text": "[redacted optional auxiliary transcript hypothesis]",
+                    "text": "[redacted optional witness/fallback transcript hypothesis]",
                 }
             ],
             "interpreter_evidence": {

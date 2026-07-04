@@ -259,11 +259,18 @@ def _build_current_environment_snapshot(
         },
         "provisioning": {
             "env_presence": provisioning_env_presence,
-            "binary_presence": {binary: _binary_present(binary, env) for binary in provisioning_binaries},
+            "binary_presence": {
+                binary: _binary_present(binary, env)
+                for binary in provisioning_binaries
+            },
             "required_cli_presence": {
                 "stripe": _binary_present("stripe", env),
                 "link-cli": _binary_present("link-cli", env),
                 "mppx": _binary_present("mppx", env),
+                "mppx_or_fallback": any(
+                    _binary_present(binary, env)
+                    for binary in ("mppx", "mpp", "mpp-agent", "nemoclaw", "openshell")
+                ),
             },
             "optional_phone_cli_presence": {
                 "twilio": _binary_present("twilio", env),
@@ -576,7 +583,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
             "--output-dir artifacts/voiceops-package-audit/current"
         ),
         "final_success_signal": (
-            "readiness_gaps is [] and closure_status is complete and package_audit.status is pass"
+            "readiness_gaps is [] and review_gaps is [] and closure_status is complete and package_audit.status is pass"
         ),
     }
 
@@ -741,7 +748,7 @@ def _build_next_actions(
             operator_step = (
                 "Start with the no-write Spark evidence lint if artifacts already exist, then collect measured local DGX "
                 "Spark KAME/reflex/interpreter/oracle/TTS evidence and re-run the matrix with that evidence. "
-                "ASR is optional auxiliary transcript-hypothesis evidence, not a required Spark closure gate."
+                "ASR is optional witness/fallback transcript-hypothesis evidence, not a required Spark closure gate."
             )
         else:
             blocked_by = {"needs_external_evidence": True}
@@ -807,6 +814,14 @@ def _build_review_actions(handoff: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return actions
+
+
+def _review_gap_milestones(results: list[dict[str, Any]]) -> list[str]:
+    return [
+        result["milestone"]
+        for result in results
+        if result.get("status") == "needs_review"
+    ]
 
 
 def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
@@ -1335,6 +1350,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
     model_flags = _plan_model_flag_args(summary.get("plan_args"))
     gates = _append_plan_model_flags(gates, model_flags)
     blockers = _build_current_environment_blockers(current_environment)
+    review_gaps = summary.get("review_gaps", [])
     readiness_gap_milestones = set(summary["readiness_gaps"])
     remaining_gates = [gate for gate in gates if gate["milestone"] in readiness_gap_milestones]
     handoff = _build_operator_handoff(gates, blockers)
@@ -1352,12 +1368,13 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
             "secret_values_emitted": False,
         },
         "readiness_gaps": summary["readiness_gaps"],
+        "review_gaps": review_gaps,
         "current_environment": current_environment,
         "current_environment_blockers": blockers,
         "operator_handoff": handoff,
         "next_actions": next_actions,
         "review_actions": review_actions,
-        "closure_status": "needs_external_evidence" if summary["readiness_gaps"] else "complete",
+        "closure_status": "needs_external_evidence" if summary["readiness_gaps"] or review_gaps else "complete",
         "remaining_gates": remaining_gates,
         "gates": gates,
     }
@@ -2704,6 +2721,7 @@ async def build_plan_run_async(
         for result in results
         if result["status"] in {"needs_setup", "needs_evidence", "needs_live_probe"}
     ]
+    review_gaps = _review_gap_milestones(results)
     summary = {
         "schema_version": "voiceops.plan_run.v1",
         "artifact_id": "voiceops-plan-run",
@@ -2719,6 +2737,7 @@ async def build_plan_run_async(
         "ok": not hard_failures,
         "hard_failures": hard_failures,
         "readiness_gaps": readiness_gaps,
+        "review_gaps": review_gaps,
         "results": results,
         "current_environment": _build_current_environment_snapshot(env=effective_env, env_files=env_files),
     }
@@ -2729,6 +2748,7 @@ async def build_plan_run_async(
     summary["readiness_ok"] = (
         summary["closure_status"] == "complete"
         and summary["readiness_gaps"] == []
+        and summary["review_gaps"] == []
     )
     summary["current_environment_blockers"] = summary["closure_index"][
         "current_environment_blockers"
@@ -2738,9 +2758,10 @@ async def build_plan_run_async(
     ]
     summary["next_actions"] = summary["closure_index"]["next_actions"]
     summary["review_actions"] = summary["closure_index"]["review_actions"]
-    summary["ready_for_demo"] = summary["ok"] and not summary["readiness_gaps"]
+    summary["ready_for_demo"] = summary["ok"] and not summary["readiness_gaps"] and not summary["review_gaps"]
     summary["blockers"] = {
         "readiness_gaps": summary["readiness_gaps"],
+        "review_gaps": summary["review_gaps"],
         "remaining_gates": summary["remaining_gates"],
         "review_actions": summary["review_actions"],
         "current_environment": summary["closure_index"]["current_environment_blockers"],
@@ -2780,6 +2801,7 @@ def _markdown(summary: dict[str, Any]) -> str:
         f"- Safety: {_safety_summary_line(summary.get('safety', {}))}",
         f"- Hard failures: {', '.join(summary['hard_failures']) if summary['hard_failures'] else 'none'}",
         f"- Readiness gaps: {', '.join(summary['readiness_gaps']) if summary['readiness_gaps'] else 'none'}",
+        f"- Review gaps: {', '.join(summary.get('review_gaps', [])) if summary.get('review_gaps') else 'none'}",
         *(
             [
                 f"- Package audit: {package_audit.get('status', 'unknown')}",
@@ -2894,6 +2916,7 @@ def _closure_markdown(closure: dict[str, Any]) -> str:
         f"- Status: {closure['closure_status']}",
         f"- Safety: {_safety_summary_line(closure.get('safety', {}), include_spark=True)}",
         f"- Readiness gaps: {', '.join(closure['readiness_gaps']) if closure['readiness_gaps'] else 'none'}",
+        f"- Review gaps: {', '.join(closure.get('review_gaps', [])) if closure.get('review_gaps') else 'none'}",
         "",
         "## Current Environment",
         "",
@@ -3312,6 +3335,7 @@ def main(argv: list[str] | None = None) -> int:
                         "readiness_ok": (
                             summary["closure_index"]["closure_status"] == "complete"
                             and summary["readiness_gaps"] == []
+                            and summary.get("review_gaps", []) == []
                         ),
                         "dry_audit": True,
                         "persistent_writes": False,
@@ -3319,6 +3343,7 @@ def main(argv: list[str] | None = None) -> int:
                         "requested_artifact_root": str(args.artifact_root),
                         "requested_output_dir": str(args.output_dir),
                         "readiness_gaps": summary["readiness_gaps"],
+                        "review_gaps": summary.get("review_gaps", []),
                         "hard_failures": summary["hard_failures"],
                         "closure_status": summary["closure_index"]["closure_status"],
                         "remaining_gates": [
@@ -3383,6 +3408,7 @@ def main(argv: list[str] | None = None) -> int:
                     else {}
                 ),
                 "readiness_gaps": summary["readiness_gaps"],
+                "review_gaps": summary.get("review_gaps", []),
                 "hard_failures": summary["hard_failures"],
             },
             indent=2,

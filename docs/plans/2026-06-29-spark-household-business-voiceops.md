@@ -635,7 +635,7 @@ Target:
 - the fast reflex consumes live audio for floor control and immediate response
 - Gemma interpreter consumes clipped audio plus reflex/Moshi transcript
   hypotheses for multilingual correction and oracle evidence
-- dedicated classic ASR is an optional auxiliary transcript-hypothesis lane and
+- dedicated classic ASR is an optional witness/fallback transcript-hypothesis lane and
   fallback, not the reflex driver
 - speculative ASR or S2S transcript capture may run to hide latency, but the
   result stays a labeled hypothesis until raw-audio-grounded interpreter
@@ -667,7 +667,7 @@ Provider selection must be role-based:
 | --- | --- | --- |
 | Reflex / floor control | Moshi/PersonaPlex-class S2S or smaller local timing model | Judge on acknowledgement latency, barge-in behavior, noise rejection, and whether its transcript-like text helps Gemma without becoming authority. |
 | Interpreter / evidence | Gemma 4 E2B/E4B/12B audio-multimodal | Receives raw audio first, witness transcripts second; can promote, correct, reject, or downgrade transcript text. |
-| Auxiliary transcript evidence | Nemotron/Riva ASR, Moshi/open-S2S text, or classic ASR | Optional support for captions, diagnostics, literal checks, and fallback. Not a control path in full KAME mode. |
+| Optional witness/fallback transcript evidence | Nemotron/Riva ASR, Moshi/open-S2S text, or classic ASR | Optional support for captions, diagnostics, literal checks, and fallback. Not a control path in full KAME mode. |
 | Outbound TTS | Magpie/Riva-style local TTS, Piper-class local TTS, or hosted fallback | Pick by first-audio latency, quality, and operational stability. TTS provider changes require no authority-model change. |
 | Degraded fallback | Cartesia or text-only VoiceClaw/OpenClaw/Moshi bridge | Useful for demos/bring-up, but must be labeled degraded when raw audio is missing. |
 

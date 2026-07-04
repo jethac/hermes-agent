@@ -68,7 +68,7 @@ Third, the local model server runs reproducible model containers:
 - **Fast reflex model:** Moshi/PersonaPlex-class S2S or smaller floor-control
   model for barge-in, immediate acknowledgement, and rough transcript
   hypotheses.
-- **Auxiliary transcript evidence:** Moshi/S2S transcript output or classic ASR
+- **Optional witness/fallback transcript evidence:** Moshi/S2S transcript output or classic ASR
   output may be passed to Gemma as witness context, and to the oracle only as
   labeled audit context or promoted evidence. It does not drive the reflex turn,
   is not required for voice to work, and must be labeled as hypothesis context

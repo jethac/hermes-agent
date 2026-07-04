@@ -655,6 +655,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "stripe": False,
         "link-cli": False,
         "mppx": False,
+        "mppx_or_fallback": False,
     }
     assert summary["current_environment"]["spark"]["hardware_claim"] == "not_verified_by_plan_run"
     assert "dgx_spark_likely" in summary["current_environment"]["spark"]
@@ -672,6 +673,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert blockers["spark_host"]["blocks_artifact_generation"] is False
     assert summary["blockers"] == {
         "readiness_gaps": summary["readiness_gaps"],
+        "review_gaps": summary["review_gaps"],
         "remaining_gates": summary["remaining_gates"],
         "review_actions": summary["review_actions"],
         "current_environment": blockers,
@@ -680,7 +682,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert handoff["schema_version"] == "voiceops.operator_handoff.v1"
     assert handoff["changes_readiness_by_itself"] is False
     assert handoff["final_success_signal"] == (
-        "readiness_gaps is [] and closure_status is complete and package_audit.status is pass"
+        "readiness_gaps is [] and review_gaps is [] and closure_status is complete and package_audit.status is pass"
     )
     assert "--package-audit" in handoff["final_reindex_command"]
     next_actions = summary["closure_index"]["next_actions"]
@@ -887,7 +889,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert handoff["phases"][2]["commands"][1] == "scripts/dgx_spark_gemma4_voice_eval.sh"
     assert "--refresh-source-hashes" in handoff["phases"][2]["commands"][2]
     assert "KAME/reflex/interpreter/oracle/TTS evidence" in next_actions[2]["operator_step"]
-    assert "ASR is optional auxiliary transcript-hypothesis evidence" in next_actions[2]["operator_step"]
+    assert "ASR is optional witness/fallback transcript-hypothesis evidence" in next_actions[2]["operator_step"]
     assert "asr-nemotron-speech-raw.json" not in json.dumps(handoff["phases"][2]["expected_artifacts"])
     assert "asr-nemotron-speech-raw.json" in json.dumps(handoff["phases"][2]["optional_artifacts"])
     assert "tts-magpie-local-raw.json" in json.dumps(handoff["phases"][2]["expected_artifacts"])
@@ -1079,6 +1081,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "validate_nemoclaw_action_packet"
     ]
     assert gates["spend_and_provisioning_preflight"]["current_environment"]["required_cli_presence"]["stripe"] is False
+    assert (
+        gates["spend_and_provisioning_preflight"]["current_environment"]["required_cli_presence"]["mppx_or_fallback"]
+        is False
+    )
     assert "required_candidate_fields" in gates["local_spark_stack_matrix"]
     assert "schema_version" in gates["local_spark_stack_matrix"]["required_candidate_fields"]
     assert "source_artifact_sha256" in gates["local_spark_stack_matrix"]["required_candidate_fields"]
@@ -1966,6 +1972,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert Path(channel_result["artifacts"]["review_json"]).exists()
     assert Path(channel_result["artifacts"]["review_markdown"]).exists()
     assert "milestone_3_multi_channel_policy" not in summary["readiness_gaps"]
+    assert summary["review_gaps"] == ["milestone_3_multi_channel_policy"]
+    assert summary["closure_index"]["review_gaps"] == summary["review_gaps"]
 
     matrix_result = next(result for result in summary["results"] if result["milestone"] == "milestone_4_local_spark_stack_matrix")
     assert matrix_result["status"] == "needs_evidence"
@@ -2203,7 +2211,8 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
     assert summary["ok"] is True
     assert summary["hard_failures"] == []
     assert summary["readiness_gaps"] == []
-    assert summary["closure_index"]["closure_status"] == "complete"
+    assert summary["review_gaps"] == ["milestone_3_multi_channel_policy"]
+    assert summary["closure_index"]["closure_status"] == "needs_external_evidence"
     assert summary["closure_index"]["remaining_gates"] == []
     assert statuses["milestone_1_real_voice_operator"] == "live_evidence_supplied"
     assert statuses["milestone_2_real_spend_and_provisioning_preflight"] == "ready"
@@ -2245,7 +2254,7 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
     }
     assert summary["closure_index"]["operator_handoff"]["changes_readiness_by_itself"] is False
     assert summary["closure_index"]["operator_handoff"]["final_success_signal"] == (
-        "readiness_gaps is [] and closure_status is complete and package_audit.status is pass"
+        "readiness_gaps is [] and review_gaps is [] and closure_status is complete and package_audit.status is pass"
     )
     assert "--package-audit" in summary["closure_index"]["operator_handoff"]["final_reindex_command"]
     assert "present-redacted" not in serialized

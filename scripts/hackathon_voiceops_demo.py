@@ -776,7 +776,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
                     "Moshi/PersonaPlex-class or equivalent low-latency reflex evidence",
                     "Gemma 4 E2B/E4B/12B-style interpreter evidence",
                     "Hermes /model-selected oracle evidence, preferably Nemotron 3 Super",
-                    "local TTS evidence and optional auxiliary transcript evidence",
+                    "local TTS evidence and optional witness/fallback transcript evidence",
                     "all-local stack smoke with KAME routing metrics",
                 ],
                 "expected_artifacts": [
@@ -852,7 +852,7 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
             "--output-dir artifacts/voiceops-package-audit/current"
         ),
         "final_success_signal": (
-            "readiness_gaps is [] and closure_status is complete and package_audit.status is pass"
+            "readiness_gaps is [] and review_gaps is [] and closure_status is complete and package_audit.status is pass"
         ),
     }
 
@@ -1155,7 +1155,7 @@ def _spark_stack(active_model: str, reflex_model: str, interpreter_model: str) -
             "hosted_fallback": "clearly labeled hosted provider through Hermes /model",
         },
         "speech": {
-            "asr": "Nemotron Speech or equivalent local streaming ASR only as optional auxiliary transcript-hypothesis evidence",
+            "asr": "Nemotron Speech or equivalent local streaming ASR only as optional witness/fallback transcript-hypothesis evidence",
             "tts": "local Magpie/Riva-style TTS target with Cartesia cloud fallback for the demo",
         },
         "guardrails": [
@@ -2486,7 +2486,7 @@ def _submission_writeup(demo: dict[str, Any]) -> str:
         f"- Interpreter/evidence: {demo['spark_stack']['interpreter']['model']}",
         f"- Oracle/brain: {demo['spark_stack']['oracle']['model']}",
         f"- Speech path: {demo['spark_stack']['speech']['asr']}; {demo['spark_stack']['speech']['tts']}",
-        "- Provider roles: reflex, interpreter, oracle, auxiliary transcript evidence, outbound TTS, and degraded fallback are explicitly separated in `voiceops-demo.json`.",
+        "- Provider roles: reflex, interpreter, oracle, optional witness/fallback transcript evidence, outbound TTS, and degraded fallback are explicitly separated in `voiceops-demo.json`.",
         "",
         "## Safety Story",
         "",
