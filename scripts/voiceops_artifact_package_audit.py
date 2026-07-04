@@ -157,6 +157,7 @@ EXPECTED_PACKAGE_ARTIFACTS = (
     "voiceops-voice-operator/current/sidecar-fail-closed-smoke.json",
     "voiceops-voice-operator/current/tool-disclosure-smoke.json",
     "voiceops-voice-operator/current/ephemeral-tool-router-smoke.json",
+    "voiceops-voice-operator/current/interpreter-request-packet.json",
     "voiceops-voice-operator/current/live-probe-closure-plan.json",
     "voiceops-voice-operator/current/live-probe-closure-plan.md",
     "voiceops-voice-operator/current/live-voice-evidence-scaffold/manifest.json",
@@ -1768,6 +1769,7 @@ def _audit_voice_operator_artifact_consistency(
     sidecar_fail_closed_smoke: Mapping[str, Any],
     tool_disclosure_smoke: Mapping[str, Any],
     ephemeral_tool_router_smoke: Mapping[str, Any],
+    interpreter_request_packet: Mapping[str, Any],
     issues: list[str],
 ) -> None:
     for issue in validate_voice_operator_report(dict(readiness)):
@@ -1779,6 +1781,7 @@ def _audit_voice_operator_artifact_consistency(
         "sidecar_fail_closed_smoke": sidecar_fail_closed_smoke,
         "tool_disclosure_smoke": tool_disclosure_smoke,
         "ephemeral_tool_router_smoke": ephemeral_tool_router_smoke,
+        "interpreter_request_packet": interpreter_request_packet,
     }
     for field, standalone_payload in expected_payloads.items():
         if readiness.get(field) != standalone_payload:
@@ -2267,6 +2270,7 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             ),
             "witness_fusion_timing_smoke_ok": bool(async_smoke.get("witness_fusion_timing_smoke_ok")),
             "witness_fusion_arrival_phases": async_smoke.get("witness_fusion_arrival_phases") or [],
+            "witness_arrival_phase": async_smoke.get("witness_fusion_arrival_phases") or [],
             "witness_fusion_case_job_ids": async_smoke.get("witness_fusion_case_job_ids") or {},
             "witness_fusion_turn_ids": async_smoke.get("witness_fusion_turn_ids") or {},
             "witness_fusion_audio_segment_refs": async_smoke.get("witness_fusion_audio_segment_refs") or {},
@@ -2278,6 +2282,9 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             )
             or {},
             "witness_fusion_accepted_audio_gate_observed": bool(
+                async_smoke.get("witness_fusion_accepted_audio_gate_observed")
+            ),
+            "raw_audio_interpreter_evidence_observed": bool(
                 async_smoke.get("witness_fusion_accepted_audio_gate_observed")
             ),
             "witness_fusion_early_initial_bundle_id": async_smoke.get(
@@ -2301,6 +2308,7 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             )
             or {},
             "witness_fusion_adjudications": async_smoke.get("witness_fusion_adjudications") or {},
+            "interpreter_adjudication_outcomes": async_smoke.get("witness_fusion_adjudications") or {},
             "witness_fusion_rejection_reasons": async_smoke.get("witness_fusion_rejection_reasons") or {},
             "witness_fusion_adjudication_outcomes_observed": bool(
                 async_smoke.get("witness_fusion_adjudication_outcomes_observed")
@@ -2378,6 +2386,14 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             ),
             "runtime_kame_action_gate_degraded_text_only_preserves_hypothesis": bool(
                 async_smoke.get("runtime_kame_action_gate_degraded_text_only_preserves_hypothesis")
+            ),
+            "transcript_only_witness_rejected_for_full_kame": (
+                async_smoke.get("runtime_kame_action_gate_degraded_text_only_ok") is False
+                and async_smoke.get("runtime_kame_action_gate_degraded_text_only_status")
+                == "degraded_text_only"
+                and async_smoke.get("runtime_kame_action_gate_degraded_text_only_raw_audio_available")
+                is False
+                and bool(async_smoke.get("runtime_kame_action_gate_degraded_text_only_preserves_hypothesis"))
             ),
             "runtime_kame_action_gate_promoted_ok": async_smoke.get("runtime_kame_action_gate_promoted_ok"),
             "runtime_kame_action_gate_promoted_issues": async_smoke.get(
@@ -2775,6 +2791,11 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         issues,
         "ephemeral_tool_router_smoke",
     )
+    interpreter_request_packet = _read_json(
+        voice_dir / "interpreter-request-packet.json",
+        issues,
+        "interpreter_request_packet",
+    )
     live_scaffold_dir = voice_dir / "live-voice-evidence-scaffold"
     live_scaffold_manifest = _read_json(live_scaffold_dir / "manifest.json", issues, "live_evidence_scaffold_manifest")
     live_scaffold_sections = {
@@ -2900,6 +2921,7 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         sidecar_fail_closed_smoke=sidecar_fail_closed_smoke,
         tool_disclosure_smoke=tool_disclosure_smoke,
         ephemeral_tool_router_smoke=ephemeral_tool_router_smoke,
+        interpreter_request_packet=interpreter_request_packet,
         issues=issues,
     )
     _audit_live_evidence_scaffold(

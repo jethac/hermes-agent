@@ -43,7 +43,7 @@ def test_package_audit_accepts_generated_headless_package(tmp_path):
     assert report["readiness_claim"] is False
     assert report["readiness_scope"] == "static_package_consistency_only"
     assert "does not satisfy live Discord" in report["readiness_note"]
-    assert report["checked_artifact_count"] == 94
+    assert report["checked_artifact_count"] == 97
     assert str(artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.json") in report[
         "checked_artifacts"
     ]
@@ -201,6 +201,19 @@ def test_package_audit_rejects_ephemeral_tool_router_smoke_artifact_drift(tmp_pa
     assert "voice_operator_readiness:ephemeral_tool_router_smoke_standalone_artifact_mismatch" in report["issues"]
 
 
+def test_package_audit_rejects_interpreter_request_packet_artifact_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    packet_path = artifact_root / "voiceops-voice-operator" / "current" / "interpreter-request-packet.json"
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    packet["prompt_input_order"] = ["transcript_hypotheses", "raw_audio"]
+    _write_json(packet_path, packet)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "voice_operator_readiness:interpreter_request_packet_standalone_artifact_mismatch" in report["issues"]
+
+
 def test_package_audit_rejects_pcm_conversion_proof_drift(tmp_path):
     artifact_root = _generate_package(tmp_path)
     readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
@@ -315,6 +328,8 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_early_single_bundle"] = False
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_evidence_merge_keys"] = {"early": "kame-merge-wrong"}
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_accepted_audio_gate_observed"] = False
+    readiness["proofs"]["async_oracle_jobs"]["witness_arrival_phase"] = ["with_raw_audio"]
+    readiness["proofs"]["async_oracle_jobs"]["raw_audio_interpreter_evidence_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_audio_metadata"] = {"early": {}}
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_partial_superseded_by_final"] = False
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_partial_active_hypothesis"][
@@ -322,6 +337,9 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     ] = True
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_rejection_reasons"] = {"late": ["wrong_channel"]}
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_adjudication_outcomes_observed"] = False
+    readiness["proofs"]["async_oracle_jobs"]["interpreter_adjudication_outcomes"] = {
+        "late": ["accepted_as_supporting_evidence"]
+    }
     readiness["proofs"]["async_oracle_jobs"]["energy_gate_barge_in_events"] = 1
     readiness["proofs"]["async_oracle_jobs"]["energy_gate_raw_packet_buffered_without_turn"] = False
     readiness["proofs"]["async_oracle_jobs"]["energy_gate_policy"] = {"min_rms": 0}
@@ -335,6 +353,7 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_degraded_text_only_status"] = (
         "primary_audio"
     )
+    readiness["proofs"]["async_oracle_jobs"]["transcript_only_witness_rejected_for_full_kame"] = False
     readiness["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_promoted_ok"] = False
     readiness["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_self_attested_ok"] = True
     readiness["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_missing_tool_disclosure_ok"] = True
@@ -501,6 +520,14 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
         in report["issues"]
     )
     assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.witness_arrival_phase_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.raw_audio_interpreter_evidence_observed_mismatch"
+        in report["issues"]
+    )
+    assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_audio_metadata_mismatch"
         in report["issues"]
     )
@@ -518,6 +545,10 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_adjudication_outcomes_observed_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.interpreter_adjudication_outcomes_mismatch"
         in report["issues"]
     )
     assert (
@@ -554,6 +585,10 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.runtime_kame_action_gate_degraded_text_only_status_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.transcript_only_witness_rejected_for_full_kame_mismatch"
         in report["issues"]
     )
     assert (
@@ -1018,7 +1053,7 @@ def test_package_audit_rejects_stale_embedded_package_audit_summary(tmp_path):
         "ok": True,
         "status": "pass",
         "issues": [],
-        "checked_artifact_count": 94,
+        "checked_artifact_count": 97,
     }
     _write_json(plan_run_path, plan_run)
     assert audit_package(artifact_root)["ok"] is True

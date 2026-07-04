@@ -146,14 +146,16 @@ The evidence bundle must preserve provenance:
 - classic ASR transcript: optional fallback or comparison hypothesis
 - interpreter correction: first durable transcript candidate
 
-Each field must also carry an explicit authority label in logs and durable job
-records. The minimum labels are `primary_audio`, `reflex_hypothesis`,
-`frontend_witness_hypothesis`, `auxiliary_hypothesis`,
+Each field must also carry explicit authority in logs and durable job records.
+The minimum authority labels are `primary_audio`, `hypothesis`,
 `interpreter_promoted`, `oracle_promoted`, and `diagnostic_only`.
-`auxiliary_hypothesis` remains a generic fallback label; ambiguous
+Transcript provenance is separate: `reflex_transcript_hypothesis`,
+`frontend_witness_hypothesis`, `s2s_transcript_hypothesis`, and
+`classic_asr_hypothesis` are hypothesis kinds/classes, not authority. Ambiguous
 Moshi/OpenClaw/VoiceClaw transcript-looking text should prefer
-`frontend_witness_hypothesis`. A field can be useful before it is
-authoritative; it just cannot be replayed later as if the user verified it.
+`frontend_witness_hypothesis` as its kind, with `authority = "hypothesis"` and
+`tool_authority = false`. A field can be useful before it is authoritative; it
+just cannot be replayed later as if the user verified it.
 
 The oracle may see all of those fields, but only after they are labeled. It must
 never receive a Moshi or ASR transcript as if it were the user's verified

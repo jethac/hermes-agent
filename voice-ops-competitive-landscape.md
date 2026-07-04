@@ -36,6 +36,12 @@ But none of those appear to implement the full KAME-style contract as the primar
 
 Sakana KAME is a tandem speech architecture: a fast S2S frontend starts responding immediately, while a backend text LLM runs asynchronously over growing partial transcripts and injects oracle guidance back into the frontend. The published architecture emphasizes low latency, backend flexibility, and "speak while thinking" behavior.
 
+Hermes should borrow the latency split without copying an STT-first trust model.
+The target KAME contract is raw-audio-primary: Moshi/open-S2S/classic-ASR text
+is useful witness context for the interpreter, but it is not durable user text,
+not a scheduler, and not tool authority until raw-audio-grounded interpreter or
+oracle promotion.
+
 The current Hermes branch is an applied agent-system version of that pattern, not a literal trained S2S oracle-token model. Its KAME-like elements are:
 
 - Low-latency reflex/interface model owns live speech, routing, turn-taking, barge-in, and brief spoken responses.

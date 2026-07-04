@@ -3095,6 +3095,7 @@ def build_voice_operator_report(
             "witness_fusion_arrival_phases": list(
                 async_oracle_smoke.get("witness_fusion_arrival_phases") or []
             ),
+            "witness_arrival_phase": list(async_oracle_smoke.get("witness_fusion_arrival_phases") or []),
             "witness_fusion_case_job_ids": dict(
                 async_oracle_smoke.get("witness_fusion_case_job_ids") or {}
             ),
@@ -3117,6 +3118,9 @@ def build_voice_operator_report(
                 async_oracle_smoke.get("witness_fusion_bundle_audio_metadata") or {}
             ),
             "witness_fusion_accepted_audio_gate_observed": bool(
+                async_oracle_smoke.get("witness_fusion_accepted_audio_gate_observed")
+            ),
+            "raw_audio_interpreter_evidence_observed": bool(
                 async_oracle_smoke.get("witness_fusion_accepted_audio_gate_observed")
             ),
             "witness_fusion_early_initial_bundle_id": async_oracle_smoke.get(
@@ -3221,6 +3225,9 @@ def build_voice_operator_report(
             "witness_fusion_adjudications": dict(
                 async_oracle_smoke.get("witness_fusion_adjudications") or {}
             ),
+            "interpreter_adjudication_outcomes": dict(
+                async_oracle_smoke.get("witness_fusion_adjudications") or {}
+            ),
             "witness_fusion_rejection_reasons": dict(
                 async_oracle_smoke.get("witness_fusion_rejection_reasons") or {}
             ),
@@ -3272,6 +3279,14 @@ def build_voice_operator_report(
             ),
             "runtime_kame_action_gate_degraded_text_only_preserves_hypothesis": bool(
                 async_oracle_smoke.get("runtime_kame_action_gate_degraded_text_only_preserves_hypothesis")
+            ),
+            "transcript_only_witness_rejected_for_full_kame": (
+                async_oracle_smoke.get("runtime_kame_action_gate_degraded_text_only_ok") is False
+                and async_oracle_smoke.get("runtime_kame_action_gate_degraded_text_only_status")
+                == "degraded_text_only"
+                and async_oracle_smoke.get("runtime_kame_action_gate_degraded_text_only_raw_audio_available")
+                is False
+                and bool(async_oracle_smoke.get("runtime_kame_action_gate_degraded_text_only_preserves_hypothesis"))
             ),
             "runtime_kame_action_gate_promoted_ok": async_oracle_smoke.get(
                 "runtime_kame_action_gate_promoted_ok"
@@ -3439,7 +3454,7 @@ def build_voice_operator_report(
             "missing_gates": missing_live_gates,
         },
     }
-    return {
+    report = {
         "schema_version": "voiceops.milestone1.voice_operator.v1",
         "artifact_id": "voiceops-m1-discord-voice-operator",
         "milestone": "milestone_1_real_voice_operator",
@@ -3609,6 +3624,8 @@ def build_voice_operator_report(
             ),
         },
     }
+    report["interpreter_request_packet"] = _interpreter_request_packet(report)
+    return report
 
 
 def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
@@ -3680,6 +3697,56 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
             issues.append(f"missing_async_oracle_coverage:{key}")
         if async_oracle_coverage.get(key) is not recomputed_async_oracle_coverage.get(key):
             issues.append(f"stale_async_oracle_coverage:{key}")
+    async_proof = report.get("proofs", {}).get("async_oracle_jobs", {})
+    packet = report.get("interpreter_request_packet", {})
+    if not isinstance(packet, Mapping):
+        issues.append("missing_interpreter_request_packet")
+        packet = {}
+    elif packet.get("schema_version") != "voiceops.kame.interpreter_request_packet.v1":
+        issues.append("interpreter_request_packet:invalid_schema_version")
+    if isinstance(async_proof, Mapping):
+        packet_expectations = {
+            "protocol": "kame_session_v1",
+            "protocol_contract": "docs/kame-session-v1.md",
+            "turn_id": (async_proof.get("witness_fusion_turn_ids") or {}).get("early")
+            if isinstance(async_proof.get("witness_fusion_turn_ids"), Mapping)
+            else None,
+            "evidence_bundle_id": async_proof.get("witness_fusion_early_final_bundle_id"),
+            "evidence_merge_key": (async_proof.get("witness_fusion_evidence_merge_keys") or {}).get(
+                "early"
+            )
+            if isinstance(async_proof.get("witness_fusion_evidence_merge_keys"), Mapping)
+            else None,
+            "prompt_input_order": async_proof.get("witness_fusion_interpreter_prompt_input_order") or [],
+        }
+        for field, expected_value in packet_expectations.items():
+            if packet.get(field) != expected_value:
+                issues.append(f"interpreter_request_packet:{field}_mismatch")
+        audio = packet.get("audio") if isinstance(packet.get("audio"), Mapping) else {}
+        if audio.get("authority") != "primary_audio":
+            issues.append("interpreter_request_packet:audio_authority_mismatch")
+        audio_refs = async_proof.get("witness_fusion_audio_segment_refs")
+        expected_audio_ref = audio_refs.get("early") if isinstance(audio_refs, Mapping) else None
+        if audio.get("segment_ref") != expected_audio_ref:
+            issues.append("interpreter_request_packet:audio_segment_ref_mismatch")
+        hypotheses = (
+            packet.get("transcript_hypotheses")
+            if isinstance(packet.get("transcript_hypotheses"), list)
+            else []
+        )
+        if not hypotheses or any(
+            item.get("tool_authority") is not False for item in hypotheses if isinstance(item, Mapping)
+        ):
+            issues.append("interpreter_request_packet:hypothesis_tool_authority_not_false")
+        if not hypotheses or any(
+            item.get("authority") != "hypothesis" for item in hypotheses if isinstance(item, Mapping)
+        ):
+            issues.append("interpreter_request_packet:hypothesis_authority_mismatch")
+        promotion = packet.get("promotion") if isinstance(packet.get("promotion"), Mapping) else {}
+        if promotion.get("interpreter_corrected_transcript") != async_proof.get(
+            "witness_fusion_early_promoted_transcript"
+        ):
+            issues.append("interpreter_request_packet:promotion_transcript_mismatch")
     barge_proof = report.get("proofs", {}).get("barge_in_energy", {})
     if not isinstance(barge_proof, Mapping):
         issues.append("missing_proof:barge_in_energy")
@@ -4066,6 +4133,89 @@ def _live_probe_closure_markdown(plan: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _interpreter_request_packet(report: Mapping[str, Any]) -> dict[str, Any]:
+    proof = (
+        report.get("proofs", {}).get("async_oracle_jobs")
+        if isinstance(report.get("proofs"), Mapping)
+        and isinstance(report.get("proofs", {}).get("async_oracle_jobs"), Mapping)
+        else {}
+    )
+    audio_metadata = (
+        proof.get("witness_fusion_audio_metadata", {}).get("early")
+        if isinstance(proof.get("witness_fusion_audio_metadata"), Mapping)
+        and isinstance(proof.get("witness_fusion_audio_metadata", {}).get("early"), Mapping)
+        else {}
+    )
+    return {
+        "schema_version": "voiceops.kame.interpreter_request_packet.v1",
+        "artifact_id": "kame-interpreter-request-packet",
+        "source_proof": "proofs.async_oracle_jobs.witness_fusion",
+        "protocol": "kame_session_v1",
+        "protocol_contract": "docs/kame-session-v1.md",
+        "turn_id": proof.get("witness_fusion_turn_ids", {}).get("early")
+        if isinstance(proof.get("witness_fusion_turn_ids"), Mapping)
+        else None,
+        "evidence_bundle_id": proof.get("witness_fusion_early_final_bundle_id"),
+        "evidence_merge_key": proof.get("witness_fusion_evidence_merge_keys", {}).get("early")
+        if isinstance(proof.get("witness_fusion_evidence_merge_keys"), Mapping)
+        else None,
+        "prompt_input_order": list(proof.get("witness_fusion_interpreter_prompt_input_order") or []),
+        "prompt_policy": dict(proof.get("witness_fusion_interpreter_prompt_policy") or {}),
+        "audio": {
+            "segment_ref": proof.get("witness_fusion_audio_segment_refs", {}).get("early")
+            if isinstance(proof.get("witness_fusion_audio_segment_refs"), Mapping)
+            else None,
+            "authority": "primary_audio",
+            "metadata": dict(audio_metadata),
+        },
+        "metadata": {
+            "speaker": {
+                "platform": "discord",
+                "channel_user_id": "42",
+                "display_name": "jetha",
+            },
+            "channel": {
+                "transport": "discord_voice",
+                "guild_id": "guild-1",
+                "channel_id": "general",
+            },
+            "vad": dict(audio_metadata.get("vad") or {}) if isinstance(audio_metadata, Mapping) else {},
+            "energy_gate": dict(audio_metadata.get("energy_gate") or {})
+            if isinstance(audio_metadata, Mapping)
+            else {},
+        },
+        "reflex": {
+            "route": "defer",
+            "transcript_hypothesis": proof.get("witness_fusion_early_reflex_transcript"),
+            "interface_already_said": "Checking the power question.",
+            "authority": "reflex_hypothesis",
+            "tool_authority": False,
+        },
+        "transcript_hypotheses": [
+            {
+                "kind": "frontend_witness_hypothesis",
+                "source": "moshi",
+                "text": proof.get("witness_fusion_early_witness_text"),
+                "authority": "hypothesis",
+                "tool_authority": False,
+                "arrival_phase": "before_raw_audio",
+                "adjudication": "corrected_by_audio",
+                "confidence": 0.74,
+            }
+        ],
+        "promotion": {
+            "interpreter_corrected_transcript": proof.get("witness_fusion_early_promoted_transcript"),
+            "interpreter_normalized_intent": proof.get("witness_fusion_early_promoted_intent"),
+            "interpreter_entities": list(proof.get("witness_fusion_early_entities") or []),
+            "authority": dict(proof.get("witness_fusion_early_promoted_authority") or {}),
+        },
+        "action_authority": {
+            "witness_text_can_authorize_tools": False,
+            "requires_interpreter_or_oracle_promotion": True,
+        },
+    }
+
+
 def write_voice_operator_report(output_dir: Path, report: dict[str, Any]) -> dict[str, str]:
     output_dir.mkdir(parents=True, exist_ok=True)
     closure_plan = _live_probe_closure_plan(report)
@@ -4078,6 +4228,7 @@ def write_voice_operator_report(output_dir: Path, report: dict[str, Any]) -> dic
         "sidecar_fail_closed_smoke_json": output_dir / "sidecar-fail-closed-smoke.json",
         "tool_disclosure_smoke_json": output_dir / "tool-disclosure-smoke.json",
         "ephemeral_tool_router_smoke_json": output_dir / "ephemeral-tool-router-smoke.json",
+        "interpreter_request_packet_json": output_dir / "interpreter-request-packet.json",
         "events_jsonl": output_dir / "voice-operator-events.jsonl",
         "live_evidence_template": output_dir / "live-voice-evidence-template.json",
         "live_evidence_example": output_dir / "live-voice-evidence.example.json",
@@ -4092,6 +4243,7 @@ def write_voice_operator_report(output_dir: Path, report: dict[str, Any]) -> dic
     _write_json(paths["sidecar_fail_closed_smoke_json"], report["sidecar_fail_closed_smoke"])
     _write_json(paths["tool_disclosure_smoke_json"], report["tool_disclosure_smoke"])
     _write_json(paths["ephemeral_tool_router_smoke_json"], report["ephemeral_tool_router_smoke"])
+    _write_json(paths["interpreter_request_packet_json"], report["interpreter_request_packet"])
     _write_json(paths["live_evidence_template"], build_live_probe_evidence_template())
     _write_json(paths["live_evidence_example"], build_live_probe_evidence_example())
     paths.update(write_live_evidence_scaffold(output_dir))

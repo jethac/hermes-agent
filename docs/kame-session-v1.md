@@ -44,7 +44,7 @@ All three cases must converge on the same `turn_id`, `audio_segment_ref`,
 pending bundle. Late witness text is appended as late evidence on the existing
 bundle. Neither case may create a duplicate oracle job or durable user turn.
 
-Minimum external oracle request shape:
+Minimum external frontend evidence/job-envelope shape:
 
 ```json
 {
@@ -100,9 +100,10 @@ Minimum external oracle request shape:
 ```
 
 `arguments.query` and `arguments.intent` are provisional frontend route/context
-fields. They are allowed to help create a job envelope or a spoken
-acknowledgement, but they are not durable user text, not `oracle_text`, and not
-tool/action authority unless promoted by interpreter or oracle evidence.
+fields for the job envelope. They are allowed to help create queue state or a
+spoken acknowledgement, but they are not durable user text, not `oracle_text`,
+and not tool/action authority. Oracle text and high-risk action text must come
+from `interpreter_promoted` or `oracle_promoted` evidence.
 
 If the adapter cannot prove whether transcript-looking text came from the live
 reflex model or a sibling caption/S2S lane, it must use

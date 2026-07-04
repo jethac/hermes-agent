@@ -645,7 +645,8 @@ Canonical shape:
       "time_range_ms": [12920, 15300],
       "latency_ms": 110,
       "confidence": 0.68,
-      "authority": "reflex_hypothesis"
+      "authority": "hypothesis",
+      "tool_authority": false
     },
     {
       "kind": "frontend_witness_hypothesis",
@@ -655,7 +656,8 @@ Canonical shape:
       "time_range_ms": [12840, 15320],
       "latency_ms": 145,
       "confidence": 0.78,
-      "authority": "auxiliary_hypothesis"
+      "authority": "hypothesis",
+      "tool_authority": false
     }
   ],
   "interpreter": {
@@ -669,8 +671,8 @@ Canonical shape:
 If an operator calls the Moshi side channel "Moshi STT", the runtime should
 store it as `frontend_witness_hypothesis` unless the adapter can prove it came
 from the live reflex itself or from a distinct transcript output. The name can
-appear in `source`; the authority stays `reflex_hypothesis` or
-`auxiliary_hypothesis`.
+appear in `source`; hypothesis kind/source describes provenance, while
+`authority` stays `hypothesis` and `tool_authority` stays `false`.
 
 If the adapter cannot confidently tell whether the string came from the reflex
 model itself or from a sibling caption output, it should use
@@ -1446,7 +1448,8 @@ The interface should submit a compact structured oracle job request:
   "reflex_intent": "compact live intent",
   "reflex_transcript_hypothesis": {
     "text": "three to the power of seventeen",
-    "authority": "reflex_hypothesis",
+    "kind": "reflex_transcript_hypothesis",
+    "authority": "hypothesis",
     "tool_authority": false
   },
   "auxiliary_transcript_hypotheses": [
@@ -1455,7 +1458,7 @@ The interface should submit a compact structured oracle job request:
       "kind": "frontend_witness_hypothesis",
       "text": "three to the power of seventeen",
       "confidence": 0.74,
-      "authority": "auxiliary_hypothesis",
+      "authority": "hypothesis",
       "tool_authority": false
     }
   ],

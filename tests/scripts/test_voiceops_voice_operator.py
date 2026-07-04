@@ -1311,6 +1311,11 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         "with_raw_audio",
         "after_interpreter_start",
     ]
+    assert report["proofs"]["async_oracle_jobs"]["witness_arrival_phase"] == [
+        "before_raw_audio",
+        "with_raw_audio",
+        "after_interpreter_start",
+    ]
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_turn_ids"] == {
         "early": "witness-fusion:early",
         "with": "witness-fusion:with",
@@ -1328,6 +1333,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert len(set(report["proofs"]["async_oracle_jobs"]["witness_fusion_evidence_merge_keys"].values())) == 3
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_merge_key_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_accepted_audio_gate_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["raw_audio_interpreter_evidence_observed"] is True
     assert (
         report["proofs"]["async_oracle_jobs"]["witness_fusion_bundle_audio_metadata"]
         == report["proofs"]["async_oracle_jobs"]["witness_fusion_audio_metadata"]
@@ -1414,6 +1420,11 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         in report["async_oracle_acceptance"]["witness_fusion_supersedes_partial_witness"]["test_refs"]
     )
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_adjudications"] == {
+        "early": ["corrected_by_audio"],
+        "with": ["accepted_as_supporting_evidence"],
+        "late": ["rejected_or_diagnostic_only"],
+    }
+    assert report["proofs"]["async_oracle_jobs"]["interpreter_adjudication_outcomes"] == {
         "early": ["corrected_by_audio"],
         "with": ["accepted_as_supporting_evidence"],
         "late": ["rejected_or_diagnostic_only"],
@@ -1520,6 +1531,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         ]
         is False
     )
+    assert report["proofs"]["async_oracle_jobs"]["transcript_only_witness_rejected_for_full_kame"] is True
     assert (
         report["proofs"]["async_oracle_jobs"][
             "runtime_kame_action_gate_degraded_text_only_preserves_hypothesis"
@@ -2279,6 +2291,7 @@ def test_write_voice_operator_report_artifacts(tmp_path):
         "async_oracle_smoke_json",
         "discord_session_cleanup_smoke_json",
         "events_jsonl",
+        "interpreter_request_packet_json",
         "json",
         "live_evidence_example",
         "live_evidence_scaffold_manifest",
@@ -2306,6 +2319,7 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     ephemeral_tool_router_smoke = json.loads(
         Path(paths["ephemeral_tool_router_smoke_json"]).read_text(encoding="utf-8")
     )
+    interpreter_request_packet = json.loads(Path(paths["interpreter_request_packet_json"]).read_text(encoding="utf-8"))
     live_template = json.loads(Path(paths["live_evidence_template"]).read_text(encoding="utf-8"))
     live_example = json.loads(Path(paths["live_evidence_example"]).read_text(encoding="utf-8"))
     live_scaffold_manifest_path = Path(paths["live_evidence_scaffold_manifest"])
@@ -2326,6 +2340,16 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert smoke["ok"] is True
     assert tool_disclosure_smoke == payload["tool_disclosure_smoke"]
     assert ephemeral_tool_router_smoke == payload["ephemeral_tool_router_smoke"]
+    assert interpreter_request_packet == payload["interpreter_request_packet"]
+    assert interpreter_request_packet["prompt_input_order"] == [
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    ]
+    assert interpreter_request_packet["audio"]["authority"] == "primary_audio"
+    assert interpreter_request_packet["transcript_hypotheses"][0]["authority"] == "hypothesis"
+    assert interpreter_request_packet["transcript_hypotheses"][0]["tool_authority"] is False
     assert sidecar_fail_closed_smoke["ok"] is True
     assert sidecar_fail_closed_smoke["scenario"] == "sidecar_send_fail_closed_after_acceptance"
     assert async_oracle_smoke["ok"] is True

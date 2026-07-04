@@ -1123,6 +1123,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert Path(voice_result["artifacts"]["sidecar_fail_closed_smoke_json"]).exists()
     assert Path(voice_result["artifacts"]["tool_disclosure_smoke_json"]).exists()
     assert Path(voice_result["artifacts"]["ephemeral_tool_router_smoke_json"]).exists()
+    assert Path(voice_result["artifacts"]["interpreter_request_packet_json"]).exists()
     assert Path(voice_result["artifacts"]["events_jsonl"]).exists()
     assert Path(voice_result["artifacts"]["live_evidence_example"]).exists()
     assert Path(voice_result["artifacts"]["live_evidence_scaffold_manifest"]).exists()
@@ -2491,7 +2492,7 @@ def test_plan_run_cli_package_audit_writes_consistency_artifacts(tmp_path):
     assert payload["package_audit"]["ok"] is True
     assert payload["package_audit"]["status"] == "pass"
     assert payload["package_audit"]["issues"] == []
-    assert payload["package_audit"]["checked_artifact_count"] == 94
+    assert payload["package_audit"]["checked_artifact_count"] == 97
     assert Path(payload["package_audit"]["artifacts"]["json"]).exists()
     assert Path(payload["package_audit"]["artifacts"]["markdown"]).exists()
     assert str(artifact_root / "voiceops-package-audit" / "current") in payload["package_audit"]["artifacts"]["json"]
@@ -2649,7 +2650,7 @@ def test_plan_run_cli_dry_audit_can_run_package_audit_without_persistent_writes(
     assert payload["dry_audit"] is True
     assert payload["persistent_writes"] is False
     assert payload["package_audit"] == {
-            "checked_artifact_count": 94,
+            "checked_artifact_count": 97,
         "issues": [],
         "ok": True,
         "persistent_writes": False,
