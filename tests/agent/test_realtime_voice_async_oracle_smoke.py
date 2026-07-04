@@ -354,6 +354,12 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["energy_gate_ignored_non_speech_packets"] >= 2
     assert report["energy_gate_low_energy_witness_text"] == "spend money from room tone"
     assert report["energy_gate_low_energy_witness_source"] == "moshi"
+    assert report["energy_gate_low_energy_witness_adjudication"] == "rejected_or_diagnostic_only"
+    assert report["energy_gate_low_energy_witness_rejection_reasons"] == [
+        "low_energy_non_speech"
+    ]
+    assert report["energy_gate_low_energy_witness_authority"] == "hypothesis"
+    assert report["energy_gate_low_energy_witness_tool_authority"] is False
     assert report["energy_gate_low_energy_witness_promoted"] is False
     assert report["energy_gate_low_energy_witness_suppressed"] is True
     assert report["energy_gate_barge_in_events"] == 0

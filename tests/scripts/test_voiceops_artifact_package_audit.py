@@ -419,6 +419,14 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
         "promoted stale witness"
     )
     readiness["proofs"]["async_oracle_jobs"]["energy_gate_low_energy_witness_source"] = "asr"
+    readiness["proofs"]["async_oracle_jobs"]["energy_gate_low_energy_witness_adjudication"] = (
+        "accepted_as_supporting_evidence"
+    )
+    readiness["proofs"]["async_oracle_jobs"]["energy_gate_low_energy_witness_rejection_reasons"] = []
+    readiness["proofs"]["async_oracle_jobs"]["energy_gate_low_energy_witness_authority"] = (
+        "interpreter_promoted"
+    )
+    readiness["proofs"]["async_oracle_jobs"]["energy_gate_low_energy_witness_tool_authority"] = True
     readiness["proofs"]["async_oracle_jobs"]["energy_gate_low_energy_witness_promoted"] = True
     readiness["proofs"]["async_oracle_jobs"]["energy_gate_low_energy_witness_suppressed"] = False
     readiness["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_smoke_ok"] = False
@@ -702,6 +710,22 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.energy_gate_low_energy_witness_source_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.energy_gate_low_energy_witness_adjudication_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.energy_gate_low_energy_witness_rejection_reasons_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.energy_gate_low_energy_witness_authority_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.energy_gate_low_energy_witness_tool_authority_mismatch"
         in report["issues"]
     )
     assert (

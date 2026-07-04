@@ -2359,6 +2359,21 @@ async def build_plan_run_async(
                     "energy_gate_low_energy_witness_source": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ].get("energy_gate_low_energy_witness_source"),
+                    "energy_gate_low_energy_witness_adjudication": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ].get("energy_gate_low_energy_witness_adjudication"),
+                    "energy_gate_low_energy_witness_rejection_reasons": list(
+                        voice_operator["proofs"]["async_oracle_jobs"].get(
+                            "energy_gate_low_energy_witness_rejection_reasons"
+                        )
+                        or []
+                    ),
+                    "energy_gate_low_energy_witness_authority": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ].get("energy_gate_low_energy_witness_authority"),
+                    "energy_gate_low_energy_witness_tool_authority": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ].get("energy_gate_low_energy_witness_tool_authority"),
                     "energy_gate_low_energy_witness_promoted": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ].get("energy_gate_low_energy_witness_promoted"),

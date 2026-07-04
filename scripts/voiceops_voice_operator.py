@@ -2398,7 +2398,12 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("energy_gate_low_energy_witness_source") == "moshi"
         and smoke.get("energy_gate_low_energy_witness_promoted") is False
         and smoke.get("energy_gate_low_energy_witness_suppressed") is True
-        and smoke.get("energy_gate_raw_packet_buffered_without_turn") is True,
+        and smoke.get("energy_gate_raw_packet_buffered_without_turn") is True
+        and smoke.get("energy_gate_low_energy_witness_adjudication") == "rejected_or_diagnostic_only"
+        and "low_energy_non_speech"
+        in _normalized_string_list(smoke.get("energy_gate_low_energy_witness_rejection_reasons"))
+        and smoke.get("energy_gate_low_energy_witness_authority") == "hypothesis"
+        and smoke.get("energy_gate_low_energy_witness_tool_authority") is False,
         "kame_ack_latency_metrics_visible": smoke.get("kame_ack_latency_metrics_smoke_ok") is True
         and smoke.get("kame_defer_ack_first_audio_metrics_visible") is True
         and smoke.get("kame_local_first_audio_metrics_visible") is True
@@ -2967,6 +2972,18 @@ def build_voice_operator_report(
             ),
             "energy_gate_low_energy_witness_source": async_oracle_smoke.get(
                 "energy_gate_low_energy_witness_source"
+            ),
+            "energy_gate_low_energy_witness_adjudication": async_oracle_smoke.get(
+                "energy_gate_low_energy_witness_adjudication"
+            ),
+            "energy_gate_low_energy_witness_rejection_reasons": list(
+                async_oracle_smoke.get("energy_gate_low_energy_witness_rejection_reasons") or []
+            ),
+            "energy_gate_low_energy_witness_authority": async_oracle_smoke.get(
+                "energy_gate_low_energy_witness_authority"
+            ),
+            "energy_gate_low_energy_witness_tool_authority": async_oracle_smoke.get(
+                "energy_gate_low_energy_witness_tool_authority"
             ),
             "energy_gate_low_energy_witness_promoted": async_oracle_smoke.get(
                 "energy_gate_low_energy_witness_promoted"
@@ -3660,6 +3677,18 @@ def build_voice_operator_report(
             ),
             "energy_gate_low_energy_witness_source": async_oracle_smoke.get(
                 "energy_gate_low_energy_witness_source"
+            ),
+            "energy_gate_low_energy_witness_adjudication": async_oracle_smoke.get(
+                "energy_gate_low_energy_witness_adjudication"
+            ),
+            "energy_gate_low_energy_witness_rejection_reasons": list(
+                async_oracle_smoke.get("energy_gate_low_energy_witness_rejection_reasons") or []
+            ),
+            "energy_gate_low_energy_witness_authority": async_oracle_smoke.get(
+                "energy_gate_low_energy_witness_authority"
+            ),
+            "energy_gate_low_energy_witness_tool_authority": async_oracle_smoke.get(
+                "energy_gate_low_energy_witness_tool_authority"
             ),
             "energy_gate_low_energy_witness_promoted": async_oracle_smoke.get(
                 "energy_gate_low_energy_witness_promoted"

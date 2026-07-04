@@ -715,6 +715,10 @@ def _async_oracle_smoke_payload() -> dict:
         "energy_gate_ignored_non_speech_packets": 3,
         "energy_gate_low_energy_witness_text": "spend money from room tone",
         "energy_gate_low_energy_witness_source": "moshi",
+        "energy_gate_low_energy_witness_adjudication": "rejected_or_diagnostic_only",
+        "energy_gate_low_energy_witness_rejection_reasons": ["low_energy_non_speech"],
+        "energy_gate_low_energy_witness_authority": "hypothesis",
+        "energy_gate_low_energy_witness_tool_authority": False,
         "energy_gate_low_energy_witness_promoted": False,
         "energy_gate_low_energy_witness_suppressed": True,
         "energy_gate_barge_in_events": 0,
@@ -1797,6 +1801,21 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         == "spend money from room tone"
     )
     assert report["proofs"]["async_oracle_jobs"]["energy_gate_low_energy_witness_source"] == "moshi"
+    assert (
+        report["proofs"]["async_oracle_jobs"]["energy_gate_low_energy_witness_adjudication"]
+        == "rejected_or_diagnostic_only"
+    )
+    assert report["proofs"]["async_oracle_jobs"][
+        "energy_gate_low_energy_witness_rejection_reasons"
+    ] == ["low_energy_non_speech"]
+    assert (
+        report["proofs"]["async_oracle_jobs"]["energy_gate_low_energy_witness_authority"]
+        == "hypothesis"
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["energy_gate_low_energy_witness_tool_authority"]
+        is False
+    )
     assert report["proofs"]["async_oracle_jobs"]["energy_gate_low_energy_witness_promoted"] is False
     assert report["proofs"]["async_oracle_jobs"]["energy_gate_low_energy_witness_suppressed"] is True
     assert report["proofs"]["async_oracle_jobs"]["energy_gate_barge_in_events"] == 0
@@ -2446,6 +2465,12 @@ def test_voice_operator_validation_rejects_energy_gate_work_from_noise():
     report = _voice_operator_report()
     report["async_oracle_smoke"]["energy_gate_barge_in_events"] = 1
     report["async_oracle_smoke"]["energy_gate_raw_packet_buffered_without_turn"] = False
+    report["async_oracle_smoke"]["energy_gate_low_energy_witness_adjudication"] = (
+        "accepted_as_supporting_evidence"
+    )
+    report["async_oracle_smoke"]["energy_gate_low_energy_witness_rejection_reasons"] = []
+    report["async_oracle_smoke"]["energy_gate_low_energy_witness_authority"] = "interpreter_promoted"
+    report["async_oracle_smoke"]["energy_gate_low_energy_witness_tool_authority"] = True
 
     issues = validate_voice_operator_report(report)
 

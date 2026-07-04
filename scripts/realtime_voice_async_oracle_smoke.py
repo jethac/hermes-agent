@@ -425,9 +425,15 @@ async def _run_energy_gate_smoke() -> dict[str, Any]:
                     {
                         "source": "moshi",
                         "kind": "frontend_witness_hypothesis",
+                        "role": "witness_context",
                         "text": low_energy_witness_text,
                         "confidence": 0.62,
                         "partial": False,
+                        "authority": "hypothesis",
+                        "promotion_required": "interpreter_promoted_or_oracle_promoted",
+                        "tool_authority": False,
+                        "adjudication": "rejected_or_diagnostic_only",
+                        "rejection_reasons": ["low_energy_non_speech"],
                     }
                 ],
                 "speech_confirmed": False,
@@ -498,6 +504,10 @@ async def _run_energy_gate_smoke() -> dict[str, Any]:
         "energy_gate_ignored_non_speech_packets": 3,
         "energy_gate_low_energy_witness_text": low_energy_witness_text,
         "energy_gate_low_energy_witness_source": "moshi",
+        "energy_gate_low_energy_witness_adjudication": "rejected_or_diagnostic_only",
+        "energy_gate_low_energy_witness_rejection_reasons": ["low_energy_non_speech"],
+        "energy_gate_low_energy_witness_authority": "hypothesis",
+        "energy_gate_low_energy_witness_tool_authority": False,
         "energy_gate_low_energy_witness_promoted": low_energy_witness_promoted,
         "energy_gate_low_energy_witness_suppressed": not low_energy_witness_promoted,
         "energy_gate_barge_in_events": len(barge_in_events),
@@ -5175,6 +5185,18 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "energy_gate_low_energy_witness_source": energy_gate_smoke[
             "energy_gate_low_energy_witness_source"
+        ],
+        "energy_gate_low_energy_witness_adjudication": energy_gate_smoke[
+            "energy_gate_low_energy_witness_adjudication"
+        ],
+        "energy_gate_low_energy_witness_rejection_reasons": energy_gate_smoke[
+            "energy_gate_low_energy_witness_rejection_reasons"
+        ],
+        "energy_gate_low_energy_witness_authority": energy_gate_smoke[
+            "energy_gate_low_energy_witness_authority"
+        ],
+        "energy_gate_low_energy_witness_tool_authority": energy_gate_smoke[
+            "energy_gate_low_energy_witness_tool_authority"
         ],
         "energy_gate_low_energy_witness_promoted": energy_gate_smoke[
             "energy_gate_low_energy_witness_promoted"

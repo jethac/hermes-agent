@@ -1722,6 +1722,21 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         == "moshi"
     )
     assert (
+        voice_result["details"]["async_oracle_smoke"]["energy_gate_low_energy_witness_adjudication"]
+        == "rejected_or_diagnostic_only"
+    )
+    assert voice_result["details"]["async_oracle_smoke"][
+        "energy_gate_low_energy_witness_rejection_reasons"
+    ] == ["low_energy_non_speech"]
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["energy_gate_low_energy_witness_authority"]
+        == "hypothesis"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["energy_gate_low_energy_witness_tool_authority"]
+        is False
+    )
+    assert (
         voice_result["details"]["async_oracle_smoke"]["energy_gate_low_energy_witness_promoted"]
         is False
     )

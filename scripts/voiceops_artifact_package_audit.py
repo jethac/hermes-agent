@@ -1995,6 +1995,19 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "energy_gate_low_energy_witness_source": async_smoke.get(
                 "energy_gate_low_energy_witness_source"
             ),
+            "energy_gate_low_energy_witness_adjudication": async_smoke.get(
+                "energy_gate_low_energy_witness_adjudication"
+            ),
+            "energy_gate_low_energy_witness_rejection_reasons": async_smoke.get(
+                "energy_gate_low_energy_witness_rejection_reasons"
+            )
+            or [],
+            "energy_gate_low_energy_witness_authority": async_smoke.get(
+                "energy_gate_low_energy_witness_authority"
+            ),
+            "energy_gate_low_energy_witness_tool_authority": async_smoke.get(
+                "energy_gate_low_energy_witness_tool_authority"
+            ),
             "energy_gate_low_energy_witness_promoted": async_smoke.get(
                 "energy_gate_low_energy_witness_promoted"
             ),
@@ -2530,6 +2543,19 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             ),
             "energy_gate_low_energy_witness_source": async_smoke.get(
                 "energy_gate_low_energy_witness_source"
+            ),
+            "energy_gate_low_energy_witness_adjudication": async_smoke.get(
+                "energy_gate_low_energy_witness_adjudication"
+            ),
+            "energy_gate_low_energy_witness_rejection_reasons": async_smoke.get(
+                "energy_gate_low_energy_witness_rejection_reasons"
+            )
+            or [],
+            "energy_gate_low_energy_witness_authority": async_smoke.get(
+                "energy_gate_low_energy_witness_authority"
+            ),
+            "energy_gate_low_energy_witness_tool_authority": async_smoke.get(
+                "energy_gate_low_energy_witness_tool_authority"
             ),
             "energy_gate_low_energy_witness_promoted": async_smoke.get(
                 "energy_gate_low_energy_witness_promoted"
