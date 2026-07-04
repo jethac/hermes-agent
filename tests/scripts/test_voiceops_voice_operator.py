@@ -916,6 +916,11 @@ def _complete_live_turn_fields(*, speech_end_to_first_audio_ms: int = 950, barge
             "reflex",
             "transcript_hypotheses",
         ],
+        "interpreter_prompt_policy": {
+            "version": "raw_audio_compare_v1",
+            "primary_evidence": "raw_audio",
+            "transcript_hypotheses_authority": "non_authoritative_context",
+        },
         "transcript_hypotheses": [
             {
                 "kind": "frontend_witness_hypothesis",
@@ -2926,6 +2931,7 @@ def test_live_evidence_rejects_labeled_hypothesis_without_concrete_packet():
     evidence = _complete_live_evidence()
     evidence["live_turn"].pop("transcript_hypotheses")
     evidence["live_turn"].pop("interpreter_input_order")
+    evidence["live_turn"].pop("interpreter_prompt_policy")
     evidence["live_turn"].pop("interpreter_adjudication_outcomes")
     evidence["live_turn"].pop("promoted_evidence_authority")
     evidence["live_turn"]["witness_arrival_phases"] = []
@@ -2936,13 +2942,44 @@ def test_live_evidence_rejects_labeled_hypothesis_without_concrete_packet():
     assert "live_turn:missing_transcript_hypotheses" in live_evidence["issues"]
     assert "live_turn:missing_witness_arrival_phases" in live_evidence["issues"]
     assert "live_turn:missing_interpreter_input_order" in live_evidence["issues"]
+    assert "live_turn:missing_interpreter_prompt_policy" in live_evidence["issues"]
     assert "live_turn:missing_interpreter_adjudication_outcomes" in live_evidence["issues"]
     assert "live_turn:missing_promoted_evidence_authority" in live_evidence["issues"]
     assert live_evidence["live_turn"]["witness_packet_observed"] is False
     assert live_evidence["live_turn"]["interpreter_input_order_observed"] is False
+    assert live_evidence["live_turn"]["interpreter_prompt_policy_observed"] is False
     assert live_evidence["live_turn"]["interpreter_adjudication_observed"] is False
     assert live_evidence["live_turn"]["promoted_evidence_observed"] is False
     assert live_evidence["live_turn"]["ok"] is False
+
+
+def test_live_evidence_rejects_missing_or_legacy_interpreter_prompt_policy():
+    missing = _complete_live_evidence()
+    missing["live_turn"].pop("interpreter_prompt_policy")
+
+    missing_result = validate_live_probe_evidence(missing)
+
+    assert "live_turn:missing_interpreter_prompt_policy" in missing_result["issues"]
+    assert missing_result["live_turn"]["interpreter_prompt_policy_observed"] is False
+    assert missing_result["live_turn"]["ok"] is False
+
+    legacy = _complete_live_evidence()
+    legacy["live_turn"]["interpreter_prompt_policy"] = {
+        "version": "legacy_transcript_first",
+        "primary_evidence": "transcript_hypotheses",
+        "transcript_hypotheses_authority": "candidate_transcript",
+    }
+
+    legacy_result = validate_live_probe_evidence(legacy)
+
+    assert "live_turn:interpreter_prompt_policy_version_mismatch" in legacy_result["issues"]
+    assert "live_turn:interpreter_prompt_policy_primary_evidence_mismatch" in legacy_result["issues"]
+    assert (
+        "live_turn:interpreter_prompt_policy_transcript_hypotheses_authority_mismatch"
+        in legacy_result["issues"]
+    )
+    assert legacy_result["live_turn"]["interpreter_prompt_policy_observed"] is False
+    assert legacy_result["live_turn"]["ok"] is False
 
 
 def test_live_evidence_rejects_authoritative_or_unphased_witness_hypothesis():

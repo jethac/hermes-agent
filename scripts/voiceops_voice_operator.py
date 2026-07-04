@@ -57,6 +57,11 @@ LIVE_EVIDENCE_REQUIRED_INTERPRETER_INPUT_ORDER = (
     "reflex",
     "transcript_hypotheses",
 )
+LIVE_EVIDENCE_REQUIRED_INTERPRETER_PROMPT_POLICY = {
+    "version": "raw_audio_compare_v1",
+    "primary_evidence": "raw_audio",
+    "transcript_hypotheses_authority": "non_authoritative_context",
+}
 LIVE_EVIDENCE_VALID_ADJUDICATION_OUTCOMES = {
     "accepted_as_supporting_evidence",
     "corrected_by_audio",
@@ -962,6 +967,7 @@ def build_live_probe_evidence_example() -> dict[str, Any]:
                 "reflex",
                 "transcript_hypotheses",
             ],
+            "interpreter_prompt_policy": dict(LIVE_EVIDENCE_REQUIRED_INTERPRETER_PROMPT_POLICY),
             "transcript_hypotheses": [
                 {
                     "kind": "frontend_witness_hypothesis",
@@ -1441,6 +1447,19 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
     elif input_order != LIVE_EVIDENCE_REQUIRED_INTERPRETER_INPUT_ORDER:
         issues.append("live_turn:interpreter_input_order_mismatch")
 
+    prompt_policy = live_turn.get("interpreter_prompt_policy")
+    valid_prompt_policy_observed = False
+    if not isinstance(prompt_policy, Mapping) or not prompt_policy:
+        issues.append("live_turn:missing_interpreter_prompt_policy")
+    else:
+        for field, expected_value in LIVE_EVIDENCE_REQUIRED_INTERPRETER_PROMPT_POLICY.items():
+            if str(prompt_policy.get(field) or "").strip() != expected_value:
+                issues.append(f"live_turn:interpreter_prompt_policy_{field}_mismatch")
+        valid_prompt_policy_observed = all(
+            str(prompt_policy.get(field) or "").strip() == expected_value
+            for field, expected_value in LIVE_EVIDENCE_REQUIRED_INTERPRETER_PROMPT_POLICY.items()
+        )
+
     adjudication_outcomes = set(_normalized_string_list(live_turn.get("interpreter_adjudication_outcomes")))
     valid_adjudication_observed = bool(adjudication_outcomes & LIVE_EVIDENCE_VALID_ADJUDICATION_OUTCOMES)
     if not adjudication_outcomes:
@@ -1466,6 +1485,7 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
         "witness_packet_observed": valid_hypothesis_observed and bool(declared_phases),
         "active_partial_absent": not active_partial_observed,
         "interpreter_input_order_observed": input_order == LIVE_EVIDENCE_REQUIRED_INTERPRETER_INPUT_ORDER,
+        "interpreter_prompt_policy_observed": valid_prompt_policy_observed,
         "interpreter_adjudication_observed": valid_adjudication_observed,
         "promoted_evidence_observed": valid_promoted_authority_observed,
     }
@@ -4513,6 +4533,29 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "audio_segment_ref_observed": True,
                 "interpreter_evidence_observed": True,
                 "transcript_hypotheses_labeled": True,
+                "witness_arrival_phases": ["with_raw_audio"],
+                "interpreter_input_order": [
+                    "raw_audio",
+                    "metadata",
+                    "reflex",
+                    "transcript_hypotheses",
+                ],
+                "interpreter_prompt_policy": dict(LIVE_EVIDENCE_REQUIRED_INTERPRETER_PROMPT_POLICY),
+                "transcript_hypotheses": [
+                    {
+                        "kind": "frontend_witness_hypothesis",
+                        "source": "moshi",
+                        "text": "[redacted witness hypothesis]",
+                        "arrival_phase": "with_raw_audio",
+                        "authority": "hypothesis",
+                        "tool_authority": False,
+                    }
+                ],
+                "interpreter_adjudication_outcomes": ["corrected_by_audio"],
+                "promoted_evidence_authority": {
+                    "interpreter_corrected_transcript": "interpreter_promoted",
+                    "interpreter_normalized_intent": "interpreter_promoted",
+                },
                 "assistant_audio_observed": True,
                 "barge_in_observed": True,
                 "spoken_reply_short": True,
