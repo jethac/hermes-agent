@@ -2053,6 +2053,18 @@ async def build_plan_run_async(
                     "energy_gate_ignored_non_speech_packets": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["energy_gate_ignored_non_speech_packets"],
+                    "energy_gate_low_energy_witness_text": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ].get("energy_gate_low_energy_witness_text"),
+                    "energy_gate_low_energy_witness_source": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ].get("energy_gate_low_energy_witness_source"),
+                    "energy_gate_low_energy_witness_promoted": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ].get("energy_gate_low_energy_witness_promoted"),
+                    "energy_gate_low_energy_witness_suppressed": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ].get("energy_gate_low_energy_witness_suppressed"),
                     "energy_gate_barge_in_events": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["energy_gate_barge_in_events"],

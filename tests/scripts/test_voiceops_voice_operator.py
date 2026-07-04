@@ -590,7 +590,11 @@ def _async_oracle_smoke_payload() -> dict:
         "energy_gate_ignored_packet_duration_ms": 200,
         "energy_gate_ignored_packet_speech_confirmed": False,
         "energy_gate_ignored_packet_vad_speech": False,
-        "energy_gate_ignored_non_speech_packets": 2,
+        "energy_gate_ignored_non_speech_packets": 3,
+        "energy_gate_low_energy_witness_text": "spend money from room tone",
+        "energy_gate_low_energy_witness_source": "moshi",
+        "energy_gate_low_energy_witness_promoted": False,
+        "energy_gate_low_energy_witness_suppressed": True,
         "energy_gate_barge_in_events": 0,
         "energy_gate_interpreter_requests": 0,
         "energy_gate_oracle_work_events": 0,
@@ -1458,6 +1462,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         "tests/agent/test_realtime_voice.py::test_text_engine_raw_audio_without_confirmed_speech_does_not_barge_in"
         in energy_gate["test_refs"]
     )
+    assert (
+        "tests/agent/test_realtime_voice.py::test_kame_engine_low_energy_witness_text_does_not_start_turn"
+        in energy_gate["test_refs"]
+    )
     assert report["proofs"]["async_oracle_jobs"]["energy_gate_smoke_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["energy_gate_policy"] == {
         "min_rms": 350,
@@ -1468,6 +1476,13 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["energy_gate_ignored_packet_speech_confirmed"] is False
     assert report["proofs"]["async_oracle_jobs"]["energy_gate_ignored_packet_vad_speech"] is False
     assert report["proofs"]["async_oracle_jobs"]["energy_gate_ignored_non_speech_packets"] >= 2
+    assert (
+        report["proofs"]["async_oracle_jobs"]["energy_gate_low_energy_witness_text"]
+        == "spend money from room tone"
+    )
+    assert report["proofs"]["async_oracle_jobs"]["energy_gate_low_energy_witness_source"] == "moshi"
+    assert report["proofs"]["async_oracle_jobs"]["energy_gate_low_energy_witness_promoted"] is False
+    assert report["proofs"]["async_oracle_jobs"]["energy_gate_low_energy_witness_suppressed"] is True
     assert report["proofs"]["async_oracle_jobs"]["energy_gate_barge_in_events"] == 0
     assert report["proofs"]["async_oracle_jobs"]["energy_gate_interpreter_requests"] == 0
     assert report["proofs"]["async_oracle_jobs"]["energy_gate_oracle_work_events"] == 0

@@ -156,6 +156,7 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
     ],
     "energy_gate": [
         "tests/agent/test_realtime_voice.py::test_text_engine_raw_audio_without_confirmed_speech_does_not_barge_in",
+        "tests/agent/test_realtime_voice.py::test_kame_engine_low_energy_witness_text_does_not_start_turn",
         "tests/agent/test_realtime_voice.py::test_text_engine_speech_energy_barge_in_requires_rms_and_duration",
         "tests/agent/test_realtime_voice_async_oracle_smoke.py::test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation",
     ],
@@ -1912,6 +1913,9 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and int(smoke.get("energy_gate_interpreter_requests", -1)) == 0
         and int(smoke.get("energy_gate_oracle_work_events", -1)) == 0
         and int(smoke.get("energy_gate_oracle_requests", -1)) == 0
+        and smoke.get("energy_gate_low_energy_witness_source") == "moshi"
+        and smoke.get("energy_gate_low_energy_witness_promoted") is False
+        and smoke.get("energy_gate_low_energy_witness_suppressed") is True
         and smoke.get("energy_gate_raw_packet_buffered_without_turn") is True,
         "kame_ack_latency_metrics_visible": smoke.get("kame_ack_latency_metrics_smoke_ok") is True
         and smoke.get("kame_defer_ack_first_audio_metrics_visible") is True
@@ -2390,6 +2394,15 @@ def build_voice_operator_report(
             "energy_gate_covered_by_tests": True,
             "energy_gate_ignored_non_speech_packets": async_oracle_smoke.get(
                 "energy_gate_ignored_non_speech_packets"
+            ),
+            "energy_gate_low_energy_witness_source": async_oracle_smoke.get(
+                "energy_gate_low_energy_witness_source"
+            ),
+            "energy_gate_low_energy_witness_promoted": async_oracle_smoke.get(
+                "energy_gate_low_energy_witness_promoted"
+            ),
+            "energy_gate_low_energy_witness_suppressed": async_oracle_smoke.get(
+                "energy_gate_low_energy_witness_suppressed"
             ),
             "energy_gate_barge_in_events": async_oracle_smoke.get("energy_gate_barge_in_events"),
             "energy_gate_oracle_work_events": async_oracle_smoke.get("energy_gate_oracle_work_events"),
@@ -2951,6 +2964,18 @@ def build_voice_operator_report(
             ),
             "energy_gate_ignored_non_speech_packets": async_oracle_smoke.get(
                 "energy_gate_ignored_non_speech_packets"
+            ),
+            "energy_gate_low_energy_witness_text": async_oracle_smoke.get(
+                "energy_gate_low_energy_witness_text"
+            ),
+            "energy_gate_low_energy_witness_source": async_oracle_smoke.get(
+                "energy_gate_low_energy_witness_source"
+            ),
+            "energy_gate_low_energy_witness_promoted": async_oracle_smoke.get(
+                "energy_gate_low_energy_witness_promoted"
+            ),
+            "energy_gate_low_energy_witness_suppressed": async_oracle_smoke.get(
+                "energy_gate_low_energy_witness_suppressed"
             ),
             "energy_gate_barge_in_events": async_oracle_smoke.get("energy_gate_barge_in_events"),
             "energy_gate_interpreter_requests": async_oracle_smoke.get(

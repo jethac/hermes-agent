@@ -10733,6 +10733,59 @@ def test_text_engine_raw_audio_without_confirmed_speech_does_not_barge_in(monkey
     asyncio.run(run())
 
 
+def test_kame_engine_low_energy_witness_text_does_not_start_turn():
+    class RecordingOracle:
+        def __init__(self):
+            self.requests = []
+
+        async def stream_answer_for_request(self, request):
+            self.requests.append(request)
+            yield "Should not run."
+
+    async def run():
+        oracle = RecordingOracle()
+        engine = KameInterfaceOracleEngine(oracle=oracle)
+        await engine.start(
+            RealtimeVoiceSessionConfig(
+                session_id="voice-123",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                interface_audio_input="native_audio",
+                asr_mode=RealtimeVoiceASRMode.ON_ESCALATION,
+                barge_in_policy={"min_rms": 350, "min_speech_ms": 120},
+            )
+        )
+        started = await anext(engine.events())
+        assert started.type == VoiceEventType.SESSION_STARTED
+
+        await engine.receive_event(
+            VoiceEvent(
+                type=VoiceEventType.AUDIO_INPUT_CHUNK,
+                session_id="voice-123",
+                sequence=1,
+                payload={
+                    **AudioChunk(codec=VoiceAudioCodec.PCM16, data=b"\1" * 320).to_payload(),
+                    "transcript": "spend money from room tone",
+                    "source": "moshi",
+                    "moshi_transcript_hypothesis": "spend money from room tone",
+                    "speech_confirmed": False,
+                    "vad_speech": False,
+                    "rms": 90,
+                    "duration_ms": 20,
+                    "end_of_utterance": True,
+                },
+            )
+        )
+
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(anext(engine.events()), timeout=0.01)
+
+        await engine.close()
+        assert oracle.requests == []
+        assert engine._inbound_audio == [b"\1" * 320]
+
+    asyncio.run(run())
+
+
 def test_text_engine_speech_energy_barge_in_requires_rms_and_duration(monkeypatch):
     class SlowInterruptibleOracle:
         def __init__(self):

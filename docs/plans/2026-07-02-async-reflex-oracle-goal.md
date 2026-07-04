@@ -320,6 +320,16 @@ the accepted cut's `audio_segment_ref`, time range, energy/VAD decision, and
 the fact that Moshi/OpenClaw/VoiceClaw/classic-ASR text was attached as witness
 context after the raw-audio gate rather than used as the gate itself.
 
+Low-energy witness rule: a transcript-looking string that arrives with explicit
+negative speech evidence (`speech_confirmed = false`, `vad_speech = false`, or
+equivalent) is not a usable witness yet, even if the text looks actionable. The
+runtime may retain the raw packet for diagnostics and packet continuity, but it
+must not start a turn, interrupt playback, create an interpreter request, create
+an oracle job, or promote the text. This specifically covers Moshi/OpenClaw/
+VoiceClaw hallucinations over room tone, harmonic feedback, and packet-open
+noise. A later accepted speech cut may carry its own witness hypotheses; the
+rejected low-energy witness must not be reused as the user's utterance.
+
 Tool-pressure rule: the realtime voice oracle path should not keep the broad
 Hermes core tool surface in the active voice context. Headless acceptance should
 prove that `tools.tool_search.defer_core = all` hides every Hermes core tool

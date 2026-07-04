@@ -410,8 +410,36 @@ async def _run_energy_gate_smoke() -> dict[str, Any]:
             },
         )
     )
+    low_energy_witness_text = "spend money from room tone"
+    await engine.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.AUDIO_INPUT_CHUNK,
+            session_id="voice-smoke-energy-gate",
+            sequence=5,
+            payload={
+                **AudioChunk(codec=VoiceAudioCodec.PCM16, data=b"\1" * 320).to_payload(),
+                "transcript": low_energy_witness_text,
+                "source": "moshi",
+                "moshi_transcript_hypothesis": low_energy_witness_text,
+                "auxiliary_transcript_hypotheses": [
+                    {
+                        "source": "moshi",
+                        "kind": "frontend_witness_hypothesis",
+                        "text": low_energy_witness_text,
+                        "confidence": 0.62,
+                        "partial": False,
+                    }
+                ],
+                "speech_confirmed": False,
+                "vad_speech": False,
+                "rms": 90,
+                "duration_ms": 20,
+                "end_of_utterance": True,
+            },
+        )
+    )
     await asyncio.sleep(0)
-    raw_packet_buffered = engine._inbound_audio == [b"\0" * 320]
+    raw_packet_buffered = engine._inbound_audio == [b"\0" * 320, b"\1" * 320]
     await engine.close()
     collector.cancel()
     try:
@@ -444,6 +472,13 @@ async def _run_energy_gate_smoke() -> dict[str, Any]:
             VoiceEventType.TRANSCRIPT_FINAL,
         }
     ]
+    low_energy_witness_promoted = any(
+        low_energy_witness_text in json.dumps(event.payload, sort_keys=True, default=str)
+        for event in oracle_work_events + interpreter_events + barge_in_events
+    ) or any(
+        low_energy_witness_text in json.dumps(getattr(request, "__dict__", {}), sort_keys=True, default=str)
+        for request in oracle.requests
+    )
     return {
         "ok": not barge_in_events
         and not oracle_work_events
@@ -460,7 +495,11 @@ async def _run_energy_gate_smoke() -> dict[str, Any]:
         "energy_gate_ignored_packet_duration_ms": 200,
         "energy_gate_ignored_packet_speech_confirmed": False,
         "energy_gate_ignored_packet_vad_speech": False,
-        "energy_gate_ignored_non_speech_packets": 2,
+        "energy_gate_ignored_non_speech_packets": 3,
+        "energy_gate_low_energy_witness_text": low_energy_witness_text,
+        "energy_gate_low_energy_witness_source": "moshi",
+        "energy_gate_low_energy_witness_promoted": low_energy_witness_promoted,
+        "energy_gate_low_energy_witness_suppressed": not low_energy_witness_promoted,
         "energy_gate_barge_in_events": len(barge_in_events),
         "energy_gate_interpreter_requests": len(interpreter_events),
         "energy_gate_oracle_work_events": len(oracle_work_events),
@@ -4561,6 +4600,18 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "energy_gate_ignored_non_speech_packets": energy_gate_smoke[
             "energy_gate_ignored_non_speech_packets"
+        ],
+        "energy_gate_low_energy_witness_text": energy_gate_smoke[
+            "energy_gate_low_energy_witness_text"
+        ],
+        "energy_gate_low_energy_witness_source": energy_gate_smoke[
+            "energy_gate_low_energy_witness_source"
+        ],
+        "energy_gate_low_energy_witness_promoted": energy_gate_smoke[
+            "energy_gate_low_energy_witness_promoted"
+        ],
+        "energy_gate_low_energy_witness_suppressed": energy_gate_smoke[
+            "energy_gate_low_energy_witness_suppressed"
         ],
         "energy_gate_barge_in_events": energy_gate_smoke["energy_gate_barge_in_events"],
         "energy_gate_interpreter_requests": energy_gate_smoke["energy_gate_interpreter_requests"],

@@ -176,6 +176,12 @@ class TextOracleTTSEngine(RealtimeVoiceEngine):
 
         transcript = str(event.payload.get("transcript") or "").strip()
         if transcript:
+            if _kame_payload_rejected_by_speech_gate(self.config, event.payload):
+                with contextlib.suppress(Exception):
+                    chunk = AudioChunk.from_payload(event.payload)
+                    if chunk.data:
+                        await self._append_inbound_audio(chunk.data)
+                return
             await self._auto_barge_in_for_speech(event)
             if not _payload_marks_final_transcript(event.payload):
                 if self.config is not None and self.config.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
@@ -4806,6 +4812,30 @@ def _payload_confirms_speech_for_barge_in(payload: Mapping[str, Any]) -> bool:
         if key in payload:
             return _metadata_bool(payload.get(key), default=False)
     return False
+
+
+def _kame_payload_rejected_by_speech_gate(
+    config: Optional[RealtimeVoiceSessionConfig],
+    payload: Mapping[str, Any],
+) -> bool:
+    if config is None or config.engine != RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE:
+        return False
+    if _kame_interface_audio_input(config) == "text_fallback" or _allow_kame_transcript_events(config):
+        return False
+    if _payload_confirms_speech_for_barge_in(payload):
+        return False
+    rejected = False
+    for key in ("speech_confirmed", "barge_in_confirmed", "vad_speech", "speech_detected"):
+        if key in payload and _metadata_bool(payload.get(key), default=False) is False:
+            rejected = True
+            break
+    if not rejected:
+        return False
+    rms = _payload_nonnegative_float(payload.get("rms"))
+    if rms is not None and rms >= _barge_in_min_rms(config):
+        return False
+    duration_ms = _speech_energy_duration_ms(payload)
+    return duration_ms <= 0 or duration_ms < _barge_in_min_speech_ms(config) or rms is not None
 
 
 def _speech_energy_user_key(payload: Mapping[str, Any]) -> str:

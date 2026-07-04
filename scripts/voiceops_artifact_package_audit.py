@@ -1829,6 +1829,15 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "energy_gate_ignored_non_speech_packets": async_smoke.get(
                 "energy_gate_ignored_non_speech_packets"
             ),
+            "energy_gate_low_energy_witness_source": async_smoke.get(
+                "energy_gate_low_energy_witness_source"
+            ),
+            "energy_gate_low_energy_witness_promoted": async_smoke.get(
+                "energy_gate_low_energy_witness_promoted"
+            ),
+            "energy_gate_low_energy_witness_suppressed": async_smoke.get(
+                "energy_gate_low_energy_witness_suppressed"
+            ),
             "energy_gate_barge_in_events": async_smoke.get("energy_gate_barge_in_events"),
             "energy_gate_oracle_work_events": async_smoke.get("energy_gate_oracle_work_events"),
             "stop_called": int(smoke.get("mixer_stop_calls") or 0) >= 1,
@@ -2261,6 +2270,18 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             ),
             "energy_gate_ignored_non_speech_packets": async_smoke.get(
                 "energy_gate_ignored_non_speech_packets"
+            ),
+            "energy_gate_low_energy_witness_text": async_smoke.get(
+                "energy_gate_low_energy_witness_text"
+            ),
+            "energy_gate_low_energy_witness_source": async_smoke.get(
+                "energy_gate_low_energy_witness_source"
+            ),
+            "energy_gate_low_energy_witness_promoted": async_smoke.get(
+                "energy_gate_low_energy_witness_promoted"
+            ),
+            "energy_gate_low_energy_witness_suppressed": async_smoke.get(
+                "energy_gate_low_energy_witness_suppressed"
             ),
             "energy_gate_barge_in_events": async_smoke.get("energy_gate_barge_in_events"),
             "energy_gate_interpreter_requests": async_smoke.get("energy_gate_interpreter_requests"),

@@ -1528,6 +1528,22 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     )
     assert voice_result["details"]["async_oracle_smoke"]["energy_gate_ignored_packet_vad_speech"] is False
     assert voice_result["details"]["async_oracle_smoke"]["energy_gate_ignored_non_speech_packets"] >= 2
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["energy_gate_low_energy_witness_text"]
+        == "spend money from room tone"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["energy_gate_low_energy_witness_source"]
+        == "moshi"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["energy_gate_low_energy_witness_promoted"]
+        is False
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["energy_gate_low_energy_witness_suppressed"]
+        is True
+    )
     assert voice_result["details"]["async_oracle_smoke"]["energy_gate_barge_in_events"] == 0
     assert voice_result["details"]["async_oracle_smoke"]["energy_gate_interpreter_requests"] == 0
     assert voice_result["details"]["async_oracle_smoke"]["energy_gate_oracle_work_events"] == 0

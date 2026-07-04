@@ -85,6 +85,15 @@ reflex model or a sibling caption/S2S lane, it must use
 `frontend_witness_hypothesis`. Vendor names belong in `source`, not in the
 authority model.
 
+Adapters must apply the speech gate before treating transcript-looking text as
+turn evidence. If a packet carries explicit negative speech evidence such as
+`speech_confirmed = false`, `vad_speech = false`, or low RMS/duration below the
+configured speech gate, its witness text is diagnostic only. It must not trigger
+barge-in, interpreter scheduling, oracle scheduling, durable transcript writes,
+or tool/action fields. A later accepted speech cut may include a new witness
+hypothesis with the same source, but the rejected low-energy text must not be
+replayed into that turn.
+
 When raw audio exists, transcript hypotheses are attached to that same turn as
 interpreter context. They do not create a second Hermes turn, do not schedule a
 parallel oracle request, and do not become durable transcript text unless the
@@ -112,6 +121,8 @@ and final results without treating witness text as durable user history.
 - Raw audio is the primary interpreter evidence when `audio.segment_ref` exists.
 - Transcript hypotheses are clues for the Gemma interpreter, not durable user
   messages.
+- Negative speech evidence outranks transcript-looking text. Low-energy witness
+  text remains diagnostic and has no scheduling or tool authority.
 - Text-only external requests are degraded compatibility mode.
 - `ask_brain` maps to a typed Hermes oracle job, not a hidden chat turn.
 - Frontend witness text cannot become `oracle_text`, spend reason, provider

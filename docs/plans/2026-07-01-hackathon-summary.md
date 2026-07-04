@@ -278,6 +278,10 @@ system heard the user.
 - When a Moshi/OpenClaw/VoiceClaw witness transcript is present, the artifact
   shows it sharing the raw-audio turn's `evidence_bundle_id` rather than
   creating a second Hermes turn. Text-only witness turns are labeled degraded.
+- A low-energy or VAD-rejected packet with transcript-looking text is suppressed
+  before barge-in, interpreter scheduling, oracle scheduling, and transcript
+  promotion. The artifact records the suppression so room-tone hallucinations
+  cannot become spend, phone, memory, or message intent.
 - Partial witness text is superseded by the final same-source/same-kind witness
   in the active evidence bundle, with the partial retained only as provenance.
 - The interpreter evidence artifact records whether each witness transcript was
@@ -374,8 +378,10 @@ closed by external evidence gates:
 9. Add measurement for whether Moshi/open-S2S hypotheses helped or hurt Gemma's
    interpreter output, including clipped prefixes, names, numbers, and rejected
    hallucinated commands.
-10. Add role-based provider comparison output so the artifact can say which
+10. Prove the noise gate rejects low-energy witness text without triggering
+   barge-in, interpreter requests, oracle jobs, or durable transcripts.
+11. Add role-based provider comparison output so the artifact can say which
    component was used for reflex, interpreter, auxiliary transcript evidence,
    outbound TTS, and degraded fallback in the recorded run.
-11. Implement the phone call handoff with context transfer from the Discord session.
-12. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.
+12. Implement the phone call handoff with context transfer from the Discord session.
+13. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.
