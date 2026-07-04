@@ -206,6 +206,13 @@ Target KAME layout:
   ambiguous-speaker, stale, wrong-speaker, wrong-channel, or low-energy Moshi
   text rejected and absent from spend, phone, NemoClaw, tool, memory, file,
   external-message, and durable-history sinks.
+- Witness-rejection evidence rule: every `rejected_or_diagnostic_only`
+  hypothesis must preserve typed `rejection_reasons[]`. At minimum, artifacts
+  should accept `ambiguous_speaker`, `wrong_speaker`, `wrong_channel`,
+  `stale_witness`, `timing_conflict`, `low_energy_non_speech`,
+  `waveform_conflict`, and `provider_conflict`. A rejected Moshi/OpenClaw/
+  VoiceClaw/reflex/classic-ASR witness without one of those concrete reasons is
+  incomplete evidence, even if the rejected text stayed out of action sinks.
 - Same-turn convergence rule: if a Moshi/OpenClaw/VoiceClaw/reflex packet
   creates provisional queue state before the raw voice artifact is ready, the
   later raw-audio packet must update that same job rather than submit a second

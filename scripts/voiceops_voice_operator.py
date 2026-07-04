@@ -67,6 +67,16 @@ LIVE_EVIDENCE_VALID_ADJUDICATION_OUTCOMES = {
     "corrected_by_audio",
     "rejected_or_diagnostic_only",
 }
+LIVE_EVIDENCE_VALID_REJECTION_REASONS = {
+    "ambiguous_speaker",
+    "wrong_speaker",
+    "wrong_channel",
+    "stale_witness",
+    "timing_conflict",
+    "low_energy_non_speech",
+    "waveform_conflict",
+    "provider_conflict",
+}
 LIVE_EVIDENCE_UNPROMOTED_WITNESS_SINKS = (
     "spend",
     "phone",
@@ -1410,6 +1420,8 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
     valid_hypothesis_adjudication_observed = False
     mapping_hypothesis_count = 0
     adjudicated_hypothesis_count = 0
+    rejected_hypothesis_count = 0
+    rejected_hypotheses_with_valid_reasons = 0
     active_partial_observed = False
     hypothesis_phases: list[str] = []
     for index, hypothesis in enumerate(hypotheses):
@@ -1447,6 +1459,20 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
             issues.append(f"live_turn:transcript_hypothesis_{index}_invalid_adjudication")
         else:
             adjudicated_hypothesis_count += 1
+            if adjudication == "rejected_or_diagnostic_only":
+                rejected_hypothesis_count += 1
+                rejection_reasons = _normalized_string_list(hypothesis.get("rejection_reasons"))
+                if not rejection_reasons:
+                    issues.append(f"live_turn:transcript_hypothesis_{index}_missing_rejection_reasons")
+                invalid_reasons = [
+                    reason
+                    for reason in rejection_reasons
+                    if reason not in LIVE_EVIDENCE_VALID_REJECTION_REASONS
+                ]
+                if invalid_reasons:
+                    issues.append(f"live_turn:transcript_hypothesis_{index}_invalid_rejection_reason")
+                if rejection_reasons and not invalid_reasons:
+                    rejected_hypotheses_with_valid_reasons += 1
         if (
             kind in LIVE_EVIDENCE_VALID_HYPOTHESIS_KINDS
             and source
@@ -1458,6 +1484,9 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
             valid_hypothesis_observed = True
     valid_hypothesis_adjudication_observed = (
         mapping_hypothesis_count > 0 and adjudicated_hypothesis_count == mapping_hypothesis_count
+    )
+    valid_rejection_reasons_observed = (
+        rejected_hypothesis_count == rejected_hypotheses_with_valid_reasons
     )
 
     declared_phases = _normalized_string_list(live_turn.get("witness_arrival_phases"))
@@ -1537,6 +1566,7 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
         "witness_packet_observed": valid_hypothesis_observed and bool(declared_phases),
         "active_partial_absent": not active_partial_observed,
         "transcript_hypothesis_adjudication_observed": valid_hypothesis_adjudication_observed,
+        "rejected_witness_reasons_observed": valid_rejection_reasons_observed,
         "interpreter_input_order_observed": input_order == LIVE_EVIDENCE_REQUIRED_INTERPRETER_INPUT_ORDER,
         "interpreter_prompt_policy_observed": valid_prompt_policy_observed,
         "interpreter_adjudication_observed": valid_adjudication_observed,

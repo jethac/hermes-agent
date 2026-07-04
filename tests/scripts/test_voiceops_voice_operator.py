@@ -3230,6 +3230,54 @@ def test_live_evidence_rejects_hypothesis_without_bound_adjudication():
     assert invalid_result["live_turn"]["ok"] is False
 
 
+def test_live_evidence_rejects_diagnostic_hypothesis_without_typed_reasons():
+    missing = _complete_live_evidence()
+    missing["live_turn"]["transcript_hypotheses"][0]["adjudication"] = (
+        "rejected_or_diagnostic_only"
+    )
+    missing["live_turn"]["interpreter_adjudication_outcomes"] = ["rejected_or_diagnostic_only"]
+
+    missing_result = validate_live_probe_evidence(missing)
+
+    assert (
+        "live_turn:transcript_hypothesis_0_missing_rejection_reasons"
+        in missing_result["issues"]
+    )
+    assert missing_result["live_turn"]["rejected_witness_reasons_observed"] is False
+    assert missing_result["live_turn"]["ok"] is False
+
+    invalid = _complete_live_evidence()
+    invalid["live_turn"]["transcript_hypotheses"][0]["adjudication"] = (
+        "rejected_or_diagnostic_only"
+    )
+    invalid["live_turn"]["transcript_hypotheses"][0]["rejection_reasons"] = [
+        "trusted_text_arrived_first"
+    ]
+    invalid["live_turn"]["interpreter_adjudication_outcomes"] = ["rejected_or_diagnostic_only"]
+
+    invalid_result = validate_live_probe_evidence(invalid)
+
+    assert "live_turn:transcript_hypothesis_0_invalid_rejection_reason" in invalid_result["issues"]
+    assert invalid_result["live_turn"]["rejected_witness_reasons_observed"] is False
+    assert invalid_result["live_turn"]["ok"] is False
+
+    valid = _complete_live_evidence()
+    valid["live_turn"]["transcript_hypotheses"][0]["adjudication"] = (
+        "rejected_or_diagnostic_only"
+    )
+    valid["live_turn"]["transcript_hypotheses"][0]["rejection_reasons"] = [
+        "wrong_speaker"
+    ]
+    valid["live_turn"]["interpreter_adjudication_outcomes"] = ["rejected_or_diagnostic_only"]
+
+    valid_result = validate_live_probe_evidence(valid)
+
+    assert "live_turn:transcript_hypothesis_0_missing_rejection_reasons" not in valid_result["issues"]
+    assert "live_turn:transcript_hypothesis_0_invalid_rejection_reason" not in valid_result["issues"]
+    assert valid_result["live_turn"]["rejected_witness_reasons_observed"] is True
+    assert valid_result["live_turn"]["ok"] is True
+
+
 def test_live_evidence_rejects_unpromoted_hypothesis_without_sink_checks():
     evidence = _complete_live_evidence()
     evidence["live_turn"].pop("unpromoted_witness_sink_checks")

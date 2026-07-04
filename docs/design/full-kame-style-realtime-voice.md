@@ -1573,6 +1573,10 @@ Acceptance gates:
   speaker, channel, and timing conflicts, including `ambiguous_speaker`,
   `wrong_speaker`, `wrong_channel`, and `stale_witness` when those conflicts are
   present
+- a `rejected_or_diagnostic_only` witness without `rejection_reasons[]` is not
+  acceptable live evidence; allowed reason codes are `ambiguous_speaker`,
+  `wrong_speaker`, `wrong_channel`, `stale_witness`, `timing_conflict`,
+  `low_energy_non_speech`, `waveform_conflict`, and `provider_conflict`
 - text-only VoiceClaw/OpenClaw compatibility requests are marked degraded when
   no raw audio is available
 - oracle jobs must distinguish `reflex_transcript_hypothesis`,

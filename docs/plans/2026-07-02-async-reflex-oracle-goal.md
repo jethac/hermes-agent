@@ -55,6 +55,10 @@ This changes the next implementation checks:
 - Gemma receives raw audio before witness text in the interpreter request
 - rejected or unpromoted witness text must be proven absent from Stripe,
   NemoClaw, phone, memory, file, message, tool, and durable-history sinks
+- every `rejected_or_diagnostic_only` witness hypothesis must include typed
+  `rejection_reasons[]` such as `ambiguous_speaker`, `wrong_speaker`,
+  `wrong_channel`, `stale_witness`, `timing_conflict`,
+  `low_energy_non_speech`, `waveform_conflict`, or `provider_conflict`
 - degraded text-only fallback must remain visible and fail full-KAME/action
   gates
 

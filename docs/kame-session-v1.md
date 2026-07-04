@@ -363,6 +363,23 @@ does not match the accepted cut, the interpreter may retain it only as
 Ambiguous speaker evidence must not become durable user text or action
 authority.
 
+Every `rejected_or_diagnostic_only` hypothesis must carry
+`rejection_reasons[]`. Valid reason codes are:
+
+- `ambiguous_speaker`
+- `wrong_speaker`
+- `wrong_channel`
+- `stale_witness`
+- `timing_conflict`
+- `low_energy_non_speech`
+- `waveform_conflict`
+- `provider_conflict`
+
+These reason codes are part of the evidence contract. They make it possible to
+prove that Moshi/Open-S2S, VoiceClaw/OpenClaw, reflex, or classic-ASR text was
+rejected because of concrete audio/session evidence, not merely ignored after
+it failed to fit a later oracle response.
+
 The interpreter must adjudicate each active hypothesis with one of:
 
 - `accepted_as_supporting_evidence`
@@ -394,6 +411,7 @@ promoted wording. The minimum result shape is:
       "kind": "frontend_witness_hypothesis",
       "arrival_phase": "with_raw_audio",
       "outcome": "corrected_by_audio",
+      "rejection_reasons": [],
       "authority": "hypothesis",
       "tool_authority": false
     }
@@ -530,6 +548,8 @@ audit should expose:
 - multi-speaker binding proof showing accepted speaker/channel matches, or a
   typed rejection reason for wrong-speaker, wrong-channel, stale, or ambiguous
   witness text
+- typed `rejection_reasons[]` for every
+  `rejected_or_diagnostic_only` witness hypothesis
 - transcript-only degraded mode rejected for full-KAME/action gates
 - terminal correlation by `tool_call_id`
 - audit-id continuity from request to status and terminal event
