@@ -214,7 +214,8 @@ def test_session_config_round_trips_wire_payload():
         metadata={"profile": "default"},
     )
 
-    restored = RealtimeVoiceSessionConfig.from_wire(config.to_wire())
+    wire = config.to_wire()
+    restored = RealtimeVoiceSessionConfig.from_wire(wire)
 
     assert restored.to_wire() == config.to_wire()
     assert restored.effective_sidecar_base_url == "http://voice.local:8080"
@@ -262,7 +263,8 @@ def test_session_config_round_trips_kame_fields():
         barge_in_policy={"min_rms": 350, "min_speech_ms": 120},
     )
 
-    restored = RealtimeVoiceSessionConfig.from_wire(config.to_wire())
+    wire = config.to_wire()
+    restored = RealtimeVoiceSessionConfig.from_wire(wire)
 
     assert restored.engine == RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE
     assert restored.frontend_model == "gemma-4-E2B-it"
@@ -276,7 +278,8 @@ def test_session_config_round_trips_kame_fields():
     assert restored.asr_provider == "streaming_stt"
     assert restored.asr_model == "nemotron-speech"
     assert restored.asr_base_url == "http://asr.local:8767"
-    assert restored.preferred_local_oracle_model == "gemma-4-26B-A4B-it"
+    assert "preferred_local_oracle_model" not in wire
+    assert restored.preferred_local_oracle_model is None
     assert restored.max_spoken_sentences == 4
     assert restored.voice_response_policy == "full"
     assert restored.tts_provider == "streaming_tts"
@@ -344,6 +347,9 @@ def test_kame_session_contract_reports_redacted_stack_choices():
         "reflex": {
             "provider": "moshi",
             "model": "moshi-reflex",
+            "role": "live_floor_control",
+            "authority": "reflex_hypothesis",
+            "must_not": "tools,durable_transcript,spend,phone,file,memory",
             "audio_input": "native_audio",
             "base_url_configured": True,
             "timeout_seconds": 0.55,
@@ -355,25 +361,35 @@ def test_kame_session_contract_reports_redacted_stack_choices():
             "audio_input": "native_audio",
             "base_url_configured": True,
             "role": "raw_audio_evidence_adjudicator",
+            "authority": "interpreter_promoted",
+            "must_not": "broad_tools,oracle_model_selection",
         },
         "transcript_evidence": {
+            "role": "auxiliary_transcript_hypothesis",
             "mode": RealtimeVoiceASRMode.SPECULATIVE.value,
             "provider": "nemotron-speech",
             "model": "fastconformer",
             "base_url_configured": True,
             "authority": "hypothesis",
             "schedule_oracle_from_transcript": False,
+            "must_not": "schedule_oracle,spend_reason,tool_arguments,durable_user_text",
         },
         "oracle": {
+            "role": "hermes_active_model",
             "mode": "hermes_active_model",
-            "preferred_local_model": "nemotron-3-super",
+            "authority": "oracle_promoted",
+            "selected_by": "Hermes /model",
             "timeout_seconds": 42.0,
+            "must_not": "voice_config_oracle_model,voice_config_oracle_provider,voice_config_oracle_base_url,voice_config_oracle_api_mode",
         },
         "tts": {
             "provider": "magpie",
             "model": "magpie-preview",
+            "role": "outbound_playback",
+            "authority": "playback_only",
             "voice_configured": True,
             "base_url_configured": True,
+            "must_not": "transcript_authority,oracle_selection",
         },
         "fallback_policy": "fail_closed",
     }

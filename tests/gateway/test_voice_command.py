@@ -1972,9 +1972,9 @@ class TestDiscordVoiceChannelMethods:
             "role": "hermes_active_model",
             "mode": "hermes_active_model",
             "authority": "oracle_promoted",
-            "preferred_local_model": "gemma-4-26B-A4B-it",
+            "selected_by": "Hermes /model",
             "timeout_seconds": 19.0,
-            "must_not": "voice_config_oracle_model",
+            "must_not": "voice_config_oracle_model,voice_config_oracle_provider,voice_config_oracle_base_url,voice_config_oracle_api_mode",
         }
         assert status["kame_stack"]["tts"]["authority"] == "playback_only"
         assert status["kame_stack"]["tts"]["must_not"] == "transcript_authority,oracle_selection"

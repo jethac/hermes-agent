@@ -1259,9 +1259,9 @@ def test_discord_realtime_event_tracks_redacted_kame_stack_status():
                     "role": "hermes_active_model",
                     "mode": "hermes_active_model",
                     "authority": "oracle_promoted",
-                    "preferred_local_model": "nemotron-3-super",
+                    "selected_by": "Hermes /model",
                     "timeout_seconds": 60.0,
-                    "must_not": "voice_config_oracle_model",
+                    "must_not": "voice_config_oracle_model,voice_config_oracle_provider,voice_config_oracle_base_url,voice_config_oracle_api_mode",
                 },
                 "tts": {
                     "provider": "magpie",
@@ -1304,7 +1304,11 @@ def test_discord_realtime_event_tracks_redacted_kame_stack_status():
     )
     assert stack["oracle"]["mode"] == "hermes_active_model"
     assert stack["oracle"]["authority"] == "oracle_promoted"
-    assert stack["oracle"]["must_not"] == "voice_config_oracle_model"
+    assert stack["oracle"]["selected_by"] == "Hermes /model"
+    assert stack["oracle"]["must_not"] == (
+        "voice_config_oracle_model,voice_config_oracle_provider,"
+        "voice_config_oracle_base_url,voice_config_oracle_api_mode"
+    )
     assert stack["tts"]["authority"] == "playback_only"
     assert stack["tts"]["must_not"] == "transcript_authority,oracle_selection"
     assert "reflex.local" not in repr(stack)

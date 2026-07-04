@@ -14164,8 +14164,9 @@ def _realtime_voice_kame_stack_payload(
         },
         "oracle": {
             "mode": "hermes_active_model",
-            "preferred_local_model": preferred_local_oracle_model or "",
+            "selected_by": "Hermes /model",
             "timeout_seconds": oracle_timeout_seconds,
+            "must_not": "voice_config_oracle_model,voice_config_oracle_provider,voice_config_oracle_base_url,voice_config_oracle_api_mode",
         },
         "tts": {
             "provider": tts_provider or "",
@@ -15986,11 +15987,21 @@ def _realtime_voice_setup_config_payload(
             "max_audio_seconds": status.get("interface_max_audio_seconds"),
         },
         "oracle": {
+            "selected_by": "Hermes /model",
             "provider": str(realtime.get("oracle_provider") or ""),
             "provider_name": str(realtime.get("oracle_provider_name") or ""),
             "preferred_local_model": str(realtime.get("preferred_local_oracle_model") or ""),
             "base_url": _redact_realtime_voice_url(str(realtime.get("oracle_base_url") or "")),
             "api_mode": str(realtime.get("oracle_api_mode") or ""),
+            "provider_registration": {
+                "enabled": bool(str(realtime.get("oracle_base_url") or "").strip()),
+                "provider": str(realtime.get("oracle_provider") or ""),
+                "provider_name": str(realtime.get("oracle_provider_name") or ""),
+                "preferred_local_model": str(realtime.get("preferred_local_oracle_model") or ""),
+                "base_url": _redact_realtime_voice_url(str(realtime.get("oracle_base_url") or "")),
+                "api_mode": str(realtime.get("oracle_api_mode") or ""),
+                "selection_authority": "Hermes /model",
+            },
             "timeout_seconds": status.get("oracle_timeout_seconds"),
             "max_spoken_sentences": status.get("max_spoken_sentences"),
             "voice_response_policy": status.get("voice_response_policy"),

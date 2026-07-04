@@ -7106,8 +7106,18 @@ class TestRealtimeVoiceWebSocket:
         assert payload["config"]["interface"]["api_key_env"] == "HERMES_KAME_INTERFACE_API_KEY"
         assert payload["config"]["interface"]["api_key_present"] is True
         assert payload["config"]["interface"]["audio_input"] == "native_audio"
+        assert payload["config"]["oracle"]["selected_by"] == "Hermes /model"
         assert payload["config"]["oracle"]["provider_name"] == "Spark Oracle"
         assert payload["config"]["oracle"]["preferred_local_model"] == "gemma-4-26B-A4B-it"
+        assert payload["config"]["oracle"]["provider_registration"] == {
+            "enabled": True,
+            "provider": "custom",
+            "provider_name": "Spark Oracle",
+            "preferred_local_model": "gemma-4-26B-A4B-it",
+            "base_url": "http://spark.local:8001/v1",
+            "api_mode": "chat_completions",
+            "selection_authority": "Hermes /model",
+        }
         assert "model" not in payload["config"]["oracle"]
         assert payload["config"]["asr"]["local_provider"] == "nemotron_speech"
         assert payload["config"]["asr"]["local_upstream_base_url_present"] is True
@@ -7750,12 +7760,22 @@ class TestRealtimeVoiceWebSocket:
                             "promote_without_interpreter": False,
                         },
                         "oracle": {
-                            "mode": "hermes_active_oracle",
+                            "mode": "hermes_active_model",
+                            "selected_by": "Hermes /model",
                             "provider": "custom",
                             "provider_name": "Spark Oracle",
                             "preferred_local_model": "gemma-4-26B-A4B-it",
                             "base_url": "http://spark.local:8001/v1",
                             "api_mode": "chat_completions",
+                            "provider_registration": {
+                                "enabled": True,
+                                "provider": "custom",
+                                "provider_name": "Spark Oracle",
+                                "preferred_local_model": "gemma-4-26B-A4B-it",
+                                "base_url": "http://spark.local:8001/v1",
+                                "api_mode": "chat_completions",
+                                "selection_authority": "Hermes /model",
+                            },
                             "timeout_ms": 12000,
                             "max_spoken_sentences": 2,
                             "voice_response_policy": "brief_summary",
@@ -7901,8 +7921,9 @@ class TestRealtimeVoiceWebSocket:
         }
         assert status["kame_stack"]["oracle"] == {
             "mode": "hermes_active_model",
-            "preferred_local_model": "gemma-4-26B-A4B-it",
+            "selected_by": "Hermes /model",
             "timeout_seconds": 12.0,
+            "must_not": "voice_config_oracle_model,voice_config_oracle_provider,voice_config_oracle_base_url,voice_config_oracle_api_mode",
         }
         assert status["oracle_timeout_seconds"] == 12.0
         assert status["barge_in_min_rms"] == 410
@@ -8654,8 +8675,9 @@ class TestRealtimeVoiceWebSocket:
             },
             "oracle": {
                 "mode": "hermes_active_model",
-                "preferred_local_model": "gemma-4-26B-A4B-it",
+                "selected_by": "Hermes /model",
                 "timeout_seconds": 42.0,
+                "must_not": "voice_config_oracle_model,voice_config_oracle_provider,voice_config_oracle_base_url,voice_config_oracle_api_mode",
             },
             "tts": {
                 "provider": "cartesia",

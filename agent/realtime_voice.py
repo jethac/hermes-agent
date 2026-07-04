@@ -277,7 +277,6 @@ class RealtimeVoiceSessionConfig:
             "asr_provider": self.asr_provider,
             "asr_model": self.asr_model,
             "asr_base_url": self.asr_base_url,
-            "preferred_local_oracle_model": self.preferred_local_oracle_model,
             "oracle_timeout_seconds": self.oracle_timeout_seconds,
             "max_spoken_sentences": self.max_spoken_sentences,
             "voice_response_policy": normalize_realtime_voice_response_policy(self.voice_response_policy),
@@ -343,7 +342,6 @@ class RealtimeVoiceSessionConfig:
             asr_provider=_optional_str(payload.get("asr_provider")),
             asr_model=_optional_str(payload.get("asr_model")),
             asr_base_url=_optional_str(payload.get("asr_base_url")),
-            preferred_local_oracle_model=_optional_str(payload.get("preferred_local_oracle_model")),
             oracle_timeout_seconds=_positive_float(
                 payload.get("oracle_timeout_seconds"),
                 default=60.0,
@@ -534,9 +532,9 @@ def _kame_stack_contract_payload(config: RealtimeVoiceSessionConfig, metadata: M
             "role": "hermes_active_model",
             "mode": "hermes_active_model",
             "authority": "oracle_promoted",
-            "preferred_local_model": config.preferred_local_oracle_model or "",
+            "selected_by": "Hermes /model",
             "timeout_seconds": config.oracle_timeout_seconds,
-            "must_not": "voice_config_oracle_model",
+            "must_not": "voice_config_oracle_model,voice_config_oracle_provider,voice_config_oracle_base_url,voice_config_oracle_api_mode",
         },
         "tts": {
             "provider": config.tts_provider or "",
