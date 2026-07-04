@@ -312,6 +312,16 @@ Target KAME layout:
   `interpreter_corrected_transcript`, `interpreter_normalized_intent`, and any
   entities such as `3^17`. The witness text remains hypothesis authority even
   when it helped; the promoted interpreter fields are the durable evidence.
+- Moshi-context acceptance matrix: headless proof should cover four cases for
+  transcript-looking frontend output. First, helpful witness text attached to
+  raw audio improves interpreter recovery without becoming authority. Second,
+  wrong, stale, low-energy, wrong-speaker, or wrong-channel witness text is
+  rejected with typed reasons while remaining visible in the audit bundle.
+  Third, witness text that arrives before or after the waveform merges into the
+  same evidence bundle and does not create another Hermes turn. Fourth,
+  text-only Moshi/OpenClaw/VoiceClaw compatibility mode reports
+  `degraded_text_only`, preserves the hypothesis, and fails high-risk action
+  gates until raw-audio-grounded evidence exists.
 - Three-tier sensor fan-in rule: the long-term architecture remains reflex,
   interpreter, oracle. A very fast Moshi/OpenClaw/VoiceClaw-style frontend is
   the reflex candidate and may emit transcript-looking text, but that text is

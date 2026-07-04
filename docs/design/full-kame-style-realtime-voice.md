@@ -102,6 +102,21 @@ literal checks, or degraded text-only compatibility. It should not block
 reflex acknowledgement, create a second Hermes turn, schedule a second oracle
 job, or satisfy high-risk action gates when raw audio is available.
 
+Moshi-style STT output should therefore be treated as a witness, not a fourth
+tier. The intended packet is not `Moshi transcript -> Hermes`; it is
+`raw audio + Moshi witness -> Gemma interpreter -> promoted evidence -> Hermes
+oracle`. This keeps Moshi useful for clipped prefixes, rough intent, names,
+numbers, and code-switched words while preserving the raw-audio authority
+boundary. A fast Moshi transcript can be displayed or attached immediately, but
+Hermes should not let it become the user message until the interpreter accepts
+or corrects it.
+
+If a frontend can only provide the Moshi text and no waveform, the session is
+explicitly degraded. The text-only path may hold the floor, ask for
+confirmation, or preserve audit context, but it must fail closed for
+Stripe/NemoClaw/phone/file/memory/message actions and must not be counted as a
+full KAME demonstration.
+
 Canonical rule: every provider is assigned to a role before it is trusted.
 Open S2S systems such as Moshi, VoiceClaw, OpenClaw Talk, Ultravox-like
 frontends, or hosted realtime APIs may be reflexes, witness producers,

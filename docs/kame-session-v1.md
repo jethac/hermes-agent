@@ -95,8 +95,22 @@ For adapters that expose a Moshi-style "STT" field, the field name is
 misleading from Hermes' point of view. Hermes should normalize it as witness
 context for the same direct-audio interpreter packet, not as a separate ASR
 result and not as the user's prompt. The raw waveform, speech gate, speaker
-metadata, and reflex route are the authoritative inputs; the Moshi text is an
+metadata, and reflex route are the authoritative inputs; the Moshi text is a
 witness claim the interpreter can use, correct, or reject.
+
+The practical adapter rule is simple: if the frontend has raw audio, send raw
+audio. Do not downgrade the turn to text just because the frontend also has a
+Moshi/open-S2S transcript. Build one interpreter packet with the accepted
+waveform first, then metadata, reflex state, and transcript hypotheses. The
+Moshi text should help the interpreter compare, recover, and explain; it should
+not replace the waveform or short-circuit interpretation.
+
+Only when the frontend genuinely lacks the waveform should Hermes enter
+degraded text-only compatibility mode. That mode may ask clarifying questions,
+show captions, or create a provisional audit trail, but it cannot claim full
+KAME readiness or authorize high-risk work. If raw audio arrives later for the
+same accepted cut, the degraded packet must merge into the existing evidence
+bundle instead of creating a second Hermes turn.
 
 ## Roles
 
