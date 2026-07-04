@@ -1006,6 +1006,16 @@ Add a local smoke report mode that proves:
   hypotheses are non-authoritative context, raw audio is primary evidence, and
   transcript-looking text cannot directly become `oracle_text`, durable
   transcript, spend reason, phone payload, or tool arguments
+- provisional request summaries used for queueing, narration, and status must
+  be explicit non-authoritative fields. The smoke, job status, VoiceOps report,
+  and plan-run projection should expose `provisional_request_summary` with
+  `authority = "reflex_hypothesis"` and `tool_authority = false` rather than
+  treating the summary as a verified transcript or tool argument.
+- every unpromoted reflex, Moshi/open-S2S, VoiceClaw/OpenClaw, and classic-ASR
+  transcript hypothesis in the smoke and VoiceOps artifacts should carry
+  `tool_authority = false`. Headless proof should fail if a witness hypothesis
+  can reach spend/call/tool/memory/file/message sinks without interpreter or
+  oracle promotion.
 - the smoke and VoiceOps artifacts expose KAME first-audio latency metrics for
   both the defer acknowledgement path and local reflex path:
   `kame_speech_end_to_defer_first_audio_ms` and

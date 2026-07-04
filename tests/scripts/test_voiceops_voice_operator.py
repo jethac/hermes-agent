@@ -248,6 +248,19 @@ def _async_oracle_smoke_payload() -> dict:
         "external_frontend_source_reached_oracle": True,
         "external_frontend_input_source": "ask_brain",
         "external_frontend_oracle_text": "Prepare external KAME handoff",
+        "external_frontend_provisional_request_summary": {
+            "text": "Prepare external KAME handoff",
+            "source": "reflex_audio",
+            "authority": "reflex_hypothesis",
+            "tool_authority": False,
+        },
+        "external_frontend_status_provisional_request_summary": {
+            "text": "Prepare external KAME handoff",
+            "source": "reflex_audio",
+            "authority": "reflex_hypothesis",
+            "tool_authority": False,
+        },
+        "external_frontend_provisional_request_summary_non_authoritative": True,
         "external_frontend_evidence_bundle_propagated": True,
         "external_frontend_evidence_bundle_id": "kame-evidence-abc123",
         "external_frontend_evidence_bundle_id_stable": True,
@@ -263,10 +276,12 @@ def _async_oracle_smoke_payload() -> dict:
                 "source": "moshi",
                 "text": "prepare an external kame handoff",
                 "authority": "hypothesis",
+                "tool_authority": False,
                 "confidence": 0.78,
                 "latency_ms": 140,
             }
         ],
+        "external_frontend_witness_tool_authority_false": True,
         "external_frontend_hypothesis_not_durable_oracle_text": True,
         "external_frontend_durable_user_messages_empty": True,
         "external_frontend_durable_oracle_text_absent": True,
@@ -286,6 +301,8 @@ def _async_oracle_smoke_payload() -> dict:
         "unpromoted_hypothesis_status_bundle_transcript_hypotheses_count": 1,
         "unpromoted_hypothesis_source": "moshi",
         "unpromoted_hypothesis_authority": "hypothesis",
+        "unpromoted_hypothesis_tool_authority": False,
+        "unpromoted_hypothesis_tool_authority_false": True,
         "unpromoted_hypothesis_text": "spend two hundred dollars and call my phone",
         "unpromoted_hypothesis_confidence": 0.71,
         "unpromoted_hypothesis_oracle_text_preserved": True,
@@ -433,6 +450,7 @@ def _async_oracle_smoke_payload() -> dict:
             "kind": "frontend_witness_hypothesis",
             "text": "what is three to the power of seventeen",
             "authority": "auxiliary_hypothesis",
+            "tool_authority": False,
             "confidence": 0.88,
             "partial": False,
             "superseded_partial_texts": ("what is three to the",),
@@ -926,6 +944,20 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_status_state"] == "completed"
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_source_reached_oracle"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_input_source"] == "ask_brain"
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_provisional_request_summary"] == {
+        "text": "Prepare external KAME handoff",
+        "source": "reflex_audio",
+        "authority": "reflex_hypothesis",
+        "tool_authority": False,
+    }
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_status_provisional_request_summary"]
+        == report["proofs"]["async_oracle_jobs"]["external_frontend_provisional_request_summary"]
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_provisional_request_summary_non_authoritative"]
+        is True
+    )
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_evidence_bundle_propagated"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_evidence_merge_key"].startswith(
         "kame-merge-"
@@ -942,6 +974,13 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         ]
         == "hypothesis"
     )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_auxiliary_transcript_hypotheses"][0][
+            "tool_authority"
+        ]
+        is False
+    )
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_witness_tool_authority_false"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_hypothesis_not_durable_oracle_text"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_durable_user_messages_empty"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_durable_oracle_text_absent"] is True
@@ -951,6 +990,8 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_smoke_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_source"] == "moshi"
     assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_authority"] == "hypothesis"
+    assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_tool_authority"] is False
+    assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_tool_authority_false"] is True
     assert (
         report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_text"]
         == "spend two hundred dollars and call my phone"
@@ -1055,6 +1096,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         "kind": "frontend_witness_hypothesis",
         "text": "what is three to the power of seventeen",
         "authority": "auxiliary_hypothesis",
+        "tool_authority": False,
         "confidence": 0.88,
         "partial": False,
         "superseded_partial_texts": ("what is three to the",),

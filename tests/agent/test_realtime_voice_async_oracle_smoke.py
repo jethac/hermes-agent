@@ -154,6 +154,17 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_source_reached_oracle"] is True
     assert report["external_frontend_input_source"] == "ask_brain"
     assert report["external_frontend_oracle_text"] == "Prepare external KAME handoff"
+    assert report["external_frontend_provisional_request_summary"] == {
+        "text": "Prepare external KAME handoff",
+        "source": "reflex_audio",
+        "authority": "reflex_hypothesis",
+        "tool_authority": False,
+    }
+    assert (
+        report["external_frontend_status_provisional_request_summary"]
+        == report["external_frontend_provisional_request_summary"]
+    )
+    assert report["external_frontend_provisional_request_summary_non_authoritative"] is True
     assert report["external_frontend_evidence_bundle_propagated"] is True
     assert report["external_frontend_evidence_bundle_id"].startswith("kame-evidence-")
     assert report["external_frontend_evidence_bundle_id_stable"] is True
@@ -166,6 +177,8 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_audio_time_range_ms"] == [100, 2100]
     assert report["external_frontend_auxiliary_transcript_hypotheses"][0]["source"] == "moshi"
     assert report["external_frontend_auxiliary_transcript_hypotheses"][0]["authority"] == "hypothesis"
+    assert report["external_frontend_auxiliary_transcript_hypotheses"][0]["tool_authority"] is False
+    assert report["external_frontend_witness_tool_authority_false"] is True
     assert report["external_frontend_hypothesis_not_durable_oracle_text"] is True
     assert report["external_frontend_durable_user_messages_empty"] is True
     assert report["external_frontend_durable_oracle_text_absent"] is True
@@ -182,6 +195,8 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["unpromoted_hypothesis_status_bundle_transcript_hypotheses_count"] == 2
     assert report["unpromoted_hypothesis_source"] == "moshi"
     assert report["unpromoted_hypothesis_authority"] == "hypothesis"
+    assert report["unpromoted_hypothesis_tool_authority"] is False
+    assert report["unpromoted_hypothesis_tool_authority_false"] is True
     assert report["unpromoted_hypothesis_text"] == "spend two hundred dollars and call my phone"
     assert report["unpromoted_hypothesis_confidence"] == 0.71
     assert report["unpromoted_hypothesis_oracle_text_preserved"] is True
@@ -292,6 +307,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
         "source": "moshi",
         "text": "what is three to the power of seventeen",
         "authority": "auxiliary_hypothesis",
+        "tool_authority": False,
         "confidence": 0.88,
         "partial": False,
         "superseded_partial_texts": ("what is three to the",),

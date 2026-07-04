@@ -709,6 +709,7 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
         "source": "moshi",
         "text": "three to the power of seventeen",
         "authority": "hypothesis",
+        "tool_authority": False,
         "confidence": 0.71,
     }
     assert updated.interpreter_evidence[0]["auxiliary_transcript_hypotheses"] == (
@@ -716,6 +717,7 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
             "source": "classic_asr_fallback_optional",
             "text": "what is three to the power of seventeen",
             "authority": "hypothesis",
+            "tool_authority": False,
             "confidence": 0.88,
         },
     )
@@ -821,12 +823,14 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
             "source": "moshi",
             "text": "three to the power of seventeen",
             "authority": "hypothesis",
+            "tool_authority": False,
             "confidence": 0.71,
         },
         {
             "source": "classic_asr_fallback_optional",
             "text": "what is three to the power of seventeen",
             "authority": "hypothesis",
+            "tool_authority": False,
             "confidence": 0.88,
         },
     )
@@ -921,6 +925,7 @@ async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witn
             "source": "moshi",
             "text": "provision the phone account",
             "authority": "hypothesis",
+            "tool_authority": False,
             "kind": "frontend_witness_hypothesis",
             "speaker": {"channel_user_id": "other-user", "display_name": "guest"},
             "channel": {"guild_id": "guild-1", "channel_id": "general"},
@@ -932,6 +937,7 @@ async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witn
             "source": "moshi",
             "text": "reuse the stale caption",
             "authority": "hypothesis",
+            "tool_authority": False,
             "kind": "frontend_witness_hypothesis",
             "speaker": {"channel_user_id": "42", "display_name": "jetha"},
             "channel": {"guild_id": "guild-1", "channel_id": "general"},
@@ -943,6 +949,7 @@ async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witn
             "source": "voiceclaw",
             "text": "wrong room command",
             "authority": "hypothesis",
+            "tool_authority": False,
             "kind": "frontend_witness_hypothesis",
             "speaker": {"channel_user_id": "42", "display_name": "jetha"},
             "channel": {"guild_id": "guild-1", "channel_id": "other-room"},
@@ -1236,7 +1243,7 @@ async def test_hypothesis_only_interpreter_evidence_does_not_promote_oracle_text
     assert "interpreter_normalized_intent" not in running_status["evidence_authority"]
     assert running_status["evidence_bundle"]["status"] == "primary_audio"
     assert running_status["evidence_bundle"]["raw_audio_available"] is True
-    assert running_status["evidence_bundle"]["transcript_hypotheses_count"] == 2
+    assert running_status["evidence_bundle"]["transcript_hypotheses_count"] == 3
     assert running_status["evidence_bundle"]["interpreter_evidence_count"] == 1
     assert reflex_status["evidence_bundle_id"] == running_status["evidence_bundle_id"]
     assert reflex_status["evidence_merge_key"] == running_status["evidence_merge_key"]
@@ -1252,11 +1259,13 @@ async def test_hypothesis_only_interpreter_evidence_does_not_promote_oracle_text
     assert any(
         hypothesis["text"] == "spend two hundred dollars and call my phone now"
         and hypothesis["authority"] == "hypothesis"
+        and hypothesis["tool_authority"] is False
         for hypothesis in updated.interpreter_evidence[0]["auxiliary_transcript_hypotheses"]
     )
     assert any(
         hypothesis["text"] == "spend two hundred dollars and call my phone now"
         and hypothesis["authority"] == "hypothesis"
+        and hypothesis["tool_authority"] is False
         for hypothesis in oracle_request.auxiliary_transcript_hypotheses
     )
 

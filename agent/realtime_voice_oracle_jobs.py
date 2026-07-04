@@ -159,6 +159,7 @@ class OracleJob:
         if self.request is not None:
             status["raw_audio_available"] = self.request.raw_audio_available
             status["evidence_bundle_status"] = self.request.evidence_bundle_status
+            status["provisional_request_summary"] = dict(self.request.provisional_request_summary)
             if self.request.degraded_reason:
                 status["degraded_reason"] = self.request.degraded_reason
         if self.audio_segment_ref:
@@ -1095,6 +1096,7 @@ def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
             "source": job.reflex_transcript_source or "reflex_audio",
             "text": job.reflex_transcript_hypothesis,
             "authority": "reflex_hypothesis",
+            "tool_authority": False,
         }
         if job.reflex_transcript_confidence is not None:
             item["confidence"] = job.reflex_transcript_confidence
@@ -1114,6 +1116,7 @@ def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
             "source": source,
             "text": text,
             "authority": "auxiliary_hypothesis",
+            "tool_authority": False,
         }
         confidence = _compact_confidence(value.get("confidence"))  # type: ignore[arg-type]
         if confidence is not None:
@@ -1434,6 +1437,7 @@ def _compact_reflex_transcript_hypothesis(value: object) -> dict[str, Any]:
         "source": source,
         "text": text,
         "authority": "hypothesis",
+        "tool_authority": False,
     }
     if confidence is not None:
         item["confidence"] = confidence
@@ -1504,6 +1508,7 @@ def _compact_auxiliary_transcript_hypotheses(
             "source": source,
             "text": text,
             "authority": "hypothesis",
+            "tool_authority": False,
         }
         kind = _compact_evidence_text(value.get("kind"), limit=80)
         if kind:

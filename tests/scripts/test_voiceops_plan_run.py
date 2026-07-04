@@ -1302,6 +1302,26 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         voice_result["details"]["async_oracle_smoke"]["external_frontend_hypothesis_not_durable_oracle_text"]
         is True
     )
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_provisional_request_summary"] == {
+        "text": "Prepare external KAME handoff",
+        "source": "reflex_audio",
+        "authority": "reflex_hypothesis",
+        "tool_authority": False,
+    }
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["external_frontend_status_provisional_request_summary"]
+        == voice_result["details"]["async_oracle_smoke"]["external_frontend_provisional_request_summary"]
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "external_frontend_provisional_request_summary_non_authoritative"
+        ]
+        is True
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_tool_authority_false"]
+        is True
+    )
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_durable_user_messages_empty"] is True
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_durable_oracle_text_absent"] is True
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_durable_record_count"] >= 1
@@ -1331,6 +1351,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_phone_call_payload"] is True
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_call_payload"] is True
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_tool_arguments"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_tool_authority_false"] is True
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_memory_write"] is True
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_file_write"] is True
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_message_payload"] is True
@@ -1432,6 +1453,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "kind": "frontend_witness_hypothesis",
         "text": "what is three to the power of seventeen",
         "authority": "auxiliary_hypothesis",
+        "tool_authority": False,
         "confidence": 0.88,
         "partial": False,
         "superseded_partial_texts": ("what is three to the",),

@@ -1467,6 +1467,23 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and bool(getattr(request, "auxiliary_transcript_hypotheses", ()))
         and getattr(request, "auxiliary_transcript_hypotheses", ())[0].get("source") == "moshi"
         and getattr(request, "auxiliary_transcript_hypotheses", ())[0].get("authority") == "hypothesis"
+        and getattr(request, "auxiliary_transcript_hypotheses", ())[0].get("tool_authority") is False
+    )
+    provisional_summary = (
+        dict(getattr(request, "provisional_request_summary", {}) or {})
+        if request is not None
+        else {}
+    )
+    status_provisional_summary = (
+        status_job.get("provisional_request_summary")
+        if isinstance(status_job.get("provisional_request_summary"), dict)
+        else {}
+    )
+    provisional_summary_non_authoritative = (
+        provisional_summary.get("text") == "Prepare external KAME handoff"
+        and provisional_summary.get("authority") == "reflex_hypothesis"
+        and provisional_summary.get("tool_authority") is False
+        and status_provisional_summary == provisional_summary
     )
     request_bundle_id = str(getattr(request, "evidence_bundle_id", "") or "") if request is not None else ""
     request_merge_key = str(getattr(request, "evidence_merge_key", "") or "") if request is not None else ""
@@ -1532,6 +1549,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and getattr(request, "source", "") == "voiceclaw"
         and getattr(request, "interface_input_source", "") == "ask_brain"
         and getattr(request, "oracle_text", "") == "Prepare external KAME handoff"
+        and provisional_summary_non_authoritative
         and evidence_bundle_propagated
         and evidence_bundle_single_turn
         and durable_hypothesis_not_promoted
@@ -1558,6 +1576,9 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         if request is not None
         else "",
         "external_frontend_oracle_text": getattr(request, "oracle_text", "") if request is not None else "",
+        "external_frontend_provisional_request_summary": provisional_summary,
+        "external_frontend_status_provisional_request_summary": dict(status_provisional_summary),
+        "external_frontend_provisional_request_summary_non_authoritative": provisional_summary_non_authoritative,
         "external_frontend_evidence_bundle_propagated": evidence_bundle_propagated,
         "external_frontend_evidence_bundle_id": request_bundle_id,
         "external_frontend_evidence_bundle_id_stable": evidence_bundle_id_stable,
@@ -1577,6 +1598,13 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         ]
         if request is not None
         else [],
+        "external_frontend_witness_tool_authority_false": all(
+            item.get("tool_authority") is False
+            for item in getattr(request, "auxiliary_transcript_hypotheses", ())
+            if isinstance(item, Mapping)
+        )
+        if request is not None
+        else False,
         "external_frontend_hypothesis_not_durable_oracle_text": durable_hypothesis_not_promoted,
         "external_frontend_durable_user_messages_empty": durable_user_messages_empty,
         "external_frontend_durable_oracle_text_absent": durable_oracle_text_absent,
@@ -1753,6 +1781,7 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
         hypothesis.get("source") == "moshi"
         and hypothesis.get("text") == untrusted_text
         and hypothesis.get("authority") == "hypothesis"
+        and hypothesis.get("tool_authority") is False
         and hypothesis.get("confidence") == 0.71
     )
     status_jobs = status.get("jobs") if isinstance(status.get("jobs"), list) else []
@@ -1849,6 +1878,8 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
         ),
         "unpromoted_hypothesis_source": hypothesis.get("source", ""),
         "unpromoted_hypothesis_authority": hypothesis.get("authority", ""),
+        "unpromoted_hypothesis_tool_authority": hypothesis.get("tool_authority"),
+        "unpromoted_hypothesis_tool_authority_false": hypothesis.get("tool_authority") is False,
         "unpromoted_hypothesis_text": hypothesis.get("text", ""),
         "unpromoted_hypothesis_confidence": hypothesis.get("confidence"),
         "unpromoted_hypothesis_oracle_text_preserved": oracle_text_preserved,
@@ -3976,6 +4007,15 @@ async def run_smoke() -> dict[str, Any]:
         "external_frontend_oracle_text": external_frontend_bridge_smoke[
             "external_frontend_oracle_text"
         ],
+        "external_frontend_provisional_request_summary": external_frontend_bridge_smoke[
+            "external_frontend_provisional_request_summary"
+        ],
+        "external_frontend_status_provisional_request_summary": external_frontend_bridge_smoke[
+            "external_frontend_status_provisional_request_summary"
+        ],
+        "external_frontend_provisional_request_summary_non_authoritative": external_frontend_bridge_smoke[
+            "external_frontend_provisional_request_summary_non_authoritative"
+        ],
         "external_frontend_evidence_bundle_propagated": external_frontend_bridge_smoke[
             "external_frontend_evidence_bundle_propagated"
         ],
@@ -4008,6 +4048,9 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "external_frontend_auxiliary_transcript_hypotheses": external_frontend_bridge_smoke[
             "external_frontend_auxiliary_transcript_hypotheses"
+        ],
+        "external_frontend_witness_tool_authority_false": external_frontend_bridge_smoke[
+            "external_frontend_witness_tool_authority_false"
         ],
         "external_frontend_hypothesis_not_durable_oracle_text": external_frontend_bridge_smoke[
             "external_frontend_hypothesis_not_durable_oracle_text"
@@ -4043,6 +4086,12 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "unpromoted_hypothesis_source": unpromoted_hypothesis_smoke["unpromoted_hypothesis_source"],
         "unpromoted_hypothesis_authority": unpromoted_hypothesis_smoke["unpromoted_hypothesis_authority"],
+        "unpromoted_hypothesis_tool_authority": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_tool_authority"
+        ],
+        "unpromoted_hypothesis_tool_authority_false": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_tool_authority_false"
+        ],
         "unpromoted_hypothesis_text": unpromoted_hypothesis_smoke["unpromoted_hypothesis_text"],
         "unpromoted_hypothesis_confidence": unpromoted_hypothesis_smoke[
             "unpromoted_hypothesis_confidence"

@@ -1783,6 +1783,7 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("unpromoted_hypothesis_single_bundle_observed") is True
         and smoke.get("unpromoted_hypothesis_source") == "moshi"
         and smoke.get("unpromoted_hypothesis_authority") == "hypothesis"
+        and smoke.get("unpromoted_hypothesis_tool_authority_false") is True
         and smoke.get("unpromoted_hypothesis_oracle_text_preserved") is True
         and smoke.get("unpromoted_hypothesis_transcript_preserved") is True
         and smoke.get("unpromoted_hypothesis_intent_preserved") is True
@@ -2668,6 +2669,15 @@ def build_voice_operator_report(
                 "external_frontend_input_source"
             ),
             "external_frontend_oracle_text": async_oracle_smoke.get("external_frontend_oracle_text"),
+            "external_frontend_provisional_request_summary": dict(
+                async_oracle_smoke.get("external_frontend_provisional_request_summary") or {}
+            ),
+            "external_frontend_status_provisional_request_summary": dict(
+                async_oracle_smoke.get("external_frontend_status_provisional_request_summary") or {}
+            ),
+            "external_frontend_provisional_request_summary_non_authoritative": bool(
+                async_oracle_smoke.get("external_frontend_provisional_request_summary_non_authoritative")
+            ),
             "external_frontend_evidence_bundle_propagated": bool(
                 async_oracle_smoke.get("external_frontend_evidence_bundle_propagated")
             ),
@@ -2700,6 +2710,9 @@ def build_voice_operator_report(
             ),
             "external_frontend_auxiliary_transcript_hypotheses": list(
                 async_oracle_smoke.get("external_frontend_auxiliary_transcript_hypotheses") or []
+            ),
+            "external_frontend_witness_tool_authority_false": bool(
+                async_oracle_smoke.get("external_frontend_witness_tool_authority_false")
             ),
             "external_frontend_hypothesis_not_durable_oracle_text": bool(
                 async_oracle_smoke.get("external_frontend_hypothesis_not_durable_oracle_text")
@@ -2737,6 +2750,12 @@ def build_voice_operator_report(
             ),
             "unpromoted_hypothesis_source": async_oracle_smoke.get("unpromoted_hypothesis_source"),
             "unpromoted_hypothesis_authority": async_oracle_smoke.get("unpromoted_hypothesis_authority"),
+            "unpromoted_hypothesis_tool_authority": async_oracle_smoke.get(
+                "unpromoted_hypothesis_tool_authority"
+            ),
+            "unpromoted_hypothesis_tool_authority_false": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_tool_authority_false")
+            ),
             "unpromoted_hypothesis_text": async_oracle_smoke.get("unpromoted_hypothesis_text"),
             "unpromoted_hypothesis_confidence": async_oracle_smoke.get(
                 "unpromoted_hypothesis_confidence"

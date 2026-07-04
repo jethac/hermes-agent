@@ -179,7 +179,8 @@ label. The interpreter packet must carry:
 - VAD/energy timing and speaker/channel metadata
 - reflex route and acknowledgement already spoken
 - zero or more transcript hypotheses with source, timing, confidence when
-  available, partial/final state, and `authority = "hypothesis"`
+  available, partial/final state, `authority = "hypothesis"`, and
+  `tool_authority = false`
 
 For Moshi specifically, the adapter should preserve the vendor transcript text
 as `source = "moshi"` plus `kind = "frontend_witness_hypothesis"` and attach
@@ -188,6 +189,12 @@ state when available. The same raw-audio `turn_id` and `evidence_merge_key`
 must be used for the waveform and the Moshi witness so the interpreter can
 compare them as one speech cut. A Moshi transcript without a matching waveform
 is degraded text-only evidence, not direct-audio KAME evidence.
+
+Queue/status surfaces may expose a compact `provisional_request_summary` so the
+reflex can narrate what it is asking the oracle to do, but that summary is not
+the user's verified transcript. It must carry `authority = "reflex_hypothesis"`
+and `tool_authority = false`, and it cannot satisfy spend, call, tool, memory,
+file, or external-message action gates before interpreter or oracle promotion.
 
 Partial witness hypotheses are active only until a newer same-source,
 same-kind witness supersedes them. When Moshi, OpenClaw, VoiceClaw, or classic

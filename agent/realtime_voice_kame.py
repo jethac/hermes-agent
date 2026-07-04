@@ -434,6 +434,24 @@ class KameOracleRequest:
     interface_audio_input_fallback: bool = False
     reflex_provider: str = ""
 
+    def __post_init__(self) -> None:
+        """Normalize witness hypotheses to the non-authoritative KAME contract."""
+
+        normalized: list[Mapping[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for value in self.auxiliary_transcript_hypotheses:
+            hypothesis = _auxiliary_transcript_hypothesis(value)
+            if not hypothesis:
+                continue
+            key = (str(hypothesis.get("source") or ""), str(hypothesis.get("text") or ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(hypothesis)
+            if len(normalized) >= 5:
+                break
+        object.__setattr__(self, "auxiliary_transcript_hypotheses", tuple(normalized))
+
     @property
     def raw_audio_available(self) -> bool:
         """Return whether this request carries primary raw-audio evidence."""
@@ -507,6 +525,17 @@ class KameOracleRequest:
         return self.intent_source or "reflex_audio"
 
     @property
+    def provisional_request_summary(self) -> Mapping[str, Any]:
+        """Return the pre-promotion request summary used for queueing/narration."""
+
+        return {
+            "text": self.intent.strip(),
+            "source": self.intent_source or "reflex_audio",
+            "authority": _kame_source_authority(self.intent_source, default="reflex_hypothesis"),
+            "tool_authority": False,
+        }
+
+    @property
     def evidence_authority(self) -> Mapping[str, str]:
         """Return explicit authority labels for evidence fields in this request."""
 
@@ -546,6 +575,7 @@ class KameOracleRequest:
                 "source": reflex_source,
                 "text": reflex_text,
                 "authority": "reflex_hypothesis",
+                "tool_authority": False,
             }
             if reflex_confidence is not None:
                 item["confidence"] = reflex_confidence
@@ -557,6 +587,7 @@ class KameOracleRequest:
                 "source": self.asr_transcript_source or "asr",
                 "text": self.asr_transcript.strip(),
                 "authority": "auxiliary_hypothesis",
+                "tool_authority": False,
             }
             if self.asr_transcript_confidence is not None:
                 item["confidence"] = self.asr_transcript_confidence
@@ -579,6 +610,7 @@ class KameOracleRequest:
                 "source": source,
                 "text": text,
                 "authority": "auxiliary_hypothesis",
+                "tool_authority": False,
             }
             confidence = _confidence(hypothesis.get("confidence"))
             if confidence is not None:
@@ -676,6 +708,7 @@ class KameOracleRequest:
             "kame_mode": self.mode,
             "kame_urgency": self.urgency,
             "kame_oracle_text_source": self.oracle_text_source,
+            "kame_provisional_request_summary": dict(self.provisional_request_summary),
             "kame_raw_audio_available": self.raw_audio_available,
             "kame_evidence_bundle_status": self.evidence_bundle_status,
             "kame_evidence_bundle_id": self.evidence_bundle_id,
@@ -1428,7 +1461,12 @@ def _auxiliary_transcript_hypotheses(payload: Mapping[str, Any]) -> tuple[Mappin
 def _auxiliary_transcript_hypothesis(value: object) -> dict[str, Any]:
     if isinstance(value, str):
         text = _optional_text(value)
-        return {"source": "unknown", "text": text, "authority": "hypothesis"} if text else {}
+        return {
+            "source": "unknown",
+            "text": text,
+            "authority": "hypothesis",
+            "tool_authority": False,
+        } if text else {}
     if not isinstance(value, Mapping):
         return {}
     text = (
@@ -1443,6 +1481,7 @@ def _auxiliary_transcript_hypothesis(value: object) -> dict[str, Any]:
         "source": source,
         "text": text,
         "authority": "hypothesis",
+        "tool_authority": False,
     }
     kind = _optional_text(value.get("kind"))
     if kind:
@@ -1456,6 +1495,23 @@ def _auxiliary_transcript_hypothesis(value: object) -> dict[str, Any]:
     language = _optional_text(value.get("language"))
     if language:
         hypothesis["language"] = language
+    partial = value.get("partial")
+    if isinstance(partial, bool):
+        hypothesis["partial"] = partial
+    superseded_partials = _transcript_hypothesis_superseded_partial_texts(
+        value.get("superseded_partial_texts")
+    )
+    if superseded_partials:
+        hypothesis["superseded_partial_texts"] = superseded_partials
+    speaker = _transcript_hypothesis_speaker_metadata(value)
+    if speaker:
+        hypothesis["speaker"] = speaker
+    channel = _transcript_hypothesis_channel_metadata(value)
+    if channel:
+        hypothesis["channel"] = channel
+    audio_time_range_ms = _transcript_hypothesis_audio_time_range_ms(value)
+    if audio_time_range_ms:
+        hypothesis["audio_time_range_ms"] = audio_time_range_ms
     adjudication = _transcript_hypothesis_adjudication(value)
     if adjudication:
         hypothesis["adjudication"] = adjudication
@@ -1463,6 +1519,43 @@ def _auxiliary_transcript_hypothesis(value: object) -> dict[str, Any]:
     if rejection_reasons:
         hypothesis["rejection_reasons"] = rejection_reasons
     return hypothesis
+
+
+def _transcript_hypothesis_superseded_partial_texts(value: object) -> tuple[str, ...]:
+    if isinstance(value, str):
+        raw_values: Sequence[object] = (value,)
+    elif isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
+        raw_values = value
+    else:
+        raw_values = ()
+    texts: list[str] = []
+    for item in raw_values:
+        text = _optional_text(item)
+        if text:
+            texts.append(text[:500])
+    return tuple(dict.fromkeys(texts))
+
+
+def _transcript_hypothesis_speaker_metadata(value: Mapping[str, Any]) -> dict[str, Any]:
+    raw = value.get("speaker") or value.get("speaker_metadata")
+    if not isinstance(raw, Mapping):
+        return {}
+    return _canonical_speaker_metadata(raw, user_id=None)
+
+
+def _transcript_hypothesis_channel_metadata(value: Mapping[str, Any]) -> dict[str, Any]:
+    raw = value.get("channel") or value.get("channel_metadata")
+    if not isinstance(raw, Mapping):
+        return {}
+    return _canonical_channel_metadata(raw)
+
+
+def _transcript_hypothesis_audio_time_range_ms(value: Mapping[str, Any]) -> tuple[int, int] | tuple[()]:
+    for key in ("audio_time_range_ms", "time_range_ms", "utterance_time_range_ms", "witness_time_range_ms"):
+        parsed = _audio_time_range_ms(value.get(key))
+        if parsed:
+            return parsed
+    return ()
 
 
 def _transcript_hypothesis_adjudication(value: Mapping[str, Any]) -> str:

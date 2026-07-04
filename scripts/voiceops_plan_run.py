@@ -1800,6 +1800,19 @@ async def build_plan_run_async(
                     "external_frontend_input_source": voice_operator["proofs"]["async_oracle_jobs"][
                         "external_frontend_input_source"
                     ],
+                    "external_frontend_provisional_request_summary": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "external_frontend_provisional_request_summary"
+                        ]
+                    ),
+                    "external_frontend_status_provisional_request_summary": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "external_frontend_status_provisional_request_summary"
+                        ]
+                    ),
+                    "external_frontend_provisional_request_summary_non_authoritative": voice_operator[
+                        "proofs"
+                    ]["async_oracle_jobs"]["external_frontend_provisional_request_summary_non_authoritative"],
                     "external_frontend_evidence_bundle_propagated": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_evidence_bundle_propagated"],
@@ -1812,6 +1825,9 @@ async def build_plan_run_async(
                     "external_frontend_hypothesis_not_durable_oracle_text": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_hypothesis_not_durable_oracle_text"],
+                    "external_frontend_witness_tool_authority_false": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_witness_tool_authority_false"],
                     "external_frontend_durable_user_messages_empty": voice_operator["proofs"]["async_oracle_jobs"][
                         "external_frontend_durable_user_messages_empty"
                     ],
@@ -1827,6 +1843,9 @@ async def build_plan_run_async(
                     "unpromoted_hypothesis_action_sinks_clean": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["unpromoted_hypothesis_action_sinks_clean"],
+                    "unpromoted_hypothesis_tool_authority_false": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unpromoted_hypothesis_tool_authority_false"],
                     "unpromoted_hypothesis_action_sink_keys_checked": list(
                         voice_operator["proofs"]["async_oracle_jobs"][
                             "unpromoted_hypothesis_action_sink_keys_checked"
