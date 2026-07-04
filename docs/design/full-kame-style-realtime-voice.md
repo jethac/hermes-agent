@@ -1233,11 +1233,12 @@ does it become a new user turn.
 The interpreter request should make that hierarchy visible in the wire format and
 prompt. Put the raw audio reference and timing fields in the primary input
 section, then put Moshi/open-S2S/classic-ASR text under a separate
-`transcript_hypotheses` or `auxiliary_transcript_hypotheses` field with
-`authority = "hypothesis"`. The prompt must explicitly tell the interpreter
-that transcript hypotheses can be wrong, clipped, hallucinated, stale, or from a
-different speaker, and that it should prefer raw-audio interpretation when the
-signals disagree.
+`transcript_hypotheses[]` field with `authority = "hypothesis"`. Older
+adapter-edge names such as `auxiliary_transcript_hypotheses` should be
+normalized into that field before the interpreter sees the packet. The prompt
+must explicitly tell the interpreter that transcript hypotheses can be wrong,
+clipped, hallucinated, stale, or from a different speaker, and that it should
+prefer raw-audio interpretation when the signals disagree.
 
 This also resolves the "fast reflex plus Gemma multilingual ASR" shape. Gemma is
 not merely a background ASR process and should not block acknowledgement. It is
@@ -1532,14 +1533,30 @@ The interpreter input bundle is the durable boundary between "live hearing" and
   },
   "reflex_route": "defer",
   "reflex_intent": "calculate a power",
-  "reflex_transcript_hypothesis": "three to the power of seventeen",
-  "auxiliary_transcript_hypotheses": [
+  "transcript_hypotheses": [
+    {
+      "source": "reflex",
+      "kind": "reflex_transcript_hypothesis",
+      "role": "witness_context",
+      "text": "three to the power of seventeen",
+      "partial": false,
+      "arrival_phase": "with_raw_audio",
+      "authority": "hypothesis",
+      "promotion_required": "interpreter_promoted_or_oracle_promoted",
+      "tool_authority": false
+    },
     {
       "source": "moshi",
+      "kind": "frontend_witness_hypothesis",
+      "role": "witness_context",
       "text": "what is three to the power of seventeen",
+      "partial": false,
       "confidence": 0.78,
       "latency_ms": 140,
-      "authority": "hypothesis"
+      "arrival_phase": "with_raw_audio",
+      "authority": "hypothesis",
+      "promotion_required": "interpreter_promoted_or_oracle_promoted",
+      "tool_authority": false
     }
   ],
   "interface_already_said": "I'm checking that."
@@ -1551,6 +1568,16 @@ evidence. Reflex and Moshi/S2S transcript strings are low-latency hints. Classic
 ASR output, when present, is another hint. The interpreter owns the decision to
 promote any wording into `interpreter_corrected_transcript`; nothing else in
 the bundle is durable user text by default.
+
+`transcript_hypotheses[]` is the canonical normalized field for every
+transcript-looking witness. Older names such as
+`auxiliary_transcript_hypotheses`, `reflex_transcript_hypothesis`,
+`transcript.partial`, `transcript.final`, `stt_text`, or provider-specific
+`query` fields are adapter-edge aliases only. They may be accepted at ingress,
+but the interpreter packet, oracle job record, readiness artifacts, and package
+audits should expose one canonical hypothesis list with explicit `kind`,
+`source`, `role`, `authority`, `promotion_required`, `tool_authority`, timing,
+and arrival-phase metadata.
 
 ### Oracle
 
@@ -1666,8 +1693,8 @@ Acceptance gates:
   `low_energy_non_speech`, `waveform_conflict`, and `provider_conflict`
 - text-only VoiceClaw/OpenClaw compatibility requests are marked degraded when
   no raw audio is available
-- oracle jobs must distinguish `reflex_transcript_hypothesis`,
-  `auxiliary_transcript_hypotheses`, and `interpreter_corrected_transcript`
+- oracle jobs must distinguish hypothesis entries inside
+  `transcript_hypotheses[]` from `interpreter_corrected_transcript`
 - durable transcript writes and tool-critical arguments must use interpreter or
   oracle judgment, not raw Moshi/ASR text alone
 - readiness artifacts must prove unpromoted witness text is absent from spend,
@@ -1822,19 +1849,28 @@ The interface should submit a compact structured oracle job request:
     "tool_authority": false
   },
   "reflex_intent": "compact live intent",
-  "reflex_transcript_hypothesis": {
-    "text": "three to the power of seventeen",
-    "kind": "reflex_transcript_hypothesis",
-    "authority": "hypothesis",
-    "tool_authority": false
-  },
-  "auxiliary_transcript_hypotheses": [
+  "transcript_hypotheses": [
+    {
+      "source": "reflex",
+      "kind": "reflex_transcript_hypothesis",
+      "role": "witness_context",
+      "text": "three to the power of seventeen",
+      "partial": false,
+      "arrival_phase": "with_raw_audio",
+      "authority": "hypothesis",
+      "promotion_required": "interpreter_promoted_or_oracle_promoted",
+      "tool_authority": false
+    },
     {
       "source": "moshi",
       "kind": "frontend_witness_hypothesis",
+      "role": "witness_context",
       "text": "three to the power of seventeen",
+      "partial": false,
       "confidence": 0.74,
+      "arrival_phase": "with_raw_audio",
       "authority": "hypothesis",
+      "promotion_required": "interpreter_promoted_or_oracle_promoted",
       "tool_authority": false
     }
   ],
@@ -2061,8 +2097,7 @@ provider = "openai_compatible"
 base_url = "http://127.0.0.1:PORT/v1"
 model = "gemma-4-E2B-it"
 audio_input = "required"
-include_reflex_transcript_hypothesis = true
-include_auxiliary_transcript_hypotheses = "when_available"
+include_transcript_hypotheses = "when_available"
 witness_transcript_policy = "context_only"
 prompt_input_order = ["raw_audio", "metadata", "reflex", "transcript_hypotheses"]
 timeout_ms = 2000

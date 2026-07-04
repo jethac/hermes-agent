@@ -692,8 +692,6 @@ Minimum fields:
 - `speaker_metadata`
 - `channel_metadata`
 - `reflex_intent`
-- `reflex_transcript_hypothesis`
-- `auxiliary_transcript_hypotheses`
 - `transcript_hypotheses[]` with `kind`, `source`, timing, partial/final state,
   confidence when available, `authority = "hypothesis"`, and
   `tool_authority = false`
@@ -715,6 +713,14 @@ more precise kind. Classic ASR belongs in the same list as
 `classic_asr_hypothesis`. None of these entries may patch `oracle_text`,
 durable history, or action arguments unless a trusted interpreter or oracle
 promotion field explicitly consumes and promotes them.
+
+Compatibility note: legacy ingress names such as
+`reflex_transcript_hypothesis`, `auxiliary_transcript_hypotheses`,
+`transcript.partial`, `transcript.final`, provider `stt_text`, or provider
+`query` fields are accepted only as adapter aliases. Runtime job state,
+interpreter evidence, readiness reports, and package audit should expose the
+normalized `transcript_hypotheses[]` list so Moshi/open-S2S text, reflex text,
+and classic ASR text all share the same hypothesis authority model.
 
 ### Job States
 
@@ -1074,9 +1080,9 @@ Responsibilities:
 - accept compact user intent, optional transcript evidence, frontend session id,
   and the text already spoken by the reflex
 - preserve nested evidence bundles from external S2S frontends, including
-  `audio_segment_ref`, `audio_time_range_ms`, `reflex_transcript_hypothesis`,
-  `auxiliary_transcript_hypotheses`, and correlation ids, instead of flattening
-  them into a single transcript string
+  `audio_segment_ref`, `audio_time_range_ms`, canonical
+  `transcript_hypotheses[]`, legacy transcript aliases, and correlation ids,
+  instead of flattening them into a single transcript string
 - create a normal oracle job with a Hermes session id and audit id only after
   raw-audio references are present in the same packet; otherwise mark the
   envelope degraded and keep transcript evidence hypothesis-only
