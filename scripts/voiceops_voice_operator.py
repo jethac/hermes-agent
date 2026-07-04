@@ -974,6 +974,7 @@ def build_live_probe_evidence_example() -> dict[str, Any]:
                     "source": "moshi",
                     "text": "[redacted witness hypothesis]",
                     "arrival_phase": "with_raw_audio",
+                    "adjudication": "corrected_by_audio",
                     "authority": "hypothesis",
                     "tool_authority": False,
                 }
@@ -1392,16 +1393,21 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
         hypotheses = []
 
     valid_hypothesis_observed = False
+    valid_hypothesis_adjudication_observed = False
+    mapping_hypothesis_count = 0
+    adjudicated_hypothesis_count = 0
     active_partial_observed = False
     hypothesis_phases: list[str] = []
     for index, hypothesis in enumerate(hypotheses):
         if not isinstance(hypothesis, Mapping):
             issues.append(f"live_turn:transcript_hypothesis_{index}_not_object")
             continue
+        mapping_hypothesis_count += 1
         kind = str(hypothesis.get("kind") or "").strip()
         source = str(hypothesis.get("source") or "").strip()
         authority = str(hypothesis.get("authority") or "").strip()
         arrival_phase = str(hypothesis.get("arrival_phase") or "").strip()
+        adjudication = str(hypothesis.get("adjudication") or "").strip()
         if not kind:
             issues.append(f"live_turn:transcript_hypothesis_{index}_missing_kind")
         elif kind not in LIVE_EVIDENCE_VALID_HYPOTHESIS_KINDS:
@@ -1421,14 +1427,24 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
             issues.append(f"live_turn:transcript_hypothesis_{index}_invalid_arrival_phase")
         else:
             hypothesis_phases.append(arrival_phase)
+        if not adjudication:
+            issues.append(f"live_turn:transcript_hypothesis_{index}_missing_adjudication")
+        elif adjudication not in LIVE_EVIDENCE_VALID_ADJUDICATION_OUTCOMES:
+            issues.append(f"live_turn:transcript_hypothesis_{index}_invalid_adjudication")
+        else:
+            adjudicated_hypothesis_count += 1
         if (
             kind in LIVE_EVIDENCE_VALID_HYPOTHESIS_KINDS
             and source
             and authority == "hypothesis"
             and hypothesis.get("tool_authority") is False
             and arrival_phase in LIVE_EVIDENCE_VALID_WITNESS_ARRIVAL_PHASES
+            and adjudication in LIVE_EVIDENCE_VALID_ADJUDICATION_OUTCOMES
         ):
             valid_hypothesis_observed = True
+    valid_hypothesis_adjudication_observed = (
+        mapping_hypothesis_count > 0 and adjudicated_hypothesis_count == mapping_hypothesis_count
+    )
 
     declared_phases = _normalized_string_list(live_turn.get("witness_arrival_phases"))
     if not declared_phases:
@@ -1484,6 +1500,7 @@ def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list
     return issues, {
         "witness_packet_observed": valid_hypothesis_observed and bool(declared_phases),
         "active_partial_absent": not active_partial_observed,
+        "transcript_hypothesis_adjudication_observed": valid_hypothesis_adjudication_observed,
         "interpreter_input_order_observed": input_order == LIVE_EVIDENCE_REQUIRED_INTERPRETER_INPUT_ORDER,
         "interpreter_prompt_policy_observed": valid_prompt_policy_observed,
         "interpreter_adjudication_observed": valid_adjudication_observed,
@@ -4547,6 +4564,7 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
                         "source": "moshi",
                         "text": "[redacted witness hypothesis]",
                         "arrival_phase": "with_raw_audio",
+                        "adjudication": "corrected_by_audio",
                         "authority": "hypothesis",
                         "tool_authority": False,
                     }

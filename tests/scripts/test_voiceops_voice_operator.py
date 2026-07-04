@@ -927,6 +927,7 @@ def _complete_live_turn_fields(*, speech_end_to_first_audio_ms: int = 950, barge
                 "source": "moshi",
                 "text": "[redacted witness hypothesis]",
                 "arrival_phase": "with_raw_audio",
+                "adjudication": "corrected_by_audio",
                 "authority": "hypothesis",
                 "tool_authority": False,
             }
@@ -2826,7 +2827,9 @@ def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing
     assert live_evidence["live_turn"]["transcript_only_witness_rejected_for_full_kame"] is False
     assert live_evidence["live_turn"]["witness_packet_observed"] is True
     assert live_evidence["live_turn"]["active_partial_absent"] is True
+    assert live_evidence["live_turn"]["transcript_hypothesis_adjudication_observed"] is True
     assert live_evidence["live_turn"]["interpreter_input_order_observed"] is True
+    assert live_evidence["live_turn"]["interpreter_prompt_policy_observed"] is True
     assert live_evidence["live_turn"]["interpreter_adjudication_observed"] is True
     assert live_evidence["live_turn"]["promoted_evidence_observed"] is True
     assert not any("collector_attestation" in issue for issue in live_evidence["issues"])
@@ -3005,8 +3008,32 @@ def test_live_evidence_rejects_authoritative_or_unphased_witness_hypothesis():
     assert "live_turn:transcript_hypothesis_0_authority_not_hypothesis" in live_evidence["issues"]
     assert "live_turn:transcript_hypothesis_0_tool_authority_not_false" in live_evidence["issues"]
     assert "live_turn:transcript_hypothesis_0_missing_arrival_phase" in live_evidence["issues"]
+    assert "live_turn:transcript_hypothesis_0_missing_adjudication" in live_evidence["issues"]
     assert "live_turn:interpreter_input_order_mismatch" in live_evidence["issues"]
+    assert live_evidence["live_turn"]["transcript_hypothesis_adjudication_observed"] is False
     assert live_evidence["live_turn"]["ok"] is False
+
+
+def test_live_evidence_rejects_hypothesis_without_bound_adjudication():
+    missing = _complete_live_evidence()
+    missing["live_turn"]["transcript_hypotheses"][0].pop("adjudication")
+
+    missing_result = validate_live_probe_evidence(missing)
+
+    assert "live_turn:transcript_hypothesis_0_missing_adjudication" in missing_result["issues"]
+    assert missing_result["live_turn"]["transcript_hypothesis_adjudication_observed"] is False
+    assert missing_result["live_turn"]["witness_packet_observed"] is False
+    assert missing_result["live_turn"]["ok"] is False
+
+    invalid = _complete_live_evidence()
+    invalid["live_turn"]["transcript_hypotheses"][0]["adjudication"] = "trusted_without_audio"
+
+    invalid_result = validate_live_probe_evidence(invalid)
+
+    assert "live_turn:transcript_hypothesis_0_invalid_adjudication" in invalid_result["issues"]
+    assert invalid_result["live_turn"]["transcript_hypothesis_adjudication_observed"] is False
+    assert invalid_result["live_turn"]["witness_packet_observed"] is False
+    assert invalid_result["live_turn"]["ok"] is False
 
 
 def test_live_evidence_rejects_stale_source_artifact_attestation_hash(tmp_path):
