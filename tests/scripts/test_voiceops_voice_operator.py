@@ -1978,6 +1978,14 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     ]
     assert runtime_action_gate["ok"] is True
     assert runtime_action_gate["evidence"] == "async_oracle_smoke_plus_runtime_action_gate_tests"
+    assert (
+        "tests/agent/test_realtime_voice.py::test_async_oracle_unflagged_high_risk_tool_call_fails_closed"
+        in runtime_action_gate["test_refs"]
+    )
+    assert (
+        "tests/agent/test_realtime_voice.py::test_async_oracle_unflagged_high_risk_tool_result_fails_closed"
+        in runtime_action_gate["test_refs"]
+    )
     assert report["proofs"]["async_oracle_jobs"]["durable_resume_contract_smoke_ok"] is True
     assert (
         report["proofs"]["async_oracle_jobs"]["durable_resume_contract_schema_version"]
@@ -2839,6 +2847,22 @@ def test_voice_operator_validation_accepts_current_async_acceptance_test_refs():
         "tests/gateway/test_voice_command.py::TestDiscordVoiceChannelMethods::test_leave_voice_channel_cleans_up"
         in report["async_oracle_acceptance"]["discord_session_cleanup_preserves_oracle_state"]["test_refs"]
     )
+    runtime_action_gate = report["async_oracle_acceptance"][
+        "runtime_kame_action_gate_enforces_promoted_evidence"
+    ]
+    assert (
+        "tests/agent/test_realtime_voice.py::test_async_oracle_unflagged_high_risk_tool_call_fails_closed"
+        in runtime_action_gate["test_refs"]
+    )
+    assert (
+        "tests/agent/test_realtime_voice.py::test_async_oracle_unflagged_nested_high_risk_tool_call_fails_closed"
+        in runtime_action_gate["test_refs"]
+    )
+    assert (
+        "tests/agent/test_realtime_voice.py::test_async_oracle_unflagged_high_risk_tool_result_fails_closed"
+        in runtime_action_gate["test_refs"]
+    )
+    assert runtime_action_gate["test_ref_count"] == len(runtime_action_gate["test_refs"])
 
 
 def test_voice_operator_validation_rejects_stale_async_acceptance_test_ref():

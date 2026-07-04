@@ -221,6 +221,10 @@ ASYNC_ORACLE_ACCEPTANCE_TEST_REFS = {
     "runtime_action_gate": [
         "tests/agent/test_realtime_voice.py::test_oracle_job_approval_marks_hypothesis_only_action_gate_unsafe",
         "tests/agent/test_realtime_voice.py::test_oracle_job_approval_accepts_consumed_promoted_interpreter_evidence",
+        "tests/agent/test_realtime_voice.py::test_async_oracle_unflagged_high_risk_tool_call_fails_closed",
+        "tests/agent/test_realtime_voice.py::test_async_oracle_high_risk_tool_aliases_require_action_gate",
+        "tests/agent/test_realtime_voice.py::test_async_oracle_unflagged_nested_high_risk_tool_call_fails_closed",
+        "tests/agent/test_realtime_voice.py::test_async_oracle_unflagged_high_risk_tool_result_fails_closed",
         "tests/agent/test_realtime_voice_oracle_jobs.py::test_waiting_for_approval_holds_capacity_and_emits_redacted_event",
         "tests/agent/test_realtime_voice_async_oracle_smoke.py::test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation",
     ],
