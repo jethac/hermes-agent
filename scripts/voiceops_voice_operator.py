@@ -2467,6 +2467,10 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
             "witness_fusion_adjudication_outcomes_observed"
         )
         is True
+        and smoke.get("witness_fusion_multi_speaker_witness_smoke_ok") is True
+        and smoke.get("witness_fusion_multi_speaker_wrong_witness_rejected") is True
+        and smoke.get("witness_fusion_multi_speaker_bound_to_second_human") is True
+        and smoke.get("witness_fusion_multi_speaker_action_sinks_clean") is True
         and smoke.get("witness_fusion_adjudications")
         == {
             "early": ["corrected_by_audio"],
@@ -3909,6 +3913,36 @@ def build_voice_operator_report(
             ),
             "witness_fusion_same_turn_expected_merge_key": str(
                 async_oracle_smoke.get("witness_fusion_same_turn_expected_merge_key") or ""
+            ),
+            "witness_fusion_multi_speaker_witness_smoke_ok": bool(
+                async_oracle_smoke.get("witness_fusion_multi_speaker_witness_smoke_ok")
+            ),
+            "witness_fusion_multi_speaker_wrong_witness_text": str(
+                async_oracle_smoke.get("witness_fusion_multi_speaker_wrong_witness_text") or ""
+            ),
+            "witness_fusion_multi_speaker_wrong_witness": dict(
+                async_oracle_smoke.get("witness_fusion_multi_speaker_wrong_witness") or {}
+            ),
+            "witness_fusion_multi_speaker_wrong_witness_rejected": bool(
+                async_oracle_smoke.get("witness_fusion_multi_speaker_wrong_witness_rejected")
+            ),
+            "witness_fusion_multi_speaker_wrong_witness_speaker": dict(
+                async_oracle_smoke.get("witness_fusion_multi_speaker_wrong_witness_speaker") or {}
+            ),
+            "witness_fusion_multi_speaker_wrong_witness_channel": dict(
+                async_oracle_smoke.get("witness_fusion_multi_speaker_wrong_witness_channel") or {}
+            ),
+            "witness_fusion_multi_speaker_accepted_speaker": dict(
+                async_oracle_smoke.get("witness_fusion_multi_speaker_accepted_speaker") or {}
+            ),
+            "witness_fusion_multi_speaker_accepted_channel": dict(
+                async_oracle_smoke.get("witness_fusion_multi_speaker_accepted_channel") or {}
+            ),
+            "witness_fusion_multi_speaker_bound_to_second_human": bool(
+                async_oracle_smoke.get("witness_fusion_multi_speaker_bound_to_second_human")
+            ),
+            "witness_fusion_multi_speaker_action_sinks_clean": bool(
+                async_oracle_smoke.get("witness_fusion_multi_speaker_action_sinks_clean")
             ),
             "witness_fusion_audio_metadata": dict(
                 async_oracle_smoke.get("witness_fusion_audio_metadata") or {}

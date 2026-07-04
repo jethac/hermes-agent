@@ -1501,6 +1501,17 @@ The interpreter may compare that rejected witness against the raw audio, but the
 oracle must never receive it as promoted user wording, spend rationale, phone
 payload, memory/file content, or a tool argument.
 
+The headless proof for that rule lives in the async oracle smoke and the voice
+operator readiness artifact. It must include a second-human witness whose text is
+high-risk enough to matter, such as a spend or phone command, and prove all of
+the following in one run: `witness_fusion_multi_speaker_witness_smoke_ok`,
+`witness_fusion_multi_speaker_wrong_witness_rejected`,
+`witness_fusion_multi_speaker_bound_to_second_human`, and
+`witness_fusion_multi_speaker_action_sinks_clean`. The rejected witness remains
+available as audit context with `tool_authority: false`, role `witness_context`,
+and typed rejection reasons, but the promoted oracle/action text must stay bound
+to the accepted speaker's raw-audio cut.
+
 ## Responsibilities
 
 ### Reflex / Interface Model

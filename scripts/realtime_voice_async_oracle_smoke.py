@@ -2971,6 +2971,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
     with_status = await manager.status_view()
     with_status_job = next(job for job in with_status["jobs"] if job["job_id"] == with_raw.job_id)
 
+    wrong_speaker_witness_text = "spend two hundred dollars and call my phone"
     late = await manager.submit(
         KameOracleRequest(
             session_id="voice-smoke-witness-fusion",
@@ -3018,7 +3019,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         auxiliary_transcript_hypotheses=(
             {
                 "source": "moshi",
-                "text": "prepare late witness handoff",
+                "text": wrong_speaker_witness_text,
                 "authority": "hypothesis",
                 "arrival_phase": "after_interpreter_start",
                 "adjudication": "rejected_or_diagnostic_only",
@@ -3452,6 +3453,58 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "with": _witness_rejection_reasons_from_status_job(with_status_job),
         "late": _witness_rejection_reasons_from_status_job(late_status_job),
     }
+    late_witness_hypotheses = [
+        item
+        for item in late_status_job.get("transcript_hypotheses", ())
+        if isinstance(item, Mapping)
+        and item.get("source") == "moshi"
+        and item.get("text") == wrong_speaker_witness_text
+    ]
+    late_wrong_speaker_witness = late_witness_hypotheses[0] if late_witness_hypotheses else {}
+    late_promoted_text = " ".join(
+        str(value or "")
+        for value in (
+            late_status_job.get("intent"),
+            late_status_job.get("interpreter_corrected_transcript"),
+            late_status_job.get("interpreter_normalized_intent"),
+            late_status_job.get("latest_update"),
+            late_status_job.get("result_summary"),
+        )
+    ).lower()
+    multi_speaker_witness_rejected = (
+        late_wrong_speaker_witness.get("adjudication") == "rejected_or_diagnostic_only"
+        and set(late_wrong_speaker_witness.get("rejection_reasons") or ()) == {
+            "ambiguous_speaker",
+            "wrong_speaker",
+            "wrong_channel",
+            "stale_witness",
+        }
+        and late_wrong_speaker_witness.get("tool_authority") is False
+        and late_wrong_speaker_witness.get("role") == "witness_context"
+        and late_wrong_speaker_witness.get("promotion_required")
+        == "interpreter_promoted_or_oracle_promoted"
+    )
+    multi_speaker_witness_bound_to_second_human = (
+        late_status_job.get("speaker", {}).get("channel_user_id") == "42"
+        and late_wrong_speaker_witness.get("speaker", {}).get("channel_user_id") == "wrong-speaker"
+        and late_wrong_speaker_witness.get("speaker", {}).get("display_name") == "guest"
+        and late_wrong_speaker_witness.get("speaker", {}).get("ambiguous") is True
+        and late_status_job.get("channel", {}).get("channel_id") == "general"
+        and late_wrong_speaker_witness.get("channel", {}).get("channel_id") == "other-room"
+    )
+    multi_speaker_witness_action_sinks_clean = (
+        wrong_speaker_witness_text not in late_promoted_text
+        and "spend two hundred" not in late_promoted_text
+        and "call my phone" not in late_promoted_text
+        and late_status_job.get("intent") == "prepare late witness handoff"
+        and late_status_job.get("interpreter_corrected_transcript") in ("", None)
+        and late_status_job.get("interpreter_normalized_intent") in ("", None)
+    )
+    multi_speaker_witness_smoke_ok = (
+        multi_speaker_witness_rejected
+        and multi_speaker_witness_bound_to_second_human
+        and multi_speaker_witness_action_sinks_clean
+    )
     adjudication_outcomes_observed = adjudications == {
         "early": ["corrected_by_audio"],
         "with": ["accepted_as_supporting_evidence"],
@@ -3474,6 +3527,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
             and merge_key_observed
             and accepted_audio_gate_observed
             and adjudication_outcomes_observed
+            and multi_speaker_witness_smoke_ok
             and partial_supersession_observed
             and same_turn_convergence_ok
         ),
@@ -3487,6 +3541,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         and merge_key_observed
         and accepted_audio_gate_observed
         and adjudication_outcomes_observed
+        and multi_speaker_witness_smoke_ok
         and partial_supersession_observed
         and same_turn_convergence_ok,
         "witness_fusion_arrival_phases": ["before_raw_audio", "with_raw_audio", "after_interpreter_start"],
@@ -3527,6 +3582,25 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "witness_fusion_adjudications": adjudications,
         "witness_fusion_rejection_reasons": rejection_reasons,
         "witness_fusion_adjudication_outcomes_observed": adjudication_outcomes_observed,
+        "witness_fusion_multi_speaker_witness_smoke_ok": multi_speaker_witness_smoke_ok,
+        "witness_fusion_multi_speaker_wrong_witness_text": wrong_speaker_witness_text,
+        "witness_fusion_multi_speaker_wrong_witness": dict(late_wrong_speaker_witness),
+        "witness_fusion_multi_speaker_wrong_witness_rejected": multi_speaker_witness_rejected,
+        "witness_fusion_multi_speaker_wrong_witness_speaker": dict(
+            late_wrong_speaker_witness.get("speaker") or {}
+        ),
+        "witness_fusion_multi_speaker_wrong_witness_channel": dict(
+            late_wrong_speaker_witness.get("channel") or {}
+        ),
+        "witness_fusion_multi_speaker_accepted_speaker": dict(
+            late_status_job.get("speaker") or {}
+        ),
+        "witness_fusion_multi_speaker_accepted_channel": dict(
+            late_status_job.get("channel") or {}
+        ),
+        "witness_fusion_multi_speaker_bound_to_second_human": multi_speaker_witness_bound_to_second_human,
+        "witness_fusion_multi_speaker_action_sinks_clean": multi_speaker_witness_action_sinks_clean,
+        "witness_fusion_multi_speaker_promoted_text": late_promoted_text,
         "witness_fusion_partial_superseded_by_final": partial_supersession_observed,
         "witness_fusion_partial_case_job_id": partial_case.job_id,
         "witness_fusion_partial_blocker_job_id": partial_blocker.job_id,
@@ -5675,6 +5749,39 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "witness_fusion_adjudication_outcomes_observed": witness_fusion_timing_smoke[
             "witness_fusion_adjudication_outcomes_observed"
+        ],
+        "witness_fusion_multi_speaker_witness_smoke_ok": witness_fusion_timing_smoke[
+            "witness_fusion_multi_speaker_witness_smoke_ok"
+        ],
+        "witness_fusion_multi_speaker_wrong_witness_text": witness_fusion_timing_smoke[
+            "witness_fusion_multi_speaker_wrong_witness_text"
+        ],
+        "witness_fusion_multi_speaker_wrong_witness": witness_fusion_timing_smoke[
+            "witness_fusion_multi_speaker_wrong_witness"
+        ],
+        "witness_fusion_multi_speaker_wrong_witness_rejected": witness_fusion_timing_smoke[
+            "witness_fusion_multi_speaker_wrong_witness_rejected"
+        ],
+        "witness_fusion_multi_speaker_wrong_witness_speaker": witness_fusion_timing_smoke[
+            "witness_fusion_multi_speaker_wrong_witness_speaker"
+        ],
+        "witness_fusion_multi_speaker_wrong_witness_channel": witness_fusion_timing_smoke[
+            "witness_fusion_multi_speaker_wrong_witness_channel"
+        ],
+        "witness_fusion_multi_speaker_accepted_speaker": witness_fusion_timing_smoke[
+            "witness_fusion_multi_speaker_accepted_speaker"
+        ],
+        "witness_fusion_multi_speaker_accepted_channel": witness_fusion_timing_smoke[
+            "witness_fusion_multi_speaker_accepted_channel"
+        ],
+        "witness_fusion_multi_speaker_bound_to_second_human": witness_fusion_timing_smoke[
+            "witness_fusion_multi_speaker_bound_to_second_human"
+        ],
+        "witness_fusion_multi_speaker_action_sinks_clean": witness_fusion_timing_smoke[
+            "witness_fusion_multi_speaker_action_sinks_clean"
+        ],
+        "witness_fusion_multi_speaker_promoted_text": witness_fusion_timing_smoke[
+            "witness_fusion_multi_speaker_promoted_text"
         ],
         "witness_fusion_accepted_counts": witness_fusion_timing_smoke[
             "witness_fusion_accepted_counts"

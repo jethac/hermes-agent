@@ -379,7 +379,10 @@ Target KAME layout:
   payload, memory/file content, or tool arguments unless the interpreter
   promotes it from the matching raw-audio cut. Wrong-speaker, wrong-channel,
   stale, and ambiguous-speaker witnesses should fail closed with typed rejection
-  reasons.
+  reasons. The headless acceptance proof is the
+  `witness_fusion_multi_speaker_*` smoke/readiness family: it uses a second-human
+  spend/phone witness, rejects it as diagnostic-only, proves it is bound to the
+  wrong speaker/channel, and proves promoted oracle/action sinks remain clean.
 - Witness-fusion acceptance rule: when raw audio and Moshi/OpenClaw/VoiceClaw
   witness text are both present, artifacts should prove a single stable
   `evidence_bundle_id`, a single interpreter merge path, and no duplicate oracle

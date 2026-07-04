@@ -784,7 +784,10 @@ class OracleJobManager:
             ),
             reflex_transcript_arrival_phase=_request_reflex_transcript_arrival_phase(request),
             auxiliary_transcript_hypotheses=_compact_auxiliary_transcript_hypotheses(
-                request.auxiliary_transcript_hypotheses
+                request.auxiliary_transcript_hypotheses,
+                speaker_metadata=request.speaker_metadata,
+                channel_metadata=request.channel_metadata,
+                audio_time_range_ms=request.audio_time_range_ms,
             ),
             speaker_metadata=_compact_speaker_metadata(request.speaker_metadata),
             channel_metadata=_compact_channel_metadata(request.channel_metadata),
@@ -862,7 +865,10 @@ class OracleJobManager:
         )
         job.reflex_transcript_arrival_phase = _request_reflex_transcript_arrival_phase(merged_request)
         job.auxiliary_transcript_hypotheses = _compact_auxiliary_transcript_hypotheses(
-            merged_request.auxiliary_transcript_hypotheses
+            merged_request.auxiliary_transcript_hypotheses,
+            speaker_metadata=merged_request.speaker_metadata,
+            channel_metadata=merged_request.channel_metadata,
+            audio_time_range_ms=merged_request.audio_time_range_ms,
         )
         job.requested_response_style = dict(merged_request.requested_response_style or {})
         job.metadata = merged_request.to_metadata()
@@ -1329,6 +1335,15 @@ def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
         if superseded_partials:
             item["superseded_partial_texts"] = superseded_partials
             item["superseded_partial_count"] = len(superseded_partials)
+        hypothesis_speaker = _compact_hypothesis_speaker_metadata(value)
+        if hypothesis_speaker:
+            item["speaker"] = hypothesis_speaker
+        hypothesis_channel = _compact_hypothesis_channel_metadata(value)
+        if hypothesis_channel:
+            item["channel"] = hypothesis_channel
+        hypothesis_audio_range = _compact_hypothesis_audio_time_range_ms(value)
+        if hypothesis_audio_range:
+            item["audio_time_range_ms"] = hypothesis_audio_range
         adjudication = _compact_transcript_hypothesis_adjudication(value)
         if adjudication:
             item["adjudication"] = adjudication
@@ -2113,7 +2128,12 @@ def _compact_transcript_hypothesis_rejection_reasons(value: Mapping[str, Any]) -
 
 
 def _request_with_compact_auxiliary_hypotheses(request: KameOracleRequest) -> KameOracleRequest:
-    compact = _compact_auxiliary_transcript_hypotheses(request.auxiliary_transcript_hypotheses)
+    compact = _compact_auxiliary_transcript_hypotheses(
+        request.auxiliary_transcript_hypotheses,
+        speaker_metadata=request.speaker_metadata,
+        channel_metadata=request.channel_metadata,
+        audio_time_range_ms=request.audio_time_range_ms,
+    )
     if tuple(request.auxiliary_transcript_hypotheses or ()) == compact:
         return request
     return dataclasses.replace(request, auxiliary_transcript_hypotheses=compact)
@@ -2208,14 +2228,6 @@ def _promote_interpreter_evidence(job: OracleJob, evidence: Mapping[str, Any]) -
             ) or "reflex_audio"
             job.reflex_transcript_confidence = _compact_confidence(reflex_hypothesis.get("confidence"))  # type: ignore[arg-type]
             job.reflex_transcript_arrival_phase = _compact_witness_arrival_phase(reflex_hypothesis)
-    auxiliary = evidence.get("auxiliary_transcript_hypotheses")
-    if isinstance(auxiliary, tuple):
-        job.auxiliary_transcript_hypotheses = _compact_auxiliary_transcript_hypotheses(
-            [
-                *[item for item in job.auxiliary_transcript_hypotheses if isinstance(item, Mapping)],
-                *[item for item in auxiliary if isinstance(item, Mapping)],
-            ]
-        )
     speaker = evidence.get("speaker")
     if isinstance(speaker, Mapping):
         compact_speaker = _compact_speaker_metadata(speaker)
@@ -2226,6 +2238,17 @@ def _promote_interpreter_evidence(job: OracleJob, evidence: Mapping[str, Any]) -
         compact_channel = _compact_channel_metadata(channel)
         if compact_channel:
             job.channel_metadata = compact_channel
+    auxiliary = evidence.get("auxiliary_transcript_hypotheses")
+    if isinstance(auxiliary, tuple):
+        job.auxiliary_transcript_hypotheses = _compact_auxiliary_transcript_hypotheses(
+            [
+                *[item for item in job.auxiliary_transcript_hypotheses if isinstance(item, Mapping)],
+                *[item for item in auxiliary if isinstance(item, Mapping)],
+            ],
+            speaker_metadata=job.speaker_metadata,
+            channel_metadata=job.channel_metadata,
+            audio_time_range_ms=job.audio_time_range_ms,
+        )
     transcript = _compact_evidence_text(evidence.get("corrected_transcript"), limit=500)
     if transcript:
         job.interpreter_corrected_transcript = transcript
