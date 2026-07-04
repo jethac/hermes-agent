@@ -187,11 +187,18 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
     assert "sk_test" not in job.reflex_transcript_hypothesis
     assert job.reflex_transcript_source == "reflex_audio"
     assert job.auxiliary_transcript_hypotheses == (
-        {"source": "moshi", "text": "three to the power of seventeen", "authority": "hypothesis", "confidence": 0.78},
+        {
+            "source": "moshi",
+            "text": "three to the power of seventeen",
+            "authority": "hypothesis",
+            "tool_authority": False,
+            "confidence": 0.78,
+        },
         {
             "source": "asr",
             "text": "what is three to the power of seventeen",
             "authority": "hypothesis",
+            "tool_authority": False,
             "confidence": 0.92,
         },
     )
@@ -249,10 +256,11 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
     assert "sk_test" not in job_status["transcript_hypotheses"][0]["text"]
     assert job_status["transcript_hypotheses"][1:] == (
         {
-            "kind": "s2s_transcript_hypothesis",
+            "kind": "frontend_witness_hypothesis",
             "source": "moshi",
             "text": "three to the power of seventeen",
             "authority": "auxiliary_hypothesis",
+            "tool_authority": False,
             "confidence": 0.78,
         },
         {
@@ -260,6 +268,7 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
             "source": "asr",
             "text": "what is three to the power of seventeen",
             "authority": "auxiliary_hypothesis",
+            "tool_authority": False,
             "confidence": 0.92,
         },
     )

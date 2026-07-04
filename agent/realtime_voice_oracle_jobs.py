@@ -1148,6 +1148,13 @@ def _job_transcript_hypothesis_kind(source: str) -> str:
         return "classic_asr_hypothesis"
     if "reflex" in normalized:
         return "reflex_transcript_hypothesis"
+    if (
+        "moshi" in normalized
+        or "voiceclaw" in normalized
+        or "openclaw" in normalized
+        or "frontend_witness" in normalized
+    ):
+        return "frontend_witness_hypothesis"
     return "s2s_transcript_hypothesis"
 
 

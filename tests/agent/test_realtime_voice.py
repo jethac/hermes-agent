@@ -14228,7 +14228,6 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
                     "partial": False,
                 },
                 {
-                    "kind": "s2s_transcript_hypothesis",
                     "source": "moshi",
                     "text": "prepare phone handoff",
                     "authority": "auxiliary_hypothesis",
@@ -14289,7 +14288,8 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
             "source": "moshi",
             "text": "prepare phone handoff",
             "authority": "hypothesis",
-            "kind": "s2s_transcript_hypothesis",
+            "tool_authority": False,
+            "kind": "frontend_witness_hypothesis",
             "confidence": 0.74,
             "latency_ms": 132,
         },
@@ -14297,6 +14297,7 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
             "source": "asr",
             "text": "prepare the phone hand off",
             "authority": "hypothesis",
+            "tool_authority": False,
             "kind": "classic_asr_hypothesis",
             "confidence": 0.69,
         },
@@ -14307,13 +14308,15 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
             "source": "moshi-reflex",
             "text": "prepare the phone handoff",
             "authority": "reflex_hypothesis",
+            "tool_authority": False,
             "confidence": 0.81,
         },
         {
-            "kind": "s2s_transcript_hypothesis",
+            "kind": "frontend_witness_hypothesis",
             "source": "moshi",
             "text": "prepare phone handoff",
             "authority": "auxiliary_hypothesis",
+            "tool_authority": False,
             "confidence": 0.74,
             "latency_ms": 132,
         },
@@ -14322,6 +14325,7 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
             "source": "asr",
             "text": "prepare the phone hand off",
             "authority": "auxiliary_hypothesis",
+            "tool_authority": False,
             "confidence": 0.69,
         },
     )
@@ -14353,7 +14357,6 @@ def test_external_kame_audio_metadata_without_segment_ref_is_degraded():
             },
             "transcript_hypotheses": [
                 {
-                    "kind": "s2s_transcript_hypothesis",
                     "source": "moshi",
                     "text": "prepare phone handoff",
                     "authority": "auxiliary_hypothesis",
@@ -14534,6 +14537,7 @@ def test_external_kame_ambiguous_frontend_transcript_is_witness_hypothesis(front
             "source": frontend_source,
             "text": "misheard spend request",
             "authority": "hypothesis",
+            "tool_authority": False,
         },
     )
     assert metadata["kame_transcript_hypotheses"] == (
@@ -14542,6 +14546,7 @@ def test_external_kame_ambiguous_frontend_transcript_is_witness_hypothesis(front
             "source": frontend_source,
             "text": "misheard spend request",
             "authority": "auxiliary_hypothesis",
+            "tool_authority": False,
         },
     )
 

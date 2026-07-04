@@ -2032,6 +2032,17 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
                 async_smoke.get("external_frontend_source_reached_oracle")
             ),
             "external_frontend_input_source": async_smoke.get("external_frontend_input_source"),
+            "external_frontend_provisional_request_summary": async_smoke.get(
+                "external_frontend_provisional_request_summary"
+            )
+            or {},
+            "external_frontend_status_provisional_request_summary": async_smoke.get(
+                "external_frontend_status_provisional_request_summary"
+            )
+            or {},
+            "external_frontend_provisional_request_summary_non_authoritative": bool(
+                async_smoke.get("external_frontend_provisional_request_summary_non_authoritative")
+            ),
             "external_frontend_evidence_bundle_propagated": bool(
                 async_smoke.get("external_frontend_evidence_bundle_propagated")
             ),
@@ -2056,6 +2067,9 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "external_frontend_evidence_bundle_transcript_hypotheses_count": async_smoke.get(
                 "external_frontend_evidence_bundle_transcript_hypotheses_count"
             ),
+            "external_frontend_witness_tool_authority_false": bool(
+                async_smoke.get("external_frontend_witness_tool_authority_false")
+            ),
             "external_frontend_direct_tool_authority_exposed": bool(
                 async_smoke.get("external_frontend_direct_tool_authority_exposed")
             ),
@@ -2070,6 +2084,12 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             ),
             "unpromoted_hypothesis_status_bundle_transcript_hypotheses_count": async_smoke.get(
                 "unpromoted_hypothesis_status_bundle_transcript_hypotheses_count"
+            ),
+            "unpromoted_hypothesis_tool_authority": async_smoke.get(
+                "unpromoted_hypothesis_tool_authority"
+            ),
+            "unpromoted_hypothesis_tool_authority_false": bool(
+                async_smoke.get("unpromoted_hypothesis_tool_authority_false")
             ),
             "witness_fusion_timing_smoke_ok": bool(async_smoke.get("witness_fusion_timing_smoke_ok")),
             "witness_fusion_arrival_phases": async_smoke.get("witness_fusion_arrival_phases") or [],
@@ -2091,6 +2111,13 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "witness_fusion_no_duplicate_oracle_jobs": bool(
                 async_smoke.get("witness_fusion_no_duplicate_oracle_jobs")
             ),
+            "witness_fusion_partial_superseded_by_final": bool(
+                async_smoke.get("witness_fusion_partial_superseded_by_final")
+            ),
+            "witness_fusion_partial_active_hypothesis": async_smoke.get(
+                "witness_fusion_partial_active_hypothesis"
+            )
+            or {},
             "witness_fusion_adjudications": async_smoke.get("witness_fusion_adjudications") or {},
             "witness_fusion_rejection_reasons": async_smoke.get("witness_fusion_rejection_reasons") or {},
             "witness_fusion_adjudication_outcomes_observed": bool(

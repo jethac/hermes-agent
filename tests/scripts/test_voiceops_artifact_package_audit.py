@@ -198,13 +198,29 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["audit_scalar_payload_redacted"] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_terminal_correlation_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_completion_tool_call_id"] = "wrong-call"
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_provisional_request_summary"][
+        "tool_authority"
+    ] = True
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_status_provisional_request_summary"][
+        "authority"
+    ] = "oracle_promoted"
+    readiness["proofs"]["async_oracle_jobs"][
+        "external_frontend_provisional_request_summary_non_authoritative"
+    ] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_evidence_bundle_id_stable"] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_evidence_merge_key"] = "kame-merge-wrong"
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_evidence_merge_key_propagated"] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_evidence_bundle_single_turn"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_tool_authority_false"] = False
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_single_bundle_observed"] = False
+    readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_tool_authority"] = True
+    readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_tool_authority_false"] = False
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_early_single_bundle"] = False
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_evidence_merge_keys"] = {"early": "kame-merge-wrong"}
+    readiness["proofs"]["async_oracle_jobs"]["witness_fusion_partial_superseded_by_final"] = False
+    readiness["proofs"]["async_oracle_jobs"]["witness_fusion_partial_active_hypothesis"][
+        "tool_authority"
+    ] = True
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_rejection_reasons"] = {"late": ["wrong_channel"]}
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_adjudication_outcomes_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_smoke_ok"] = False
@@ -241,6 +257,18 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
         in report["issues"]
     )
     assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_provisional_request_summary_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_status_provisional_request_summary_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_provisional_request_summary_non_authoritative_mismatch"
+        in report["issues"]
+    )
+    assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_evidence_bundle_id_stable_mismatch"
         in report["issues"]
     )
@@ -257,7 +285,19 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
         in report["issues"]
     )
     assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_witness_tool_authority_false_mismatch"
+        in report["issues"]
+    )
+    assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.unpromoted_hypothesis_single_bundle_observed_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.unpromoted_hypothesis_tool_authority_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.unpromoted_hypothesis_tool_authority_false_mismatch"
         in report["issues"]
     )
     assert (
@@ -270,6 +310,14 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_rejection_reasons_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_partial_superseded_by_final_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_partial_active_hypothesis_mismatch"
         in report["issues"]
     )
     assert (

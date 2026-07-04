@@ -407,8 +407,8 @@ input must keep provenance until a later layer promotes it.
 | `raw_audio` | transport/session cut | interpreter evidence, replay/debug, disagreement checks | primary interpreter input |
 | `reflex_intent` | live reflex | routing, immediate acknowledgement, provisional job envelope creation | provisional routing |
 | `reflex_transcript_hypothesis` | live reflex | early clue for the Gemma interpreter, user-visible rough caption when desired | hypothesis only |
-| `s2s_transcript_hypothesis` | Moshi/VoiceClaw/OpenClaw-style frontend | what the realtime voice model thought it heard | hypothesis only |
-| `frontend_witness_hypothesis` | any S2S/reflex frontend exposing STT-like text | umbrella label for "what the frontend believed it heard" when the exact producer is ambiguous | hypothesis only |
+| `s2s_transcript_hypothesis` | explicit S2S caption/transcript component | what a distinct realtime caption lane thought it heard | hypothesis only |
+| `frontend_witness_hypothesis` | Moshi/VoiceClaw/OpenClaw or any ambiguous S2S/reflex frontend exposing STT-like text | umbrella label for "what the frontend believed it heard" when the exact producer is ambiguous | hypothesis only |
 | `classic_asr_hypothesis` | dedicated ASR fallback/evidence lane | literal wording comparison, captions, diagnostics | optional hypothesis |
 | `interpreter_corrected_transcript` | Gemma-style interpreter | durable user request candidate and tool-critical wording | first promoted transcript |
 | promoted oracle text / final result | Hermes active `/model` | tool use, memory, files, spend, calls, durable outcome | action authority after policy checks |
@@ -518,7 +518,7 @@ Canonical shape:
       "authority": "reflex_hypothesis"
     },
     {
-      "kind": "s2s_transcript_hypothesis",
+      "kind": "frontend_witness_hypothesis",
       "source": "moshi",
       "text": "what is three to the power of seventeen",
       "partial": false,
@@ -537,10 +537,10 @@ Canonical shape:
 ```
 
 If an operator calls the Moshi side channel "Moshi STT", the runtime should
-still store it as `s2s_transcript_hypothesis` or
-`reflex_transcript_hypothesis`, depending on whether it came from the live
-reflex itself or a distinct transcript output. The name can appear in `source`;
-the authority stays `reflex_hypothesis` or `auxiliary_hypothesis`.
+store it as `frontend_witness_hypothesis` unless the adapter can prove it came
+from the live reflex itself or from a distinct transcript output. The name can
+appear in `source`; the authority stays `reflex_hypothesis` or
+`auxiliary_hypothesis`.
 
 If the adapter cannot confidently tell whether the string came from the reflex
 model itself or from a sibling caption output, it should use
@@ -616,7 +616,7 @@ they can produce text quickly.
 
 | Candidate | Best KAME Role | Why It Matters | Current Decision |
 | --- | --- | --- | --- |
-| Moshi / PersonaPlex-class S2S | Reflex / floor-control candidate | Open speech-text dialogue stack; can potentially speak quickly and expose what the live voice model believed it heard. | Evaluate as reflex only. Treat any STT-like output as `reflex_transcript_hypothesis`, `s2s_transcript_hypothesis`, or `frontend_witness_hypothesis`, never durable user text. |
+| Moshi / PersonaPlex-class S2S | Reflex / floor-control candidate | Open speech-text dialogue stack; can potentially speak quickly and expose what the live voice model believed it heard. | Evaluate as reflex only. Treat ambiguous STT-like output as `frontend_witness_hypothesis` unless the adapter can prove `reflex_transcript_hypothesis` or a distinct `s2s_transcript_hypothesis`; never durable user text. |
 | Ultravox-class speech LLM | Interpreter or reflex watchlist | Direct speech understanding can reduce dependence on a separate ASR stage. | Watchlist until local latency, noise-gate behavior, and Discord audio robustness are measured. Do not grant tool authority. |
 | Qwen Omni-class any-to-any model | S2S / interpreter watchlist | Can combine multimodal perception and speech output in one model family. | Watchlist for local serving complexity and latency. It may become a reflex/interpreter candidate, but Hermes still keeps the oracle boundary. |
 | Gemma 4 E2B/E4B/12B audio-multimodal | Interpreter / evidence adjudicator | Strong fit for raw-audio plus text-context interpretation after a VAD cut. | Preferred interpreter lane. It receives raw audio first and transcript hypotheses second. |
@@ -883,8 +883,10 @@ prompt must label it explicitly as a hypothesis, not as ground truth:
 
 - `raw_audio`: the clipped utterance and timing metadata
 - `reflex_transcript_hypothesis`: what the live reflex thought it heard
-- `s2s_transcript_hypothesis`: Moshi/OpenClaw/VoiceClaw-style transcript output,
-  if distinct from the reflex hypothesis
+- `frontend_witness_hypothesis`: ambiguous Moshi/OpenClaw/VoiceClaw-style text,
+  meaning what the realtime frontend believed it heard
+- `s2s_transcript_hypothesis`: a proven distinct S2S caption/transcript output,
+  if separate from the reflex hypothesis
 - `classic_asr_hypothesis`: optional fallback/evidence transcript, if enabled
 
 The interpreter may use all of those signals, but its output must identify

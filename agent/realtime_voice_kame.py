@@ -1135,7 +1135,9 @@ def _transcript_hypothesis_kind(source: str, *, default: str) -> str:
         return "classic_asr_hypothesis"
     if "reflex" in text:
         return "reflex_transcript_hypothesis"
-    if "moshi" in text or "s2s" in text or "voiceclaw" in text or "openclaw" in text:
+    if "moshi" in text or "voiceclaw" in text or "openclaw" in text or "frontend_witness" in text:
+        return "frontend_witness_hypothesis"
+    if "s2s" in text:
         return "s2s_transcript_hypothesis"
     return default
 
