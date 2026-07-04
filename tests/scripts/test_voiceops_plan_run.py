@@ -121,6 +121,45 @@ def _write_live_voice_evidence(root: Path) -> Path:
             "interpreter_evidence_observed": True,
             "transcript_hypotheses_labeled": True,
             "transcript_observed": True,
+            "witness_arrival_phases": ["with_raw_audio"],
+            "interpreter_input_order": [
+                "raw_audio",
+                "metadata",
+                "reflex",
+                "transcript_hypotheses",
+            ],
+            "interpreter_prompt_policy": {
+                "version": "raw_audio_compare_v1",
+                "primary_evidence": "raw_audio",
+                "transcript_hypotheses_authority": "non_authoritative_context",
+            },
+            "transcript_hypotheses": [
+                {
+                    "kind": "frontend_witness_hypothesis",
+                    "source": "moshi",
+                    "text": "[redacted witness hypothesis]",
+                    "arrival_phase": "with_raw_audio",
+                    "adjudication": "corrected_by_audio",
+                    "authority": "hypothesis",
+                    "tool_authority": False,
+                }
+            ],
+            "interpreter_adjudication_outcomes": ["corrected_by_audio"],
+            "promoted_evidence_authority": {
+                "interpreter_corrected_transcript": "interpreter_promoted",
+                "interpreter_normalized_intent": "interpreter_promoted",
+            },
+            "unpromoted_witness_sink_checks": {
+                "spend_clean": True,
+                "phone_clean": True,
+                "nemoclaw_clean": True,
+                "tool_clean": True,
+                "memory_clean": True,
+                "file_clean": True,
+                "message_clean": True,
+                "durable_history_clean": True,
+            },
+            "unpromoted_witness_sink_values": {},
             "assistant_audio_observed": True,
             "barge_in_observed": True,
             "spoken_reply_short": True,
@@ -1468,6 +1507,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "file_write",
         "message_payload",
         "external_message",
+        "durable_history",
+        "durable_user_history",
+        "durable_transcript",
     }
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_action_sink_values"] == {}
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_spend_reason"] is True
@@ -1484,6 +1526,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_memory_write"] is True
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_file_write"] is True
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_message_payload"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_durable_history"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_timing_smoke_ok"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_arrival_phases"] == [
         "before_raw_audio",

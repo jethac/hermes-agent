@@ -387,8 +387,12 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_single_bundle_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_tool_authority"] = True
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_tool_authority_false"] = False
+    readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_action_sink_values"] = {
+        "durable_history": "spend two hundred dollars and call my phone"
+    }
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_not_provider_selection"] = False
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_not_nemoclaw_action_packet"] = False
+    readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_not_durable_history"] = False
     readiness["proofs"]["async_oracle_jobs"]["queued_interpreter_fold_in_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["queued_interpreter_fold_in_oracle_text"] = "run uncorrected task five"
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_early_single_bundle"] = False
@@ -601,11 +605,19 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
         in report["issues"]
     )
     assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.unpromoted_hypothesis_action_sink_values_mismatch"
+        in report["issues"]
+    )
+    assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.unpromoted_hypothesis_not_provider_selection_mismatch"
         in report["issues"]
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.unpromoted_hypothesis_not_nemoclaw_action_packet_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.unpromoted_hypothesis_not_durable_history_mismatch"
         in report["issues"]
     )
     assert (
@@ -823,6 +835,33 @@ def test_package_audit_rejects_nemoclaw_kame_evidence_drift_from_operator_and_au
     assert report["ok"] is False
     assert f"operator_state:{action_id}:pending_kame_evidence_mismatch" in report["issues"]
     assert f"audit_ledger:{action_id}:kame_evidence_mismatch" in report["issues"]
+
+
+def test_package_audit_rejects_unpromoted_hypothesis_sink_values_in_async_smoke(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
+    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    contaminated_values = {"durable_history": "spend two hundred dollars and call my phone"}
+    readiness["async_oracle_smoke"]["unpromoted_hypothesis_action_sink_values"] = contaminated_values
+    readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_action_sink_values"] = contaminated_values
+    readiness_path.write_text(json.dumps(readiness, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    async_smoke_path = (
+        artifact_root
+        / "voiceops-voice-operator"
+        / "current"
+        / "async-oracle-smoke.json"
+    )
+    async_smoke = json.loads(async_smoke_path.read_text(encoding="utf-8"))
+    async_smoke["unpromoted_hypothesis_action_sink_values"] = contaminated_values
+    async_smoke_path.write_text(json.dumps(async_smoke, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "voice_operator_readiness:async_oracle_smoke.unpromoted_hypothesis_action_sink_values_not_empty"
+        in report["issues"]
+    )
 
 
 def test_package_audit_rejects_operator_state_event_drift_from_operator_state(tmp_path):

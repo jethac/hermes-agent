@@ -2253,6 +2253,9 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
         "file_write",
         "message_payload",
         "external_message",
+        "durable_history",
+        "durable_user_history",
+        "durable_transcript",
     )
     metadata = request.to_metadata() if request is not None else {}
     sink_values: dict[str, Any] = {}
@@ -2343,6 +2346,9 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
         "unpromoted_hypothesis_not_file_write": action_sink_results["file_write"],
         "unpromoted_hypothesis_not_message_payload": action_sink_results["message_payload"]
         and action_sink_results["external_message"],
+        "unpromoted_hypothesis_not_durable_history": action_sink_results["durable_history"]
+        and action_sink_results["durable_user_history"]
+        and action_sink_results["durable_transcript"],
         "unpromoted_hypothesis_update_observed": update_event is not None,
         "unpromoted_hypothesis_update_summary": str(
             (update_event.payload if update_event is not None else {}).get("latest_interpreter_evidence") or ""
@@ -4881,6 +4887,9 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "unpromoted_hypothesis_not_message_payload": unpromoted_hypothesis_smoke[
             "unpromoted_hypothesis_not_message_payload"
+        ],
+        "unpromoted_hypothesis_not_durable_history": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_not_durable_history"
         ],
         "unpromoted_hypothesis_update_observed": unpromoted_hypothesis_smoke[
             "unpromoted_hypothesis_update_observed"

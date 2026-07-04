@@ -3517,6 +3517,9 @@ def build_voice_operator_report(
             "unpromoted_hypothesis_not_message_payload": bool(
                 async_oracle_smoke.get("unpromoted_hypothesis_not_message_payload")
             ),
+            "unpromoted_hypothesis_not_durable_history": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_not_durable_history")
+            ),
             "unpromoted_hypothesis_update_observed": bool(
                 async_oracle_smoke.get("unpromoted_hypothesis_update_observed")
             ),

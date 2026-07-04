@@ -1946,6 +1946,12 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
     proofs = readiness.get("proofs") if isinstance(readiness.get("proofs"), Mapping) else {}
     smoke = readiness.get("smoke") if isinstance(readiness.get("smoke"), Mapping) else {}
     async_smoke = readiness.get("async_oracle_smoke") if isinstance(readiness.get("async_oracle_smoke"), Mapping) else {}
+    async_unpromoted_sink_values = async_smoke.get("unpromoted_hypothesis_action_sink_values")
+    if not isinstance(async_unpromoted_sink_values, Mapping):
+        issues.append("voice_operator_readiness:async_oracle_smoke.unpromoted_hypothesis_action_sink_values_not_object")
+        async_unpromoted_sink_values = {}
+    elif async_unpromoted_sink_values:
+        issues.append("voice_operator_readiness:async_oracle_smoke.unpromoted_hypothesis_action_sink_values_not_empty")
     cleanup_smoke = (
         readiness.get("discord_session_cleanup_smoke")
         if isinstance(readiness.get("discord_session_cleanup_smoke"), Mapping)
@@ -2357,6 +2363,7 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "unpromoted_hypothesis_action_sinks_clean": bool(
                 async_smoke.get("unpromoted_hypothesis_action_sinks_clean")
             ),
+            "unpromoted_hypothesis_action_sink_values": dict(async_unpromoted_sink_values),
             "unpromoted_hypothesis_not_spend_reason": bool(
                 async_smoke.get("unpromoted_hypothesis_not_spend_reason")
             ),
@@ -2386,6 +2393,9 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             ),
             "unpromoted_hypothesis_not_message_payload": bool(
                 async_smoke.get("unpromoted_hypothesis_not_message_payload")
+            ),
+            "unpromoted_hypothesis_not_durable_history": bool(
+                async_smoke.get("unpromoted_hypothesis_not_durable_history")
             ),
             "witness_fusion_timing_smoke_ok": bool(async_smoke.get("witness_fusion_timing_smoke_ok")),
             "witness_fusion_arrival_phases": async_smoke.get("witness_fusion_arrival_phases") or [],

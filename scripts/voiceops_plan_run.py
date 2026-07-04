@@ -2061,6 +2061,9 @@ async def build_plan_run_async(
                     "unpromoted_hypothesis_not_message_payload": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["unpromoted_hypothesis_not_message_payload"],
+                    "unpromoted_hypothesis_not_durable_history": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unpromoted_hypothesis_not_durable_history"],
                     "witness_fusion_timing_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_timing_smoke_ok"
                     ],

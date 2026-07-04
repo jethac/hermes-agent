@@ -278,6 +278,9 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
         "file_write",
         "message_payload",
         "external_message",
+        "durable_history",
+        "durable_user_history",
+        "durable_transcript",
     }
     assert report["unpromoted_hypothesis_action_sinks_clean"] is True
     assert report["unpromoted_hypothesis_action_sink_values"] == {}
@@ -291,6 +294,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["unpromoted_hypothesis_not_memory_write"] is True
     assert report["unpromoted_hypothesis_not_file_write"] is True
     assert report["unpromoted_hypothesis_not_message_payload"] is True
+    assert report["unpromoted_hypothesis_not_durable_history"] is True
     assert report["unpromoted_hypothesis_update_observed"] is True
     assert report["unpromoted_hypothesis_update_summary"] == "interpreter evidence: auxiliary_hypotheses=1"
     assert report["energy_gate_smoke_ok"] is True
