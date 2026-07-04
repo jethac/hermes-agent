@@ -120,6 +120,15 @@ VoiceClaw, reflex-caption, or classic-ASR string becomes
 reasons, phone payloads, tool arguments, memory/file writes, or external
 messages.
 
+Adapter acceptance rule: when a frontend can provide raw audio plus a
+Moshi/Open-S2S transcript, preserve both signals and send one interpreter
+packet. Do not translate the Moshi string into the user message, do not start a
+separate STT-first oracle turn, and do not wait for a classic-ASR result before
+the reflex acknowledges. The Gemma interpreter should see the waveform first
+and the Moshi text as a labeled witness clue. The oracle should see only
+promoted transcript/intent/entity fields and compact audit metadata, never raw
+unpromoted witness text as the prompt.
+
 2026-07-05 amendment: the Moshi/Open-S2S transcript is explicitly interpreter
 context, not a parallel STT lane. If the frontend produces a same-cut waveform
 and text, Hermes sends both to Gemma in one packet: raw audio first, metadata

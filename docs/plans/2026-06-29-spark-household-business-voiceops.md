@@ -941,12 +941,20 @@ Make `/voice join` usable as the daily control surface:
 
 - stable Discord receive/playback lifecycle
 - real barge-in based on speech energy, not silent packet arrival
-- KAME fallback state visible when reflex, interpreter, ASR, or TTS paths are
-  unavailable
+- KAME fallback state visible when reflex, interpreter, optional
+  witness/fallback transcript lane, or TTS paths are unavailable
 - voice replies short by default
 - latency metrics from user speech end to reflex response, interpreter evidence,
   oracle response, and TTS playback
 - voice capability prompt context so Hermes does not claim it cannot hear or speak
+
+Live voice evidence must prove the three-tier KAME contract, not just generic
+Discord voice readiness: a fast reflex acknowledgement, one accepted raw-audio
+bundle, Gemma-style direct-audio interpreter promotion, and one Hermes
+active-`/model` oracle job for the speech cut. Transcript-only evidence from
+Moshi/Open-S2S, VoiceClaw/OpenClaw, reflex captions, or classic ASR is useful
+as witness context, but it cannot satisfy this milestone without raw-audio
+promotion.
 
 Headless command:
 

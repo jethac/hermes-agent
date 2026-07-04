@@ -155,6 +155,14 @@ Those fields are how runtime status, VoiceOps readiness, plan-run projection,
 and package audit prove that transcript-looking text remained interpreter
 context until Gemma or the oracle promoted it.
 
+Implementation addendum: the adapter should be built around witness attachment,
+not transcript translation. When Moshi/Open-S2S emits text for the same speech
+cut as the waveform, normalize the text into `transcript_hypotheses[]`, keep
+the raw waveform as the primary interpreter evidence, and submit one
+interpreter packet. The text can improve Gemma's understanding, but it must not
+patch `oracle_text`, create another job, or become a tool-critical field unless
+the interpreter or oracle promotes it.
+
 Runtime decision: external KAME frontends are deny-by-default for direct tool
 names. They may submit consult envelopes through `ask_brain`,
 `ask_hermes_oracle`, `agent_consult`, or `openclaw_agent_consult`; they may

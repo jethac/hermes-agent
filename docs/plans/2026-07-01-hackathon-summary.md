@@ -35,6 +35,13 @@ raw audio + timing + speaker/channel + reflex route + Moshi/Open-S2S witness
 That packet is the hackathon proof that the voice interface is fast without
 letting a quick transcript hallucination spend money or place a call.
 
+For implementation and demo narration, the important verb is "attach." The
+frontend attaches Moshi/Open-S2S text to the same raw-audio cut as a witness
+hypothesis. Hermes does not translate that text into the user prompt, does not
+run a second STT-first conversation, and does not expose it as action authority.
+Gemma gets the raw voice plus the witness; Hermes' active `/model` gets only
+promoted evidence and compact audit metadata.
+
 For the recorded proof, a Moshi/Open-S2S transcript should be shown only as a
 `transcript_hypotheses[]` entry attached to the same raw-audio cut. The artifact
 should expose its provider/source, latency, confidence when available,

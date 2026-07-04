@@ -177,6 +177,10 @@ Updated 2026-06-25:
   gate: `first_text=0ms <= 500ms`, `first_audio=669ms <= 900ms`. The report
   captured `first_audio_metrics` including `tts_synthesis_ms=668`,
   `tts_cache=prewarmed`, and `final_transcript_to_first_audio_ms=669`.
+  In current KAME terms, this is legacy/provider-comparison latency telemetry,
+  not full-KAME readiness evidence. Full-KAME readiness must prove reflex
+  acknowledgement, one raw-audio evidence bundle, Gemma interpreter promotion,
+  and one Hermes active-`/model` oracle job.
 - With the loopback streaming bridge on `127.0.0.1:8768` and the reference
   sidecar pointed at it, doctor reported live-like streaming mode:
   `Live conversation quality (streaming_text: streaming_stt_tts, live-like: yes)`.
@@ -185,6 +189,9 @@ Updated 2026-06-25:
   `first_audio=3ms`, with `first_audio_metrics` including
   `streaming_tts_ms=0`, `loopback=true`, and
   `final_transcript_to_first_audio_ms=3`.
+  These transcript-named fields describe the older STT/TTS bridge surface. In
+  full KAME mode, transcript events must be normalized as witness hypotheses
+  attached to the accepted raw-audio cut.
 - `uv run --extra dev --extra voice python -m hermes_cli.discord_realtime_voice_smoke --report /tmp/hermes-discord-realtime-voice-smoke.json`
   passed with `ok=true`, `transport=discord_voice`, `input_pcm48_bytes=3840`,
   `sidecar_pcm16_bytes=640`, `mixer_frames=1`, `mixer_frame_bytes=3840`,
@@ -220,6 +227,11 @@ Updated 2026-06-25:
   `audio_to_partial_transcript_ms` ceiling of `1000ms`; the default live target
   remains `300ms`, so doctor displays the raw partial-latency misses while the
   alpha evidence validator accepts the provider-specific ceiling.
+  These metrics remain useful for provider comparison and fallback tuning, but
+  they are not the primary full-KAME gates. The primary gates are
+  speech-end-to-reflex acknowledgement, raw-audio bundle creation,
+  direct-audio interpreter promotion, oracle job scheduling through Hermes'
+  active `/model`, and outbound playback/barge-in behavior.
 - `uv run --extra dev --extra voice python -m hermes_cli.realtime_voice_report /tmp/hermes-elevenlabs-evidence/reports/*.json --alpha --min-runs 3`
   passed with the same `42` result summary.
 - The accepted ElevenLabs evidence was copied into the repo-local artifact path
@@ -388,6 +400,9 @@ Still remaining before this goal can be marked complete:
 
 ## Goals
 
+- G0. The target architecture is `reflex -> Gemma direct-audio interpreter ->
+  Hermes active /model oracle`. Transcript-looking provider output is witness
+  context attached to the raw-audio bundle, not a separate STT-first user turn.
 - G1. `/voice join` must establish one explicit voice mode per guild:
   `realtime_active`, `legacy_voice_active`, `degraded_no_sidecar`, or `failed`.
 - G2. Realtime voice must not silently fall through into the legacy path while

@@ -59,6 +59,48 @@ after the interpreter has started, it must merge into the same bundle and job.
 If no raw audio exists, the turn is degraded compatibility mode and high-risk
 action gates fail closed.
 
+The implementation contract is "attach, do not translate." If the frontend has
+both a waveform and Moshi/Open-S2S text, the adapter should preserve both
+signals in one interpreter packet rather than turning the text into a Hermes
+message first:
+
+```json
+{
+  "audio": {
+    "segment_ref": "artifact://voice/turn-042.wav",
+    "time_range_ms": [12800, 15320],
+    "primary_interpreter_evidence": true
+  },
+  "interpreter_input_order": [
+    "raw_audio",
+    "metadata",
+    "reflex",
+    "transcript_hypotheses"
+  ],
+  "transcript_hypotheses": [
+    {
+      "kind": "frontend_witness_hypothesis",
+      "source": "moshi",
+      "text_digest": "sha256:redacted",
+      "role": "witness_context",
+      "authority": "hypothesis",
+      "promotion_required": "interpreter_promoted_or_oracle_promoted",
+      "tool_authority": false,
+      "arrival_phase": "with_raw_audio",
+      "latency_ms": 94,
+      "confidence": null,
+      "speaker_or_actor_ref": "speaker:jetha",
+      "channel_or_surface_ref": "discord:general"
+    }
+  ]
+}
+```
+
+The raw text may be present inside a redacted, access-controlled source artifact
+for audit, but normal Hermes prompts, egress messages, Stripe/NemoClaw reasons,
+phone payloads, memory writes, file writes, and tool arguments should carry only
+the digest, source/timing metadata, adjudication outcome, and promoted wording.
+
 ## Current Contract
 
 `kame_session_v1` carries one accepted speech cut, not one transcript. The
