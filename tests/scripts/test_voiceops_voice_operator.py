@@ -2023,6 +2023,20 @@ def test_voice_operator_validation_recomputes_async_coverage_from_embedded_smoke
     assert "stale_async_oracle_coverage:four_jobs_ran_concurrently" in issues
 
 
+def test_voice_operator_validation_rejects_partial_witness_without_arrival_phase():
+    report = _voice_operator_report()
+    report["async_oracle_smoke"]["witness_fusion_partial_active_hypothesis"].pop(
+        "arrival_phase",
+        None,
+    )
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_coverage:witness_fusion_partial_superseded_by_final" in issues
+    assert "stale_async_oracle_coverage:witness_fusion_partial_superseded_by_final" in issues
+    assert "missing_async_oracle_acceptance:witness_fusion_supersedes_partial_witness" in issues
+
+
 def test_voice_operator_validation_rejects_local_turn_without_running_job_overlap():
     report = _voice_operator_report()
     report["async_oracle_smoke"]["local_turn_during_running_jobs_observed"] = False

@@ -1925,6 +1925,9 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and partial_active_hypothesis.get("source") == "moshi"
         and partial_active_hypothesis.get("kind") == "frontend_witness_hypothesis"
         and partial_active_hypothesis.get("text") == "what is three to the power of seventeen"
+        and partial_active_hypothesis.get("authority") == "hypothesis"
+        and partial_active_hypothesis.get("tool_authority") is False
+        and partial_active_hypothesis.get("arrival_phase") == "with_raw_audio"
         and partial_active_hypothesis.get("partial") is False
         and tuple(partial_active_hypothesis.get("superseded_partial_texts") or ())
         == ("what is three to the",)
