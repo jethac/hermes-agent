@@ -1121,6 +1121,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert Path(voice_result["artifacts"]["async_oracle_smoke_json"]).exists()
     assert Path(voice_result["artifacts"]["discord_session_cleanup_smoke_json"]).exists()
     assert Path(voice_result["artifacts"]["sidecar_fail_closed_smoke_json"]).exists()
+    assert Path(voice_result["artifacts"]["tool_disclosure_smoke_json"]).exists()
+    assert Path(voice_result["artifacts"]["ephemeral_tool_router_smoke_json"]).exists()
     assert Path(voice_result["artifacts"]["events_jsonl"]).exists()
     assert Path(voice_result["artifacts"]["live_evidence_example"]).exists()
     assert Path(voice_result["artifacts"]["live_evidence_scaffold_manifest"]).exists()
@@ -1139,12 +1141,24 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "hidden_core_tool_names": sorted(_HERMES_CORE_TOOLS),
         "input_core_tool_count": len(_HERMES_CORE_TOOLS),
         "ok": True,
-        "test_ref_count": 4,
+        "test_ref_count": 6,
         "token_reduction_estimate": tool_details["token_reduction_estimate"],
         "visible_non_bridge_tool_names": [],
         "visible_tool_names": ["tool_call", "tool_describe", "tool_search"],
     }
     assert tool_details["token_reduction_estimate"] > 0
+    assert voice_result["details"]["ephemeral_tool_router"] == {
+        "ok": True,
+        "router_mode": "ephemeral",
+        "provider_network": False,
+        "model_call": False,
+        "router_call_count": 2,
+        "selected_voiceops_toolsets": ["voiceops"],
+        "selected_no_tools_toolsets": [],
+        "router_transcript_persistent": False,
+        "router_tool_calls_allowed": False,
+        "test_ref_count": 2,
+    }
     assert voice_result["details"]["async_oracle_smoke"]["kind"] == "async_oracle_smoke"
     assert voice_result["details"]["async_oracle_smoke"]["scenario"] == "async_kame_oracle_jobs_fake"
     assert voice_result["details"]["async_oracle_smoke"]["late_cancelled_output_attempted"] is True

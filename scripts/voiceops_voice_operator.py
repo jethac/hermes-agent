@@ -2076,6 +2076,103 @@ def run_tool_disclosure_smoke() -> dict[str, Any]:
     }
 
 
+def run_ephemeral_tool_router_smoke() -> dict[str, Any]:
+    """Local proof for the VoiceOps ephemeral tool-selection router."""
+
+    from agent.realtime_voice import RealtimeVoiceEngineKind, RealtimeVoiceSessionConfig
+    from agent.realtime_voice_oracle import _voice_oracle_tool_router_decision
+
+    calls: list[dict[str, Any]] = []
+    responses = [
+        {"final_response": '{"decision":"toolsets","toolsets":["voiceops"]}'},
+        {"final_response": '{"decision":"no_tools"}'},
+    ]
+
+    class FakeRouterAgent:
+        def __init__(self, **kwargs):
+            self.kwargs = dict(kwargs)
+
+        def run_conversation(self, prompt, *, persist_user_message=None, stream_callback=None):
+            calls.append(
+                {
+                    "kwargs": dict(self.kwargs),
+                    "prompt": str(prompt),
+                    "persist_user_message": persist_user_message,
+                    "stream_callback_supplied": stream_callback is not None,
+                }
+            )
+            return responses[len(calls) - 1]
+
+    config = RealtimeVoiceSessionConfig(
+        session_id="voiceops-router-smoke",
+        engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+        metadata={"transport": "discord_voice"},
+        oracle_tool_router={
+            "enabled": True,
+            "mode": "ephemeral",
+            "voiceops_toolsets": ["voiceops"],
+            "default_toolsets": [],
+        },
+    )
+    toolset_decision = _voice_oracle_tool_router_decision(
+        "use Stripe to provision phone service",
+        {"transport": "discord_voice", "kame_intent": "Provision phone service."},
+        config,
+        FakeRouterAgent,
+    )
+    no_tools_decision = _voice_oracle_tool_router_decision(
+        "tell me a short joke",
+        {"transport": "discord_voice", "kame_intent": "Tell a short joke."},
+        config,
+        FakeRouterAgent,
+    )
+    router_kwargs = [call["kwargs"] for call in calls]
+    persist_values = [call["persist_user_message"] for call in calls]
+    return {
+        "ok": (
+            len(calls) == 2
+            and toolset_decision.get("mode") == "ephemeral"
+            and toolset_decision.get("decision") == "toolsets"
+            and toolset_decision.get("enabled_toolsets") == ["voiceops"]
+            and no_tools_decision.get("mode") == "ephemeral"
+            and no_tools_decision.get("decision") == "no_tools"
+            and no_tools_decision.get("enabled_toolsets") == []
+            and all(value is False for value in persist_values)
+            and all(kwargs.get("enabled_toolsets") == [] for kwargs in router_kwargs)
+            and all(kwargs.get("skip_memory") is True for kwargs in router_kwargs)
+            and all(kwargs.get("skip_context_files") is True for kwargs in router_kwargs)
+            and all(decision.get("tool_calls_allowed") is False for decision in (toolset_decision, no_tools_decision))
+            and all(decision.get("persistent") is False for decision in (toolset_decision, no_tools_decision))
+        ),
+        "scenario": "ephemeral_voiceops_tool_selection_router",
+        "provider_network": False,
+        "model_call": False,
+        "router_mode": "ephemeral",
+        "toolsets_decision": dict(toolset_decision),
+        "no_tools_decision": dict(no_tools_decision),
+        "router_call_count": len(calls),
+        "router_enabled_toolsets": [kwargs.get("enabled_toolsets") for kwargs in router_kwargs],
+        "router_persist_user_messages": persist_values,
+        "router_skip_memory": [kwargs.get("skip_memory") for kwargs in router_kwargs],
+        "router_skip_context_files": [kwargs.get("skip_context_files") for kwargs in router_kwargs],
+        "router_stream_callbacks_supplied": [call["stream_callback_supplied"] for call in calls],
+        "router_prompts_include_no_tool_instruction": [
+            "must not call tools" in call["prompt"] for call in calls
+        ],
+        "selected_voiceops_toolsets": list(toolset_decision.get("enabled_toolsets") or []),
+        "selected_no_tools_toolsets": list(no_tools_decision.get("enabled_toolsets") or []),
+        "router_transcript_persistent": any(value is not False for value in persist_values),
+        "router_tool_calls_allowed": any(
+            decision.get("tool_calls_allowed") is not False
+            for decision in (toolset_decision, no_tools_decision)
+        ),
+        "external_test_refs": [
+            "tests/agent/test_realtime_voice_oracle.py::test_voice_oracle_ephemeral_router_selects_voiceops_without_persisting_router_turn",
+            "tests/agent/test_realtime_voice_oracle.py::test_voice_oracle_ephemeral_router_can_select_no_tools",
+        ],
+    }
+
+
 def _async_oracle_acceptance_row(
     *,
     ok: bool,
@@ -2343,12 +2440,14 @@ def build_voice_operator_report(
     discord_session_cleanup_smoke: dict[str, Any] | None = None,
     sidecar_fail_closed_smoke: dict[str, Any] | None = None,
     tool_disclosure_smoke: dict[str, Any] | None = None,
+    ephemeral_tool_router_smoke: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     coverage = _coverage_from_smoke(smoke)
     async_oracle_smoke = async_oracle_smoke or {}
     discord_session_cleanup_smoke = discord_session_cleanup_smoke or {}
     sidecar_fail_closed_smoke = sidecar_fail_closed_smoke or {}
     tool_disclosure_smoke = tool_disclosure_smoke or run_tool_disclosure_smoke()
+    ephemeral_tool_router_smoke = ephemeral_tool_router_smoke or run_ephemeral_tool_router_smoke()
     async_oracle_coverage = {
         **_coverage_from_async_oracle_smoke(async_oracle_smoke),
         **_coverage_from_discord_session_cleanup_smoke(discord_session_cleanup_smoke),
@@ -3294,6 +3393,45 @@ def build_voice_operator_report(
             "token_reduction_estimate": tool_disclosure_smoke.get("token_reduction_estimate"),
             "external_test_refs": tool_disclosure_smoke.get("external_test_refs") or [],
         },
+        "ephemeral_tool_router": {
+            "ok": ephemeral_tool_router_smoke.get("ok") is True,
+            "scenario": ephemeral_tool_router_smoke.get("scenario"),
+            "router_mode": ephemeral_tool_router_smoke.get("router_mode"),
+            "provider_network": bool(ephemeral_tool_router_smoke.get("provider_network")),
+            "model_call": bool(ephemeral_tool_router_smoke.get("model_call")),
+            "router_call_count": ephemeral_tool_router_smoke.get("router_call_count"),
+            "toolsets_decision": dict(ephemeral_tool_router_smoke.get("toolsets_decision") or {}),
+            "no_tools_decision": dict(ephemeral_tool_router_smoke.get("no_tools_decision") or {}),
+            "selected_voiceops_toolsets": list(
+                ephemeral_tool_router_smoke.get("selected_voiceops_toolsets") or []
+            ),
+            "selected_no_tools_toolsets": list(
+                ephemeral_tool_router_smoke.get("selected_no_tools_toolsets") or []
+            ),
+            "router_enabled_toolsets": list(
+                ephemeral_tool_router_smoke.get("router_enabled_toolsets") or []
+            ),
+            "router_persist_user_messages": list(
+                ephemeral_tool_router_smoke.get("router_persist_user_messages") or []
+            ),
+            "router_skip_memory": list(ephemeral_tool_router_smoke.get("router_skip_memory") or []),
+            "router_skip_context_files": list(
+                ephemeral_tool_router_smoke.get("router_skip_context_files") or []
+            ),
+            "router_stream_callbacks_supplied": list(
+                ephemeral_tool_router_smoke.get("router_stream_callbacks_supplied") or []
+            ),
+            "router_prompts_include_no_tool_instruction": list(
+                ephemeral_tool_router_smoke.get("router_prompts_include_no_tool_instruction") or []
+            ),
+            "router_transcript_persistent": bool(
+                ephemeral_tool_router_smoke.get("router_transcript_persistent")
+            ),
+            "router_tool_calls_allowed": bool(
+                ephemeral_tool_router_smoke.get("router_tool_calls_allowed")
+            ),
+            "external_test_refs": ephemeral_tool_router_smoke.get("external_test_refs") or [],
+        },
         "live_evidence": {
             "ok": bool(live_evidence.get("loaded")) and not missing_live_gates and not live_evidence.get("issues"),
             "mode": live_evidence.get("mode"),
@@ -3401,6 +3539,7 @@ def build_voice_operator_report(
                 "sidecar_fail_closed_send_failure_cancels_active_job"
             ],
             "progressive_tool_disclosure": tool_disclosure_smoke.get("ok") is True,
+            "ephemeral_tool_router": ephemeral_tool_router_smoke.get("ok") is True,
         },
         "proofs": proofs,
         "coverage": coverage,
@@ -3438,6 +3577,7 @@ def build_voice_operator_report(
         "discord_session_cleanup_smoke": dict(discord_session_cleanup_smoke),
         "sidecar_fail_closed_smoke": dict(sidecar_fail_closed_smoke),
         "tool_disclosure_smoke": dict(tool_disclosure_smoke),
+        "ephemeral_tool_router_smoke": dict(ephemeral_tool_router_smoke),
         "live_probe_required_for_completion": {
             "status": live_probe_status,
             "reason": "Headless loopback does not prove a real Discord gateway join, live receiver transport, or production sidecar availability.",
@@ -3606,6 +3746,51 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         for test_ref in proof_tool_refs:
             if not _acceptance_test_ref_resolves(test_ref):
                 issues.append(f"progressive_tool_disclosure:invalid_proof_external_test_ref:{test_ref}")
+    ephemeral_smoke = report.get("ephemeral_tool_router_smoke", {})
+    ephemeral_proof = report.get("proofs", {}).get("ephemeral_tool_router", {})
+    if not isinstance(ephemeral_smoke, Mapping) or ephemeral_smoke.get("ok") is not True:
+        issues.append("missing_coverage:ephemeral_tool_router")
+    if report.get("requirements", {}).get("ephemeral_tool_router") is not True:
+        issues.append("missing_requirement:ephemeral_tool_router")
+    if not isinstance(ephemeral_proof, Mapping) or ephemeral_proof.get("ok") is not True:
+        issues.append("missing_proof:ephemeral_tool_router")
+    expected_router_refs = [
+        "tests/agent/test_realtime_voice_oracle.py::test_voice_oracle_ephemeral_router_selects_voiceops_without_persisting_router_turn",
+        "tests/agent/test_realtime_voice_oracle.py::test_voice_oracle_ephemeral_router_can_select_no_tools",
+    ]
+    for key in ("router_mode", "router_call_count", "selected_voiceops_toolsets", "selected_no_tools_toolsets"):
+        if isinstance(ephemeral_proof, Mapping) and ephemeral_proof.get(key) != ephemeral_smoke.get(key):
+            issues.append(f"ephemeral_tool_router:stale_proof_{key}")
+    if ephemeral_smoke.get("router_mode") != "ephemeral":
+        issues.append("ephemeral_tool_router:mode_not_ephemeral")
+    if ephemeral_smoke.get("selected_voiceops_toolsets") != ["voiceops"]:
+        issues.append("ephemeral_tool_router:voiceops_toolset_not_selected")
+    if ephemeral_smoke.get("selected_no_tools_toolsets") != []:
+        issues.append("ephemeral_tool_router:no_tools_not_empty")
+    if ephemeral_smoke.get("router_transcript_persistent") is not False:
+        issues.append("ephemeral_tool_router:router_transcript_persistent")
+    if ephemeral_smoke.get("router_tool_calls_allowed") is not False:
+        issues.append("ephemeral_tool_router:router_tool_calls_allowed")
+    if any(item != [] for item in ephemeral_smoke.get("router_enabled_toolsets") or []):
+        issues.append("ephemeral_tool_router:router_agent_received_tools")
+    if any(value is not False for value in ephemeral_smoke.get("router_persist_user_messages") or []):
+        issues.append("ephemeral_tool_router:router_persisted_user_message")
+    if any(value is not True for value in ephemeral_smoke.get("router_skip_memory") or []):
+        issues.append("ephemeral_tool_router:router_memory_not_skipped")
+    if any(value is not True for value in ephemeral_smoke.get("router_skip_context_files") or []):
+        issues.append("ephemeral_tool_router:router_context_files_not_skipped")
+    if any(value is not True for value in ephemeral_smoke.get("router_prompts_include_no_tool_instruction") or []):
+        issues.append("ephemeral_tool_router:missing_no_tool_instruction")
+    smoke_router_refs = ephemeral_smoke.get("external_test_refs") if isinstance(ephemeral_smoke, Mapping) else None
+    proof_router_refs = ephemeral_proof.get("external_test_refs") if isinstance(ephemeral_proof, Mapping) else None
+    if smoke_router_refs != expected_router_refs:
+        issues.append("ephemeral_tool_router:unexpected_external_test_refs")
+    elif proof_router_refs != smoke_router_refs:
+        issues.append("ephemeral_tool_router:stale_proof_external_test_refs")
+    else:
+        for test_ref in proof_router_refs:
+            if not _acceptance_test_ref_resolves(test_ref):
+                issues.append(f"ephemeral_tool_router:invalid_external_test_ref:{test_ref}")
     async_oracle_acceptance = report.get("async_oracle_acceptance", {})
     if not isinstance(async_oracle_acceptance, Mapping) or not async_oracle_acceptance:
         issues.append("missing_async_oracle_acceptance_matrix")
@@ -3891,6 +4076,8 @@ def write_voice_operator_report(output_dir: Path, report: dict[str, Any]) -> dic
         "async_oracle_smoke_json": output_dir / "async-oracle-smoke.json",
         "discord_session_cleanup_smoke_json": output_dir / "discord-session-cleanup-smoke.json",
         "sidecar_fail_closed_smoke_json": output_dir / "sidecar-fail-closed-smoke.json",
+        "tool_disclosure_smoke_json": output_dir / "tool-disclosure-smoke.json",
+        "ephemeral_tool_router_smoke_json": output_dir / "ephemeral-tool-router-smoke.json",
         "events_jsonl": output_dir / "voice-operator-events.jsonl",
         "live_evidence_template": output_dir / "live-voice-evidence-template.json",
         "live_evidence_example": output_dir / "live-voice-evidence.example.json",
@@ -3903,6 +4090,8 @@ def write_voice_operator_report(output_dir: Path, report: dict[str, Any]) -> dic
     _write_json(paths["async_oracle_smoke_json"], report["async_oracle_smoke"])
     _write_json(paths["discord_session_cleanup_smoke_json"], report["discord_session_cleanup_smoke"])
     _write_json(paths["sidecar_fail_closed_smoke_json"], report["sidecar_fail_closed_smoke"])
+    _write_json(paths["tool_disclosure_smoke_json"], report["tool_disclosure_smoke"])
+    _write_json(paths["ephemeral_tool_router_smoke_json"], report["ephemeral_tool_router_smoke"])
     _write_json(paths["live_evidence_template"], build_live_probe_evidence_template())
     _write_json(paths["live_evidence_example"], build_live_probe_evidence_example())
     paths.update(write_live_evidence_scaffold(output_dir))

@@ -155,6 +155,8 @@ EXPECTED_PACKAGE_ARTIFACTS = (
     "voiceops-voice-operator/current/async-oracle-smoke.json",
     "voiceops-voice-operator/current/discord-session-cleanup-smoke.json",
     "voiceops-voice-operator/current/sidecar-fail-closed-smoke.json",
+    "voiceops-voice-operator/current/tool-disclosure-smoke.json",
+    "voiceops-voice-operator/current/ephemeral-tool-router-smoke.json",
     "voiceops-voice-operator/current/live-probe-closure-plan.json",
     "voiceops-voice-operator/current/live-probe-closure-plan.md",
     "voiceops-voice-operator/current/live-voice-evidence-scaffold/manifest.json",
@@ -1759,10 +1761,13 @@ def _audit_preflight_evidence_scaffold(
 def _audit_voice_operator_artifact_consistency(
     *,
     readiness: Mapping[str, Any],
+    plan_run: Mapping[str, Any],
     discord_loopback_smoke: Mapping[str, Any],
     async_oracle_smoke: Mapping[str, Any],
     discord_session_cleanup_smoke: Mapping[str, Any],
     sidecar_fail_closed_smoke: Mapping[str, Any],
+    tool_disclosure_smoke: Mapping[str, Any],
+    ephemeral_tool_router_smoke: Mapping[str, Any],
     issues: list[str],
 ) -> None:
     for issue in validate_voice_operator_report(dict(readiness)):
@@ -1772,11 +1777,58 @@ def _audit_voice_operator_artifact_consistency(
         "async_oracle_smoke": async_oracle_smoke,
         "discord_session_cleanup_smoke": discord_session_cleanup_smoke,
         "sidecar_fail_closed_smoke": sidecar_fail_closed_smoke,
+        "tool_disclosure_smoke": tool_disclosure_smoke,
+        "ephemeral_tool_router_smoke": ephemeral_tool_router_smoke,
     }
     for field, standalone_payload in expected_payloads.items():
         if readiness.get(field) != standalone_payload:
             issues.append(f"voice_operator_readiness:{field}_standalone_artifact_mismatch")
     _audit_voice_operator_proof_consistency(readiness=readiness, issues=issues)
+    _audit_voice_operator_ephemeral_router_plan_projection(
+        readiness=readiness,
+        plan_run=plan_run,
+        issues=issues,
+    )
+
+
+def _audit_voice_operator_ephemeral_router_plan_projection(
+    *,
+    readiness: Mapping[str, Any],
+    plan_run: Mapping[str, Any],
+    issues: list[str],
+) -> None:
+    proof = (
+        readiness.get("proofs", {}).get("ephemeral_tool_router")
+        if isinstance(readiness.get("proofs"), Mapping)
+        and isinstance(readiness.get("proofs", {}).get("ephemeral_tool_router"), Mapping)
+        else {}
+    )
+    voice_result = next(
+        (
+            result
+            for result in plan_run.get("results", [])
+            if isinstance(result, Mapping)
+            and result.get("milestone") == "milestone_1_real_voice_operator"
+        ),
+        {},
+    )
+    details = voice_result.get("details") if isinstance(voice_result.get("details"), Mapping) else {}
+    projected = details.get("ephemeral_tool_router") if isinstance(details.get("ephemeral_tool_router"), Mapping) else {}
+    expected = {
+        "ok": proof.get("ok"),
+        "router_mode": proof.get("router_mode"),
+        "provider_network": proof.get("provider_network"),
+        "model_call": proof.get("model_call"),
+        "router_call_count": proof.get("router_call_count"),
+        "selected_voiceops_toolsets": proof.get("selected_voiceops_toolsets"),
+        "selected_no_tools_toolsets": proof.get("selected_no_tools_toolsets"),
+        "router_transcript_persistent": proof.get("router_transcript_persistent"),
+        "router_tool_calls_allowed": proof.get("router_tool_calls_allowed"),
+        "test_ref_count": len(proof.get("external_test_refs") or []),
+    }
+    for field, expected_value in expected.items():
+        if projected.get(field) != expected_value:
+            issues.append(f"plan_run:voice_operator.ephemeral_tool_router.{field}_mismatch")
 
 
 def _compare_proof_fields(
@@ -2713,6 +2765,16 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         issues,
         "sidecar_fail_closed_smoke",
     )
+    tool_disclosure_smoke = _read_json(
+        voice_dir / "tool-disclosure-smoke.json",
+        issues,
+        "tool_disclosure_smoke",
+    )
+    ephemeral_tool_router_smoke = _read_json(
+        voice_dir / "ephemeral-tool-router-smoke.json",
+        issues,
+        "ephemeral_tool_router_smoke",
+    )
     live_scaffold_dir = voice_dir / "live-voice-evidence-scaffold"
     live_scaffold_manifest = _read_json(live_scaffold_dir / "manifest.json", issues, "live_evidence_scaffold_manifest")
     live_scaffold_sections = {
@@ -2831,10 +2893,13 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     )
     _audit_voice_operator_artifact_consistency(
         readiness=voice_operator_readiness,
+        plan_run=plan_run,
         discord_loopback_smoke=discord_loopback_smoke,
         async_oracle_smoke=async_oracle_smoke,
         discord_session_cleanup_smoke=discord_session_cleanup_smoke,
         sidecar_fail_closed_smoke=sidecar_fail_closed_smoke,
+        tool_disclosure_smoke=tool_disclosure_smoke,
+        ephemeral_tool_router_smoke=ephemeral_tool_router_smoke,
         issues=issues,
     )
     _audit_live_evidence_scaffold(

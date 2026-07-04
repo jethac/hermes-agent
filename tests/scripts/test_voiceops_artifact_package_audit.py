@@ -175,6 +175,32 @@ def test_package_audit_rejects_sidecar_fail_closed_smoke_artifact_drift(tmp_path
     assert "voice_operator_readiness:sidecar_fail_closed_smoke_standalone_artifact_mismatch" in report["issues"]
 
 
+def test_package_audit_rejects_tool_disclosure_smoke_artifact_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    smoke_path = artifact_root / "voiceops-voice-operator" / "current" / "tool-disclosure-smoke.json"
+    smoke = json.loads(smoke_path.read_text(encoding="utf-8"))
+    smoke["core_tools_hidden_all"] = False
+    _write_json(smoke_path, smoke)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "voice_operator_readiness:tool_disclosure_smoke_standalone_artifact_mismatch" in report["issues"]
+
+
+def test_package_audit_rejects_ephemeral_tool_router_smoke_artifact_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    smoke_path = artifact_root / "voiceops-voice-operator" / "current" / "ephemeral-tool-router-smoke.json"
+    smoke = json.loads(smoke_path.read_text(encoding="utf-8"))
+    smoke["router_mode"] = "deterministic"
+    _write_json(smoke_path, smoke)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "voice_operator_readiness:ephemeral_tool_router_smoke_standalone_artifact_mismatch" in report["issues"]
+
+
 def test_package_audit_rejects_pcm_conversion_proof_drift(tmp_path):
     artifact_root = _generate_package(tmp_path)
     readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
@@ -205,6 +231,32 @@ def test_package_audit_rejects_barge_in_energy_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.barge_in_energy.energy_gate_barge_in_events_mismatch"
+        in report["issues"]
+    )
+
+
+def test_package_audit_rejects_ephemeral_tool_router_plan_projection_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
+    plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
+    voice_result = next(
+        result
+        for result in plan_run["results"]
+        if result["milestone"] == "milestone_1_real_voice_operator"
+    )
+    voice_result["details"]["ephemeral_tool_router"]["router_mode"] = "deterministic"
+    voice_result["details"]["ephemeral_tool_router"]["router_tool_calls_allowed"] = True
+    _write_json(plan_run_path, plan_run)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "plan_run:voice_operator.ephemeral_tool_router.router_mode_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "plan_run:voice_operator.ephemeral_tool_router.router_tool_calls_allowed_mismatch"
         in report["issues"]
     )
 

@@ -2302,6 +2302,37 @@ async def build_plan_run_async(
                         voice_operator["proofs"]["tool_disclosure"].get("external_test_refs") or []
                     ),
                 },
+                "ephemeral_tool_router": {
+                    "ok": voice_operator["proofs"]["ephemeral_tool_router"]["ok"],
+                    "router_mode": voice_operator["proofs"]["ephemeral_tool_router"]["router_mode"],
+                    "provider_network": voice_operator["proofs"]["ephemeral_tool_router"][
+                        "provider_network"
+                    ],
+                    "model_call": voice_operator["proofs"]["ephemeral_tool_router"]["model_call"],
+                    "router_call_count": voice_operator["proofs"]["ephemeral_tool_router"][
+                        "router_call_count"
+                    ],
+                    "selected_voiceops_toolsets": list(
+                        voice_operator["proofs"]["ephemeral_tool_router"][
+                            "selected_voiceops_toolsets"
+                        ]
+                    ),
+                    "selected_no_tools_toolsets": list(
+                        voice_operator["proofs"]["ephemeral_tool_router"][
+                            "selected_no_tools_toolsets"
+                        ]
+                    ),
+                    "router_transcript_persistent": voice_operator["proofs"][
+                        "ephemeral_tool_router"
+                    ]["router_transcript_persistent"],
+                    "router_tool_calls_allowed": voice_operator["proofs"]["ephemeral_tool_router"][
+                        "router_tool_calls_allowed"
+                    ],
+                    "test_ref_count": len(
+                        voice_operator["proofs"]["ephemeral_tool_router"].get("external_test_refs")
+                        or []
+                    ),
+                },
                 "discord_session_cleanup_smoke": {
                     "ok": voice_operator["proofs"]["discord_session_cleanup"]["ok"],
                     "cancel_all_before_session_closed": voice_operator["proofs"]["discord_session_cleanup"][

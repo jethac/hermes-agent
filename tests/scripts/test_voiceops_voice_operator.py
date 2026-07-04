@@ -1618,6 +1618,23 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     ):
         assert test_ref in report["tool_disclosure_smoke"]["external_test_refs"]
         assert test_ref in report["proofs"]["tool_disclosure"]["external_test_refs"]
+    router_proof = report["proofs"]["ephemeral_tool_router"]
+    assert router_proof["ok"] is True
+    assert report["ephemeral_tool_router_smoke"]["ok"] is True
+    assert report["requirements"]["ephemeral_tool_router"] is True
+    assert router_proof["router_mode"] == "ephemeral"
+    assert router_proof["provider_network"] is False
+    assert router_proof["model_call"] is False
+    assert router_proof["router_call_count"] == 2
+    assert router_proof["selected_voiceops_toolsets"] == ["voiceops"]
+    assert router_proof["selected_no_tools_toolsets"] == []
+    assert router_proof["router_transcript_persistent"] is False
+    assert router_proof["router_tool_calls_allowed"] is False
+    assert router_proof["router_enabled_toolsets"] == [[], []]
+    assert router_proof["router_persist_user_messages"] == [False, False]
+    assert router_proof["router_skip_memory"] == [True, True]
+    assert router_proof["router_skip_context_files"] == [True, True]
+    assert router_proof["router_prompts_include_no_tool_instruction"] == [True, True]
     overflow_policy = report["async_oracle_acceptance"]["fifth_job_obeys_overflow_policy"]
     assert overflow_policy["ok"] is True
     assert overflow_policy["evidence"] == "async_oracle_smoke_plus_overflow_policy_tests"
@@ -2271,6 +2288,8 @@ def test_write_voice_operator_report_artifacts(tmp_path):
         "markdown",
         "sidecar_fail_closed_smoke_json",
         "smoke_json",
+        "tool_disclosure_smoke_json",
+        "ephemeral_tool_router_smoke_json",
     }
     assert required_paths <= set(paths)
     assert {
@@ -2283,6 +2302,10 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     async_oracle_smoke = json.loads(Path(paths["async_oracle_smoke_json"]).read_text(encoding="utf-8"))
     discord_cleanup_smoke = json.loads(Path(paths["discord_session_cleanup_smoke_json"]).read_text(encoding="utf-8"))
     sidecar_fail_closed_smoke = json.loads(Path(paths["sidecar_fail_closed_smoke_json"]).read_text(encoding="utf-8"))
+    tool_disclosure_smoke = json.loads(Path(paths["tool_disclosure_smoke_json"]).read_text(encoding="utf-8"))
+    ephemeral_tool_router_smoke = json.loads(
+        Path(paths["ephemeral_tool_router_smoke_json"]).read_text(encoding="utf-8")
+    )
     live_template = json.loads(Path(paths["live_evidence_template"]).read_text(encoding="utf-8"))
     live_example = json.loads(Path(paths["live_evidence_example"]).read_text(encoding="utf-8"))
     live_scaffold_manifest_path = Path(paths["live_evidence_scaffold_manifest"])
@@ -2301,6 +2324,8 @@ def test_write_voice_operator_report_artifacts(tmp_path):
         "live_turn",
     ]
     assert smoke["ok"] is True
+    assert tool_disclosure_smoke == payload["tool_disclosure_smoke"]
+    assert ephemeral_tool_router_smoke == payload["ephemeral_tool_router_smoke"]
     assert sidecar_fail_closed_smoke["ok"] is True
     assert sidecar_fail_closed_smoke["scenario"] == "sidecar_send_fail_closed_after_acceptance"
     assert async_oracle_smoke["ok"] is True
