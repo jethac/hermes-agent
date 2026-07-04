@@ -2122,10 +2122,22 @@ def test_plan_run_readonly_discovery_safety_is_evidence_derived(tmp_path, monkey
     provisioning_result = next(
         result for result in summary["results"] if result["milestone"] == "milestone_2_real_spend_and_provisioning_preflight"
     )
+    provisioning_report = json.loads(
+        (artifact_root / "voiceops-provisioning" / "current" / "provisioning-readiness.json").read_text(
+            encoding="utf-8"
+        )
+    )
     markdown = Path(paths["markdown"]).read_text(encoding="utf-8")
     closure_markdown = Path(paths["closure_markdown"]).read_text(encoding="utf-8")
 
     assert provisioning_result["details"]["run_readonly_discovery"] is True
+    assert provisioning_report["safety"]["network_io"] is True
+    assert provisioning_report["safety"]["network_io_scope"] == "allowlisted_read_only_discovery"
+    assert provisioning_report["safety"]["mutating_network_io"] is False
+    assert provisioning_report["safety"]["provider_provisioning"] is False
+    assert provisioning_report["safety"]["live_spend"] is False
+    assert provisioning_report["safety"]["read_only_discovery_run_requested"] is True
+    assert provisioning_report["safety"]["read_only_discovery_grants_approval"] is False
     assert provisioning_result["details"]["read_only_discovery_status"] == "pass"
     assert provisioning_result["details"]["read_only_discovery_failed_probe_ids"] == []
     assert provisioning_result["details"]["read_only_discovery_missing_probe_ids"] == []

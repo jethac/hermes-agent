@@ -73,6 +73,21 @@ REALTIME_VOICE_LIVE_EVIDENCE_CLOSURE_COMMAND = (
 )
 
 def _build_safety_flags(provisioning: dict[str, Any] | None = None) -> dict[str, Any]:
+    if isinstance(provisioning, dict) and isinstance(provisioning.get("safety"), dict):
+        safety = provisioning["safety"]
+        return {
+            "network_io": bool(safety.get("network_io")),
+            "network_io_scope": str(safety.get("network_io_scope") or "none"),
+            "mutating_network_io": bool(safety.get("mutating_network_io")),
+            "read_only_discovery_run_requested": bool(safety.get("read_only_discovery_run_requested")),
+            "read_only_discovery_grants_approval": bool(safety.get("read_only_discovery_grants_approval")),
+            "env_presence_inspection": bool(safety.get("env_presence_inspection")),
+            "env_secret_values_emitted": bool(safety.get("env_secret_values_emitted")),
+            "outbound_sends": bool(safety.get("outbound_sends")),
+            "outbound_calls": bool(safety.get("outbound_calls")),
+            "live_spend": bool(safety.get("live_spend")),
+            "provider_provisioning": bool(safety.get("provider_provisioning")),
+        }
     discovery = provisioning.get("read_only_discovery", {}) if isinstance(provisioning, dict) else {}
     loaded_from_evidence = bool(discovery.get("loaded_from_evidence"))
     network_io = bool(discovery.get("network_io_possible")) and not loaded_from_evidence

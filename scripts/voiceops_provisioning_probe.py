@@ -2195,6 +2195,32 @@ def _probe_ok(command_result: dict[str, Any], *, run_commands: bool) -> bool:
     return command_result.get("found") is True
 
 
+def build_probe_safety_flags(
+    readonly_discovery: Mapping[str, Any],
+    *,
+    run_commands: bool,
+) -> dict[str, Any]:
+    loaded_from_evidence = bool(readonly_discovery.get("loaded_from_evidence"))
+    read_only_network_io = bool(readonly_discovery.get("network_io_possible")) and not loaded_from_evidence
+    return {
+        "env_presence_inspection": True,
+        "env_secret_values_emitted": False,
+        "secret_values_emitted": False,
+        "command_probes_run": bool(run_commands),
+        "command_probe_scope": "version_help_only" if run_commands else "path_presence_only",
+        "network_io": read_only_network_io,
+        "network_io_scope": "allowlisted_read_only_discovery" if read_only_network_io else "none",
+        "mutating_network_io": False,
+        "read_only_discovery_run_requested": bool(readonly_discovery.get("run_requested")) and not loaded_from_evidence,
+        "read_only_discovery_grants_approval": bool(readonly_discovery.get("does_not_grant_approval")) is False,
+        "provider_provisioning": False,
+        "live_spend": False,
+        "credential_retrieval": False,
+        "outbound_calls": False,
+        "outbound_sends": False,
+    }
+
+
 def build_probe_report(
     *,
     env: Mapping[str, str] | None = None,
@@ -2526,6 +2552,7 @@ def build_probe_report(
         "preflight_evidence_loaded": preflight_evidence["loaded"],
         "preflight_evidence_missing_fields": preflight_evidence["missing_fields"],
         "area_status": area_status,
+        "safety": build_probe_safety_flags(readonly_discovery, run_commands=run_commands),
         "payment_skill_bundle": payment_skill_bundle,
         "preflight_evidence": preflight_evidence,
         "env_sources": env_sources,

@@ -576,6 +576,23 @@ def test_cli_env_presence_alone_does_not_complete_real_preflight():
     )
     assert report["preflight_evidence"]["loaded"] is False
     assert "stripe_cli" not in report["required_failures"]
+    assert report["safety"] == {
+        "command_probe_scope": "path_presence_only",
+        "command_probes_run": False,
+        "credential_retrieval": False,
+        "env_presence_inspection": True,
+        "env_secret_values_emitted": False,
+        "live_spend": False,
+        "mutating_network_io": False,
+        "network_io": False,
+        "network_io_scope": "none",
+        "outbound_calls": False,
+        "outbound_sends": False,
+        "provider_provisioning": False,
+        "read_only_discovery_grants_approval": False,
+        "read_only_discovery_run_requested": False,
+        "secret_values_emitted": False,
+    }
 
 
 def test_nemoclaw_action_packet_validation_accepts_no_write_packet(tmp_path):
@@ -681,6 +698,21 @@ def test_write_probe_artifacts(tmp_path):
     execution_markdown = Path(paths["execution_plan_markdown"]).read_text(encoding="utf-8")
     setup_markdown = Path(paths["setup_closure_markdown"]).read_text(encoding="utf-8")
     assert payload["probe"]["non_mutating"] is True
+    assert payload["safety"]["env_presence_inspection"] is True
+    assert payload["safety"]["env_secret_values_emitted"] is False
+    assert payload["safety"]["secret_values_emitted"] is False
+    assert payload["safety"]["network_io"] is False
+    assert payload["safety"]["network_io_scope"] == "none"
+    assert payload["safety"]["mutating_network_io"] is False
+    assert payload["safety"]["live_spend"] is False
+    assert payload["safety"]["provider_provisioning"] is False
+    assert payload["safety"]["credential_retrieval"] is False
+    assert payload["safety"]["outbound_calls"] is False
+    assert payload["safety"]["outbound_sends"] is False
+    assert payload["safety"]["command_probes_run"] is False
+    assert payload["safety"]["command_probe_scope"] == "path_presence_only"
+    assert payload["safety"]["read_only_discovery_run_requested"] is False
+    assert payload["safety"]["read_only_discovery_grants_approval"] is False
     assert payload["preflight_evidence"]["loaded"] is False
     assert discovery["schema_version"] == "voiceops.milestone2.read_only_discovery.v1"
     assert discovery["run_requested"] is False
