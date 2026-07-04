@@ -1547,6 +1547,15 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_durable_oracle_text_absent"] is True
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_durable_record_count"] >= 1
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_direct_tool_authority_exposed"] is False
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_tool_result_payload_safe"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_reflex_status_payload_safe"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_placeholder_payload_safe"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_tool_result_forbidden_paths"] == []
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_reflex_status_forbidden_paths"] == []
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_placeholder_forbidden_paths"] == []
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_placeholder"].startswith(
+        "Accepted job one"
+    )
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_evidence_merge_key"].startswith(
         "kame-merge-"
     )

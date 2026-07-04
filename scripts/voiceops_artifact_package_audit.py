@@ -2393,6 +2393,25 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "external_frontend_direct_tool_authority_exposed": bool(
                 async_smoke.get("external_frontend_direct_tool_authority_exposed")
             ),
+            "external_frontend_tool_result_payload_safe": bool(
+                async_smoke.get("external_frontend_tool_result_payload_safe")
+            ),
+            "external_frontend_reflex_status_payload_safe": bool(
+                async_smoke.get("external_frontend_reflex_status_payload_safe")
+            ),
+            "external_frontend_placeholder_payload_safe": bool(
+                async_smoke.get("external_frontend_placeholder_payload_safe")
+            ),
+            "external_frontend_tool_result_forbidden_paths": async_smoke.get(
+                "external_frontend_tool_result_forbidden_paths"
+            ),
+            "external_frontend_reflex_status_forbidden_paths": async_smoke.get(
+                "external_frontend_reflex_status_forbidden_paths"
+            ),
+            "external_frontend_placeholder": async_smoke.get("external_frontend_placeholder"),
+            "external_frontend_placeholder_forbidden_paths": async_smoke.get(
+                "external_frontend_placeholder_forbidden_paths"
+            ),
             "unpromoted_hypothesis_evidence_bundle_id": async_smoke.get(
                 "unpromoted_hypothesis_evidence_bundle_id"
             ),

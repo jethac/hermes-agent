@@ -254,6 +254,13 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_durable_oracle_text_absent"] is True
     assert report["external_frontend_durable_record_count"] >= 1
     assert report["external_frontend_direct_tool_authority_exposed"] is False
+    assert report["external_frontend_tool_result_payload_safe"] is True
+    assert report["external_frontend_reflex_status_payload_safe"] is True
+    assert report["external_frontend_placeholder_payload_safe"] is True
+    assert report["external_frontend_tool_result_forbidden_paths"] == []
+    assert report["external_frontend_reflex_status_forbidden_paths"] == []
+    assert report["external_frontend_placeholder_forbidden_paths"] == []
+    assert report["external_frontend_placeholder"].startswith("Accepted job one")
     assert report["external_frontend_event_counts"]["tool.result"] == 1
     assert report["external_frontend_event_counts"]["oracle.job.accepted"] == 1
     assert report["external_frontend_event_counts"]["oracle.job.started"] == 1

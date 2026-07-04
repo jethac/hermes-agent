@@ -2314,7 +2314,13 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("external_frontend_durable_oracle_text_absent") is True
         and smoke.get("external_frontend_terminal_correlation_observed") is True
         and smoke.get("external_frontend_audit_id_continuity_observed") is True
-        and smoke.get("external_frontend_direct_tool_authority_exposed") is False,
+        and smoke.get("external_frontend_direct_tool_authority_exposed") is False
+        and smoke.get("external_frontend_tool_result_payload_safe") is True
+        and smoke.get("external_frontend_reflex_status_payload_safe") is True
+        and smoke.get("external_frontend_placeholder_payload_safe") is True
+        and (smoke.get("external_frontend_tool_result_forbidden_paths") or []) == []
+        and (smoke.get("external_frontend_reflex_status_forbidden_paths") or []) == []
+        and (smoke.get("external_frontend_placeholder_forbidden_paths") or []) == [],
         "durable_promoted_turn_resume_contract": smoke.get("durable_resume_contract_smoke_ok") is True
         and smoke.get("durable_resume_contract_schema_version") == "voiceops.kame_durable_resume_context.v1"
         and int(smoke.get("durable_resume_promoted_turn_count") or 0) >= 4
@@ -3533,6 +3539,25 @@ def build_voice_operator_report(
             ),
             "external_frontend_direct_tool_authority_exposed": bool(
                 async_oracle_smoke.get("external_frontend_direct_tool_authority_exposed")
+            ),
+            "external_frontend_tool_result_payload_safe": bool(
+                async_oracle_smoke.get("external_frontend_tool_result_payload_safe")
+            ),
+            "external_frontend_reflex_status_payload_safe": bool(
+                async_oracle_smoke.get("external_frontend_reflex_status_payload_safe")
+            ),
+            "external_frontend_placeholder_payload_safe": bool(
+                async_oracle_smoke.get("external_frontend_placeholder_payload_safe")
+            ),
+            "external_frontend_tool_result_forbidden_paths": list(
+                async_oracle_smoke.get("external_frontend_tool_result_forbidden_paths") or []
+            ),
+            "external_frontend_reflex_status_forbidden_paths": list(
+                async_oracle_smoke.get("external_frontend_reflex_status_forbidden_paths") or []
+            ),
+            "external_frontend_placeholder": async_oracle_smoke.get("external_frontend_placeholder"),
+            "external_frontend_placeholder_forbidden_paths": list(
+                async_oracle_smoke.get("external_frontend_placeholder_forbidden_paths") or []
             ),
             "external_frontend_event_counts": dict(
                 async_oracle_smoke.get("external_frontend_event_counts") or {}

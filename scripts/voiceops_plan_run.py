@@ -2137,6 +2137,36 @@ async def build_plan_run_async(
                     "external_frontend_direct_tool_authority_exposed": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_direct_tool_authority_exposed"],
+                    "external_frontend_tool_result_payload_safe": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_tool_result_payload_safe"],
+                    "external_frontend_reflex_status_payload_safe": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_reflex_status_payload_safe"],
+                    "external_frontend_placeholder_payload_safe": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_placeholder_payload_safe"],
+                    "external_frontend_tool_result_forbidden_paths": list(
+                        voice_operator["proofs"]["async_oracle_jobs"].get(
+                            "external_frontend_tool_result_forbidden_paths"
+                        )
+                        or []
+                    ),
+                    "external_frontend_reflex_status_forbidden_paths": list(
+                        voice_operator["proofs"]["async_oracle_jobs"].get(
+                            "external_frontend_reflex_status_forbidden_paths"
+                        )
+                        or []
+                    ),
+                    "external_frontend_placeholder": voice_operator["proofs"]["async_oracle_jobs"].get(
+                        "external_frontend_placeholder"
+                    ),
+                    "external_frontend_placeholder_forbidden_paths": list(
+                        voice_operator["proofs"]["async_oracle_jobs"].get(
+                            "external_frontend_placeholder_forbidden_paths"
+                        )
+                        or []
+                    ),
                     "durable_resume_contract_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
                         "durable_resume_contract_smoke_ok"
                     ],

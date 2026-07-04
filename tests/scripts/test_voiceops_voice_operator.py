@@ -438,6 +438,13 @@ def _async_oracle_smoke_payload() -> dict:
         "external_frontend_durable_oracle_text_absent": True,
         "external_frontend_durable_record_count": 1,
         "external_frontend_direct_tool_authority_exposed": False,
+        "external_frontend_tool_result_payload_safe": True,
+        "external_frontend_reflex_status_payload_safe": True,
+        "external_frontend_placeholder_payload_safe": True,
+        "external_frontend_tool_result_forbidden_paths": [],
+        "external_frontend_reflex_status_forbidden_paths": [],
+        "external_frontend_placeholder": "Accepted job one running: I'm preparing the handoff.",
+        "external_frontend_placeholder_forbidden_paths": [],
         "external_frontend_event_counts": {
             "tool.result": 1,
             "oracle.job.accepted": 1,
@@ -1525,6 +1532,15 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_durable_oracle_text_absent"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_durable_record_count"] == 1
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_direct_tool_authority_exposed"] is False
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_tool_result_payload_safe"] is True
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_reflex_status_payload_safe"] is True
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_placeholder_payload_safe"] is True
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_tool_result_forbidden_paths"] == []
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_reflex_status_forbidden_paths"] == []
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_placeholder_forbidden_paths"] == []
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_placeholder"].startswith(
+        "Accepted job one"
+    )
     assert report["requirements"]["async_oracle_external_frontend_bridge"] is True
     assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_smoke_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_source"] == "moshi"

@@ -1710,6 +1710,62 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
             "read_file",
         )
     )
+    frontend_forbidden_keys = {
+        "arguments",
+        "audio",
+        "audio_segment_ref",
+        "audio_time_range_ms",
+        "auxiliary_transcript_hypotheses",
+        "channel",
+        "evidence_authority",
+        "evidence_bundle",
+        "interpreter_disagreements",
+        "latest_interpreter_evidence",
+        "reflex_transcript_hypothesis",
+        "result_text",
+        "speaker",
+        "tool_arguments",
+        "transcript",
+        "transcript_hypotheses",
+    }
+    frontend_forbidden_values = (
+        "artifact://",
+        "discord_voice",
+        "general-redacted",
+        "jetha-redacted",
+        "latency_ms",
+        "moshi",
+        "stripe_link_purchase",
+    )
+
+    def _frontend_forbidden_paths(value: Any, *, path: str = "$") -> list[str]:
+        paths: list[str] = []
+        if isinstance(value, Mapping):
+            for key, nested in value.items():
+                key_text = str(key)
+                child_path = f"{path}.{key_text}"
+                if key_text in frontend_forbidden_keys:
+                    paths.append(child_path)
+                paths.extend(_frontend_forbidden_paths(nested, path=child_path))
+        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            for index, nested in enumerate(value):
+                paths.extend(_frontend_forbidden_paths(nested, path=f"{path}[{index}]"))
+        elif isinstance(value, str):
+            lowered = value.lower()
+            for forbidden in frontend_forbidden_values:
+                if forbidden.lower() in lowered:
+                    paths.append(path)
+                    break
+        return paths
+
+    tool_result_forbidden_paths = _frontend_forbidden_paths(tool_result.payload)
+    reflex_status = tool_result.payload.get("reflex_status")
+    reflex_status_forbidden_paths = _frontend_forbidden_paths(reflex_status)
+    placeholder_text = str(tool_result.payload.get("placeholder") or "")
+    placeholder_forbidden_paths = _frontend_forbidden_paths({"placeholder": placeholder_text})
+    external_frontend_tool_result_safe = not tool_result_forbidden_paths
+    external_frontend_reflex_status_safe = not reflex_status_forbidden_paths
+    external_frontend_placeholder_safe = bool(placeholder_text) and not placeholder_forbidden_paths
     auxiliary_hypotheses = (
         tuple(getattr(request, "auxiliary_transcript_hypotheses", ()))
         if request is not None
@@ -1848,6 +1904,9 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and terminal_correlation_observed
         and audit_id_continuity_observed
         and not direct_tool_authority_exposed
+        and external_frontend_tool_result_safe
+        and external_frontend_reflex_status_safe
+        and external_frontend_placeholder_safe
         and status_job.get("state") == "completed",
         "external_frontend_protocol": "kame_session_v1",
         "external_frontend_protocol_contract": "docs/kame-session-v1.md",
@@ -1927,6 +1986,13 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         "external_frontend_durable_oracle_text_absent": durable_oracle_text_absent,
         "external_frontend_durable_record_count": len(durable_records),
         "external_frontend_direct_tool_authority_exposed": direct_tool_authority_exposed,
+        "external_frontend_tool_result_payload_safe": external_frontend_tool_result_safe,
+        "external_frontend_reflex_status_payload_safe": external_frontend_reflex_status_safe,
+        "external_frontend_placeholder_payload_safe": external_frontend_placeholder_safe,
+        "external_frontend_tool_result_forbidden_paths": tool_result_forbidden_paths,
+        "external_frontend_reflex_status_forbidden_paths": reflex_status_forbidden_paths,
+        "external_frontend_placeholder": placeholder_text,
+        "external_frontend_placeholder_forbidden_paths": placeholder_forbidden_paths,
         "external_frontend_metadata_keys": sorted(str(key) for key in metadata),
         "external_frontend_event_counts": {
             event_type.value: sum(event.type == event_type for event in recorder.events)
@@ -5103,6 +5169,27 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "external_frontend_direct_tool_authority_exposed": external_frontend_bridge_smoke[
             "external_frontend_direct_tool_authority_exposed"
+        ],
+        "external_frontend_tool_result_payload_safe": external_frontend_bridge_smoke[
+            "external_frontend_tool_result_payload_safe"
+        ],
+        "external_frontend_reflex_status_payload_safe": external_frontend_bridge_smoke[
+            "external_frontend_reflex_status_payload_safe"
+        ],
+        "external_frontend_placeholder_payload_safe": external_frontend_bridge_smoke[
+            "external_frontend_placeholder_payload_safe"
+        ],
+        "external_frontend_tool_result_forbidden_paths": external_frontend_bridge_smoke[
+            "external_frontend_tool_result_forbidden_paths"
+        ],
+        "external_frontend_reflex_status_forbidden_paths": external_frontend_bridge_smoke[
+            "external_frontend_reflex_status_forbidden_paths"
+        ],
+        "external_frontend_placeholder": external_frontend_bridge_smoke[
+            "external_frontend_placeholder"
+        ],
+        "external_frontend_placeholder_forbidden_paths": external_frontend_bridge_smoke[
+            "external_frontend_placeholder_forbidden_paths"
         ],
         "external_frontend_event_counts": external_frontend_bridge_smoke[
             "external_frontend_event_counts"

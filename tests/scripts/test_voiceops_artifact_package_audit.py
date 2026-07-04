@@ -386,6 +386,18 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_tool_authority_false"] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_role_context"] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_promotion_required"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_tool_result_payload_safe"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_reflex_status_payload_safe"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_placeholder_payload_safe"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_tool_result_forbidden_paths"] = [
+        "$.transcript"
+    ]
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_reflex_status_forbidden_paths"] = [
+        "$.jobs[0].speaker"
+    ]
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_placeholder_forbidden_paths"] = [
+        "$.placeholder"
+    ]
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_single_bundle_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_tool_authority"] = True
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_tool_authority_false"] = False
@@ -581,6 +593,30 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_witness_promotion_required_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_tool_result_payload_safe_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_reflex_status_payload_safe_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_placeholder_payload_safe_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_tool_result_forbidden_paths_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_reflex_status_forbidden_paths_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_placeholder_forbidden_paths_mismatch"
         in report["issues"]
     )
     assert (
