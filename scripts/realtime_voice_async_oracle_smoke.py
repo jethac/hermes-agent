@@ -2526,6 +2526,67 @@ async def _run_kame_first_audio_latency_smoke() -> dict[str, Any]:
     }
 
 
+async def _run_reflex_status_overflow_smoke() -> dict[str, Any]:
+    """Prove compact reflex status exposes hidden jobs with a bounded +N summary."""
+
+    release = asyncio.Event()
+
+    async def runner(job: Any) -> dict[str, str]:
+        await release.wait()
+        return {"result_summary": f"done {job.job_id}"}
+
+    manager = OracleJobManager(max_concurrent=4, runner=runner)
+    submitted_job_ids: list[str] = []
+    for index in range(10):
+        submitted = await manager.submit(
+            KameOracleRequest(
+                session_id="voice-smoke-reflex-status-overflow",
+                turn_id=f"reflex-status-overflow:{index + 1}",
+                source="discord_voice",
+                user_id="42",
+                intent=f"Overflow status job {index + 1}",
+                route=KameRoute.DEFER,
+                interface_already_said=f"Starting overflow status job {index + 1}.",
+            )
+        )
+        submitted_job_ids.append(submitted.job_id)
+    await asyncio.sleep(0)
+
+    status = await manager.status_view()
+    reflex = status.get("reflex", {})
+    reflex_jobs = reflex.get("jobs") if isinstance(reflex.get("jobs"), list) else []
+    visible_job_ids = {str(job.get("job_id") or "") for job in reflex_jobs if isinstance(job, Mapping)}
+    hidden_job_ids = set(submitted_job_ids[8:])
+    last_visible = reflex_jobs[-1] if reflex_jobs and isinstance(reflex_jobs[-1], Mapping) else {}
+    visible_job_count = int(reflex.get("visible_job_count") or 0)
+    hidden_job_count = int(reflex.get("hidden_job_count") or 0)
+    more_spoken_status = str(reflex.get("more_spoken_status") or "")
+    hidden_ids_absent = visible_job_ids.isdisjoint(hidden_job_ids)
+    ok = (
+        len(reflex_jobs) == 8
+        and visible_job_count == 8
+        and hidden_job_count == 2
+        and more_spoken_status == "+2 more"
+        and last_visible.get("ordinal") == 8
+        and last_visible.get("ordinal_label") == "job eight"
+        and hidden_ids_absent
+    )
+
+    release.set()
+    await manager.wait_for_idle()
+
+    return {
+        "ok": bool(ok),
+        "reflex_status_overflow_smoke_ok": bool(ok),
+        "reflex_status_overflow_visible_job_count": visible_job_count,
+        "reflex_status_overflow_hidden_job_count": hidden_job_count,
+        "reflex_status_overflow_more_spoken_status": more_spoken_status,
+        "reflex_status_overflow_last_visible_ordinal": last_visible.get("ordinal"),
+        "reflex_status_overflow_last_visible_label": last_visible.get("ordinal_label"),
+        "reflex_status_overflow_hidden_ids_absent": hidden_ids_absent,
+    }
+
+
 async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
     """Prove witness text joins one bundle whether it is early, with, or late."""
 
@@ -3919,6 +3980,7 @@ async def run_smoke() -> dict[str, Any]:
     unpromoted_hypothesis_smoke = await _run_unpromoted_transcript_hypothesis_smoke()
     energy_gate_smoke = await _run_energy_gate_smoke()
     kame_first_audio_latency_smoke = await _run_kame_first_audio_latency_smoke()
+    reflex_status_overflow_smoke = await _run_reflex_status_overflow_smoke()
     witness_fusion_timing_smoke = await _run_witness_fusion_timing_smoke()
     runtime_kame_action_gate_smoke = await _run_runtime_kame_action_gate_smoke()
     audit_scalar_smoke = await _run_audit_scalar_redaction_smoke()
@@ -4366,6 +4428,7 @@ async def run_smoke() -> dict[str, Any]:
             and unpromoted_hypothesis_smoke["ok"]
             and energy_gate_smoke["ok"]
             and kame_first_audio_latency_smoke["ok"]
+            and reflex_status_overflow_smoke["ok"]
             and witness_fusion_timing_smoke["ok"]
             and runtime_kame_action_gate_smoke["ok"]
             and audit_scalar_smoke["ok"]
@@ -5120,6 +5183,27 @@ async def run_smoke() -> dict[str, Any]:
         "status_turn_committed": bool(running_status_commits),
         "status_ordinal_labels_visible": status_ordinal_labels_visible,
         "status_ordinal_labels": status_ordinal_labels,
+        "reflex_status_overflow_smoke_ok": reflex_status_overflow_smoke[
+            "reflex_status_overflow_smoke_ok"
+        ],
+        "reflex_status_overflow_visible_job_count": reflex_status_overflow_smoke[
+            "reflex_status_overflow_visible_job_count"
+        ],
+        "reflex_status_overflow_hidden_job_count": reflex_status_overflow_smoke[
+            "reflex_status_overflow_hidden_job_count"
+        ],
+        "reflex_status_overflow_more_spoken_status": reflex_status_overflow_smoke[
+            "reflex_status_overflow_more_spoken_status"
+        ],
+        "reflex_status_overflow_last_visible_ordinal": reflex_status_overflow_smoke[
+            "reflex_status_overflow_last_visible_ordinal"
+        ],
+        "reflex_status_overflow_last_visible_label": reflex_status_overflow_smoke[
+            "reflex_status_overflow_last_visible_label"
+        ],
+        "reflex_status_overflow_hidden_ids_absent": reflex_status_overflow_smoke[
+            "reflex_status_overflow_hidden_ids_absent"
+        ],
         "status_turn_queued_visible": (
             bool(running_status_commits)
             and "1 queued" in str(running_status_commits[-1].payload.get("text") or "")

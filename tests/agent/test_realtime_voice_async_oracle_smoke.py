@@ -35,6 +35,13 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["local_turn_committed"] is True
     assert report["status_turn_committed"] is True
     assert report["status_text"].startswith("Oracle jobs: 4 running out of 4, 1 queued.")
+    assert report["reflex_status_overflow_smoke_ok"] is True
+    assert report["reflex_status_overflow_visible_job_count"] == 8
+    assert report["reflex_status_overflow_hidden_job_count"] == 2
+    assert report["reflex_status_overflow_more_spoken_status"] == "+2 more"
+    assert report["reflex_status_overflow_last_visible_ordinal"] == 8
+    assert report["reflex_status_overflow_last_visible_label"] == "job eight"
+    assert report["reflex_status_overflow_hidden_ids_absent"] is True
     assert report["terminal_status_committed"] is True
     assert report["completed_result_status_visible"] is True
     assert "completed: First sentence. Second sentence. Third sentence." in report["terminal_status_text"]

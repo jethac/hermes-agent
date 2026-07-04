@@ -142,6 +142,13 @@ def _async_oracle_smoke_payload() -> dict:
         "status_turn_oracle_request_count_after": 4,
         "status_ordinal_labels_visible": True,
         "status_ordinal_labels": ("job one", "job two", "job three", "job four", "job five"),
+        "reflex_status_overflow_smoke_ok": True,
+        "reflex_status_overflow_visible_job_count": 8,
+        "reflex_status_overflow_hidden_job_count": 2,
+        "reflex_status_overflow_more_spoken_status": "+2 more",
+        "reflex_status_overflow_last_visible_ordinal": 8,
+        "reflex_status_overflow_last_visible_label": "job eight",
+        "reflex_status_overflow_hidden_ids_absent": True,
         "status_text": (
             "Oracle jobs: 4 running out of 4, 1 queued. "
             "job one running: Starting smoke task 1. "
@@ -1048,6 +1055,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["requirements"]["async_oracle_local_turn_while_running"] is True
     assert report["requirements"]["async_oracle_status_turn_while_running"] is True
     assert report["requirements"]["async_oracle_status_ordinal_labels_visible"] is True
+    assert report["requirements"]["async_oracle_status_bounded_overflow_visible"] is True
     assert report["requirements"]["async_oracle_fifth_job_queued_and_started"] is True
     assert report["requirements"]["async_oracle_cancellation_isolated"] is True
     assert report["requirements"]["async_oracle_playback_stop_preserves_jobs"] is True
@@ -1729,6 +1737,13 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         "job four",
         "job five",
     )
+    assert report["proofs"]["async_oracle_jobs"]["status_bounded_overflow_visible"] is True
+    assert report["proofs"]["async_oracle_jobs"]["status_bounded_overflow_visible_job_count"] == 8
+    assert report["proofs"]["async_oracle_jobs"]["status_bounded_overflow_hidden_job_count"] == 2
+    assert report["proofs"]["async_oracle_jobs"]["status_bounded_overflow_more_spoken_status"] == "+2 more"
+    assert report["proofs"]["async_oracle_jobs"]["status_bounded_overflow_last_visible_ordinal"] == 8
+    assert report["proofs"]["async_oracle_jobs"]["status_bounded_overflow_last_visible_label"] == "job eight"
+    assert report["proofs"]["async_oracle_jobs"]["status_bounded_overflow_hidden_ids_absent"] is True
     assert report["proofs"]["async_oracle_jobs"]["status_turn_no_oracle_request"] is True
     assert report["proofs"]["async_oracle_jobs"]["status_turn_oracle_request_count_before"] == 4
     assert report["proofs"]["async_oracle_jobs"]["status_turn_oracle_request_count_after"] == 4
@@ -2122,6 +2137,8 @@ def test_voice_operator_validation_rejects_status_turn_without_queued_or_no_orac
     report["async_oracle_smoke"]["status_turn_no_oracle_request"] = False
     report["async_oracle_smoke"]["status_turn_oracle_request_count_after"] = 5
     report["async_oracle_smoke"]["status_text"] = "Oracle jobs: 4 running out of 4."
+    report["async_oracle_smoke"]["reflex_status_overflow_hidden_job_count"] = 0
+    report["async_oracle_smoke"]["reflex_status_overflow_more_spoken_status"] = ""
 
     issues = validate_voice_operator_report(report)
 
@@ -2129,6 +2146,8 @@ def test_voice_operator_validation_rejects_status_turn_without_queued_or_no_orac
     assert "stale_async_oracle_coverage:status_turn_while_jobs_running" in issues
     assert "missing_async_oracle_coverage:status_turn_ordinal_labels_visible" in issues
     assert "stale_async_oracle_coverage:status_turn_ordinal_labels_visible" in issues
+    assert "missing_async_oracle_coverage:status_turn_bounded_overflow_visible" in issues
+    assert "stale_async_oracle_coverage:status_turn_bounded_overflow_visible" in issues
     assert "missing_async_oracle_acceptance:status_reports_running_and_queued_without_oracle_call" in issues
 
 

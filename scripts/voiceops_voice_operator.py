@@ -1937,6 +1937,15 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
     status_ordinal_labels_visible = smoke.get("status_ordinal_labels_visible") is True and status_ordinal_labels >= set(
         ASYNC_ORACLE_STATUS_ORDINAL_LABELS
     )
+    reflex_status_overflow_visible = (
+        smoke.get("reflex_status_overflow_smoke_ok") is True
+        and int(smoke.get("reflex_status_overflow_visible_job_count") or 0) == 8
+        and int(smoke.get("reflex_status_overflow_hidden_job_count") or 0) == 2
+        and smoke.get("reflex_status_overflow_more_spoken_status") == "+2 more"
+        and smoke.get("reflex_status_overflow_last_visible_ordinal") == 8
+        and smoke.get("reflex_status_overflow_last_visible_label") == "job eight"
+        and smoke.get("reflex_status_overflow_hidden_ids_absent") is True
+    )
     partial_active = smoke.get("witness_fusion_partial_active_hypothesis")
     partial_active_hypothesis = partial_active if isinstance(partial_active, Mapping) else {}
     return {
@@ -1955,6 +1964,7 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("status_turn_queued_visible") is True
         and smoke.get("status_turn_no_oracle_request") is True,
         "status_turn_ordinal_labels_visible": status_ordinal_labels_visible,
+        "status_turn_bounded_overflow_visible": reflex_status_overflow_visible,
         "fifth_job_queued_and_started_after_capacity_freed": int(smoke.get("queued_jobs") or 0) >= 1
         and smoke.get("fifth_job_queued") is True
         and smoke.get("fifth_job_started_after_capacity_freed") is True,
@@ -2988,6 +2998,27 @@ def build_voice_operator_report(
             "status_text": async_oracle_smoke.get("status_text"),
             "status_ordinal_labels_visible": bool(async_oracle_smoke.get("status_ordinal_labels_visible")),
             "status_ordinal_labels": tuple(async_oracle_smoke.get("status_ordinal_labels") or ()),
+            "status_bounded_overflow_visible": bool(
+                async_oracle_smoke.get("reflex_status_overflow_smoke_ok")
+            ),
+            "status_bounded_overflow_visible_job_count": async_oracle_smoke.get(
+                "reflex_status_overflow_visible_job_count"
+            ),
+            "status_bounded_overflow_hidden_job_count": async_oracle_smoke.get(
+                "reflex_status_overflow_hidden_job_count"
+            ),
+            "status_bounded_overflow_more_spoken_status": async_oracle_smoke.get(
+                "reflex_status_overflow_more_spoken_status"
+            ),
+            "status_bounded_overflow_last_visible_ordinal": async_oracle_smoke.get(
+                "reflex_status_overflow_last_visible_ordinal"
+            ),
+            "status_bounded_overflow_last_visible_label": async_oracle_smoke.get(
+                "reflex_status_overflow_last_visible_label"
+            ),
+            "status_bounded_overflow_hidden_ids_absent": bool(
+                async_oracle_smoke.get("reflex_status_overflow_hidden_ids_absent")
+            ),
             "terminal_status_committed": bool(async_oracle_smoke.get("terminal_status_committed")),
             "completed_result_status_visible": bool(async_oracle_smoke.get("completed_result_status_visible")),
             "terminal_status_text": async_oracle_smoke.get("terminal_status_text"),
@@ -3856,6 +3887,9 @@ def build_voice_operator_report(
             "async_oracle_status_ordinal_labels_visible": async_oracle_coverage[
                 "status_turn_ordinal_labels_visible"
             ],
+            "async_oracle_status_bounded_overflow_visible": async_oracle_coverage[
+                "status_turn_bounded_overflow_visible"
+            ],
             "async_oracle_fifth_job_queued_and_started": async_oracle_coverage[
                 "fifth_job_queued_and_started_after_capacity_freed"
             ],
@@ -4036,6 +4070,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "local_turn_while_jobs_running",
         "status_turn_while_jobs_running",
         "status_turn_ordinal_labels_visible",
+        "status_turn_bounded_overflow_visible",
         "fifth_job_queued_and_started_after_capacity_freed",
         "one_job_cancelled_while_others_completed",
         "queued_job_cancelled_before_start",
