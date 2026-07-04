@@ -199,6 +199,18 @@ things separate: witness adjudication (`accepted_as_supporting_evidence`,
 (`interpreter_corrected_transcript`, normalized intent, entities, confidence)
 that may be handed to Hermes' active `/model`.
 
+2026-07-04 consolidation: the three-tier design is reflex, interpreter, oracle,
+not reflex plus two competing transcript systems. The reflex can be extremely
+small and latency-biased; it only needs to notice speech state, stop playback,
+acknowledge, and form a provisional route. Gemma's job is multilingual
+direct-audio interpretation of the accepted cut, including corrected transcript
+output when needed. Moshi/Open-S2S "STT" should be supplied to Gemma as witness
+context beside the waveform, never as a sibling control path. Classic ASR is
+kept for fallback, diagnostics, captions, or high-risk literal checks. If the
+interpreter produces transcript text, that text is `interpreter_promoted`; if a
+frontend produces transcript text, it is only a hypothesis until Gemma or the
+oracle promotes it.
+
 | Tier | Primary input | Immediate output | Authority boundary |
 | --- | --- | --- | --- |
 | Reflex | live audio, VAD/energy, current session state | acknowledgement, barge-in, route, rough intent, optional witness transcript | floor control only; provisional `reflex_hypothesis` |
@@ -1734,6 +1746,8 @@ Preferred reflex track:
 
 - Moshi/PersonaPlex-class S2S or a smaller timing/classifier model as the first
   floor-control candidate
+- reflex should be optimized for endpoint-to-ack latency and interruption
+  behavior, not literal transcript authority
 - rough transcript hypothesis captured as early, non-durable context
 - text-only fallback through streaming STT only when the realtime reflex is
   unavailable or too unstable; this is degraded compatibility, not full KAME
@@ -1743,6 +1757,8 @@ Preferred reflex track:
 Preferred interpreter track:
 
 - Gemma 4 E2B/E4B/12B as the first audio-understanding evidence candidate
+- treat Gemma transcript output as the promoted direct-audio interpretation
+  result, not as a parallel ASR feed racing Moshi text or the oracle
 - raw audio plus frontend-witness/reflex/S2S transcript hypotheses as normal
   input
 - optional classic ASR transcript hypothesis as an additional comparison input
@@ -1756,6 +1772,8 @@ Preferred speech track:
 - use Cartesia or another cloud bridge only as a fallback or
   provider-comparison path while local speech is being validated
 - do not use Cartesia STT as primary KAME input, scheduler, or control path
+- do not build a second "Gemma ASR" pipeline beside the interpreter; Gemma's
+  transcript-like output is part of the interpreter result
 - evaluate local transcript hypothesis sources and TTS separately before combining them
 - do not feed STT into the reflex in normal full KAME mode
 - use ASR as fallback or additional auxiliary transcript hypothesis evidence for escalated

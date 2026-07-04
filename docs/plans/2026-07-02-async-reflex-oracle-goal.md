@@ -30,6 +30,14 @@ oracle. There is no separate `oracle_model`, no second Hermes turn from Moshi
 text, and no ASR proof requirement before acknowledgement or job creation when
 raw audio is available.
 
+Design consolidation: do not model this as "reflex plus Gemma ASR plus oracle."
+The reflex is latency-biased and provisional. Gemma is the direct-audio
+interpreter that may emit corrected multilingual transcript text as
+`interpreter_promoted` output. Moshi/Open-S2S transcript-looking text is supplied
+to Gemma as context beside the waveform; it is not a competing control path.
+Classic ASR stays optional for fallback, diagnostics, captions, and high-risk
+literal checks.
+
 Latest decision: Moshi/OpenClaw/VoiceClaw transcript-looking output should be
 sent to the Gemma interpreter with the raw voice, not routed around it. Treat
 that text as `frontend_witness_hypothesis` unless the adapter can prove a more
@@ -134,7 +142,8 @@ The interpreter is the evidence lane. It owns:
 
 - raw clipped audio review after each speech cut
 - comparison against frontend-witness/reflex/S2S/classic-ASR hypotheses
-- optional comparison against classic ASR hypotheses when enabled
+- optional comparison against classic ASR hypotheses when enabled; this is
+  fallback/diagnostic/literal-evidence support, not the normal control path
 - corrected transcript alternatives
 - multilingual intent, entities, numbers, names, URLs, code terms, and language
   notes
@@ -146,6 +155,12 @@ oracle. A Moshi/S2S transcript, when available, is passed as hypothesis context
 inside the same evidence bundle as the raw audio. Classic ASR is retained for
 fallback, diagnostics, or literal wording checks, not as the normal reflex
 driver.
+
+Likewise, Gemma should not be represented as a separate ASR provider in the
+normal architecture. If Gemma emits a transcript, that is part of the
+interpreter result and carries `interpreter_promoted` authority only after the
+raw-audio cut has been adjudicated. Frontend text remains hypothesis authority
+even when it is faster than Gemma.
 
 Moshi/S2S transcript evidence is the same kind of optional support signal. The
 interpreter should not wait for it before acknowledging the user or starting

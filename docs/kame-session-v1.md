@@ -27,6 +27,13 @@ hypothesis to the interpreter." The hypothesis is useful context for Gemma, but
 it remains `authority = "hypothesis"` until the interpreter promotes
 raw-audio-grounded wording.
 
+The same rule applies when Gemma emits transcript-like text. In KAME, Gemma is
+the direct-audio interpreter, not a second ASR service racing the frontend. Its
+corrected transcript, entities, and intent become useful to Hermes only when
+they are emitted as `interpreter_promoted` fields for the accepted raw-audio cut.
+Moshi/Open-S2S text, reflex captions, and classic ASR text remain
+`transcript_hypotheses[]` that Gemma may use, correct, or reject.
+
 For adapters that expose a Moshi-style "STT" field, the field name is
 misleading from Hermes' point of view. Hermes should normalize it as witness
 context for the same direct-audio interpreter packet, not as a separate ASR
@@ -47,6 +54,16 @@ External frontends may provide:
 
 External frontends must not receive or execute direct Hermes file, shell,
 memory, payment, provisioning, phone, message, or credential tools.
+
+The intended deployment may have three model roles, but it must still produce
+one logical Hermes turn per accepted speech cut:
+
+- fast reflex: floor control, acknowledgement, route, and optional witness text
+- Gemma interpreter: raw-audio-grounded transcript/intent/entity promotion
+- Hermes active `/model`: oracle authority for tools and durable outcomes
+
+No frontend transcript source, including Moshi "STT," may create a second turn
+or bypass the Gemma interpreter when raw audio exists.
 
 ## Input Events
 
@@ -218,6 +235,13 @@ Partial hypotheses are active only until a same-source, same-kind final
 hypothesis for the same speech cut arrives. The final hypothesis replaces the
 partial in active interpreter context; the partial survives only as superseded
 provenance for audit and latency debugging.
+
+Do not add a separate hypothesis kind for "Gemma ASR" in the normal path. Gemma
+is the interpreter; its transcript-like output belongs in the interpreter result
+with `authority = "interpreter_promoted"` when accepted. If a separate Gemma
+service is deliberately run as a diagnostic ASR experiment, normalize its output
+as `classic_asr_hypothesis` or another explicit hypothesis source and keep
+`tool_authority = false`.
 
 In multi-speaker sessions, a transcript hypothesis is not attachable to a
 speech cut merely because it arrived near the same time. The adapter must bind
