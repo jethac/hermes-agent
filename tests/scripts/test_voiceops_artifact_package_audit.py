@@ -1193,6 +1193,8 @@ def test_package_audit_rejects_plan_run_top_level_mirror_drift(tmp_path):
     plan_run["ok"] = False
     plan_run["hard_failures"] = ["milestone_0_hackathon_demo"]
     plan_run["readiness_gaps"] = []
+    plan_run["review_gaps"] = []
+    plan_run["evidence_mode"] = "fixture_rehearsal"
     plan_run["closure_status"] = "complete"
     plan_run["readiness_ok"] = True
     plan_run["current_environment_blockers"] = {}
@@ -1208,6 +1210,8 @@ def test_package_audit_rejects_plan_run_top_level_mirror_drift(tmp_path):
     assert "plan_run:ok_not_true" in report["issues"]
     assert "plan_run:hard_failures_not_empty" in report["issues"]
     assert "plan_run:readiness_gaps_mismatch" in report["issues"]
+    assert "plan_run:review_gaps_mismatch" in report["issues"]
+    assert "plan_run:evidence_mode_mismatch" in report["issues"]
     assert "plan_run:closure_status_mismatch" in report["issues"]
     assert "plan_run:readiness_ok_mismatch" in report["issues"]
     assert "plan_run:current_environment_blockers_mismatch" in report["issues"]

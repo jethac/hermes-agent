@@ -72,6 +72,100 @@ REALTIME_VOICE_LIVE_EVIDENCE_CLOSURE_COMMAND = (
     "--wait-seconds 5"
 )
 
+
+def _walk_json_values(value: Any) -> list[Any]:
+    values = [value]
+    if isinstance(value, dict):
+        for item in value.values():
+            values.extend(_walk_json_values(item))
+    elif isinstance(value, list):
+        for item in value:
+            values.extend(_walk_json_values(item))
+    return values
+
+
+def _local_json_refs(payload: Any) -> list[str]:
+    refs: list[str] = []
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if key in {"report", "source_artifact", "approval_decision_ref"} and isinstance(value, str):
+                refs.append(value)
+            elif key == "reports" and isinstance(value, dict):
+                refs.extend(str(item) for item in value.values() if isinstance(item, str))
+            else:
+                refs.extend(_local_json_refs(value))
+    elif isinstance(payload, list):
+        for item in payload:
+            refs.extend(_local_json_refs(item))
+    return refs
+
+
+def _resolve_local_json_ref(ref: str, *, base: Path) -> Path | None:
+    if not ref or ref.startswith("artifact://"):
+        return None
+    path = Path(ref)
+    if path.is_absolute() or path.parts[:1] == ("~",) or ".." in path.parts:
+        return None
+    candidate = (base / path).resolve(strict=False)
+    package_root = base.resolve(strict=False)
+    try:
+        candidate.relative_to(package_root)
+    except ValueError:
+        return None
+    return candidate if candidate.suffix == ".json" else None
+
+
+def _evidence_json_files(path: Path) -> list[Path]:
+    queue = [path] if path.is_file() else sorted(path.glob("*.json")) if path.is_dir() else []
+    files: list[Path] = []
+    seen: set[Path] = set()
+    while queue:
+        candidate = queue.pop(0)
+        resolved = candidate.resolve(strict=False)
+        if resolved in seen or not candidate.is_file():
+            continue
+        seen.add(resolved)
+        files.append(candidate)
+        try:
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        for ref in _local_json_refs(payload):
+            ref_path = _resolve_local_json_ref(ref, base=candidate.parent)
+            if ref_path is not None and ref_path not in seen:
+                queue.append(ref_path)
+    return files
+
+
+def _fixture_rehearsal_markers(paths: list[Path]) -> list[dict[str, str]]:
+    markers: list[dict[str, str]] = []
+    seen: set[Path] = set()
+    for path in paths:
+        for candidate in _evidence_json_files(path):
+            resolved = candidate.resolve(strict=False)
+            if resolved in seen or not candidate.is_file():
+                continue
+            seen.add(resolved)
+            try:
+                payload = json.loads(candidate.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+                continue
+            for value in _walk_json_values(payload):
+                if value is True and isinstance(payload, dict) and payload.get("example_only") is True:
+                    markers.append({"path": str(candidate), "marker": "example_only"})
+                    break
+                if isinstance(value, str):
+                    lowered = value.lower()
+                    if any(token in lowered for token in ("pytest", "fixture", "rehearsal")):
+                        markers.append({"path": str(candidate), "marker": value[:120]})
+                        break
+    return markers
+
+
+def _evidence_mode(markers: list[dict[str, str]]) -> str:
+    return "fixture_rehearsal" if markers else "operator_collected_or_pending"
+
+
 def _build_safety_flags(provisioning: dict[str, Any] | None = None) -> dict[str, Any]:
     if isinstance(provisioning, dict) and isinstance(provisioning.get("safety"), dict):
         safety = provisioning["safety"]
@@ -583,7 +677,8 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
             "--output-dir artifacts/voiceops-package-audit/current"
         ),
         "final_success_signal": (
-            "readiness_gaps is [] and review_gaps is [] and closure_status is complete and package_audit.status is pass"
+            "readiness_gaps is [] and review_gaps is [] and evidence_mode is operator_collected_or_pending "
+            "and closure_status is complete and package_audit.status is pass"
         ),
     }
 
@@ -1351,6 +1446,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
     gates = _append_plan_model_flags(gates, model_flags)
     blockers = _build_current_environment_blockers(current_environment)
     review_gaps = summary.get("review_gaps", [])
+    fixture_rehearsal = summary.get("evidence_mode") == "fixture_rehearsal"
     readiness_gap_milestones = set(summary["readiness_gaps"])
     remaining_gates = [gate for gate in gates if gate["milestone"] in readiness_gap_milestones]
     handoff = _build_operator_handoff(gates, blockers)
@@ -1369,12 +1465,21 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
         },
         "readiness_gaps": summary["readiness_gaps"],
         "review_gaps": review_gaps,
+        "evidence_mode": summary.get("evidence_mode", "operator_collected_or_pending"),
+        "fixture_rehearsal": fixture_rehearsal,
+        "fixture_rehearsal_markers": summary.get("fixture_rehearsal_markers", []),
         "current_environment": current_environment,
         "current_environment_blockers": blockers,
         "operator_handoff": handoff,
         "next_actions": next_actions,
         "review_actions": review_actions,
-        "closure_status": "needs_external_evidence" if summary["readiness_gaps"] or review_gaps else "complete",
+        "closure_status": (
+            "needs_external_evidence"
+            if summary["readiness_gaps"] or review_gaps
+            else "fixture_rehearsal"
+            if fixture_rehearsal
+            else "complete"
+        ),
         "remaining_gates": remaining_gates,
         "gates": gates,
     }
@@ -1444,6 +1549,7 @@ async def build_plan_run_async(
     env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     evidence_paths = evidence_paths or []
+    voice_live_evidence_paths = voice_live_evidence_paths or []
     env_files = env_files or []
     effective_env = dict(os.environ if env is None else env)
 
@@ -2722,6 +2828,21 @@ async def build_plan_run_async(
         if result["status"] in {"needs_setup", "needs_evidence", "needs_live_probe"}
     ]
     review_gaps = _review_gap_milestones(results)
+    supplied_evidence_paths = [
+        *evidence_paths,
+        *voice_live_evidence_paths,
+        *[
+            path
+            for path in (
+                provisioning_preflight_evidence,
+                read_only_discovery_evidence,
+                post_approval_receipts,
+            )
+            if path is not None
+        ],
+    ]
+    fixture_rehearsal_markers = _fixture_rehearsal_markers(supplied_evidence_paths)
+    evidence_mode = _evidence_mode(fixture_rehearsal_markers)
     summary = {
         "schema_version": "voiceops.plan_run.v1",
         "artifact_id": "voiceops-plan-run",
@@ -2738,6 +2859,9 @@ async def build_plan_run_async(
         "hard_failures": hard_failures,
         "readiness_gaps": readiness_gaps,
         "review_gaps": review_gaps,
+        "evidence_mode": evidence_mode,
+        "fixture_rehearsal": evidence_mode == "fixture_rehearsal",
+        "fixture_rehearsal_markers": fixture_rehearsal_markers,
         "results": results,
         "current_environment": _build_current_environment_snapshot(env=effective_env, env_files=env_files),
     }
@@ -2749,6 +2873,7 @@ async def build_plan_run_async(
         summary["closure_status"] == "complete"
         and summary["readiness_gaps"] == []
         and summary["review_gaps"] == []
+        and summary["evidence_mode"] != "fixture_rehearsal"
     )
     summary["current_environment_blockers"] = summary["closure_index"][
         "current_environment_blockers"
@@ -2758,10 +2883,16 @@ async def build_plan_run_async(
     ]
     summary["next_actions"] = summary["closure_index"]["next_actions"]
     summary["review_actions"] = summary["closure_index"]["review_actions"]
-    summary["ready_for_demo"] = summary["ok"] and not summary["readiness_gaps"] and not summary["review_gaps"]
+    summary["ready_for_demo"] = (
+        summary["ok"]
+        and not summary["readiness_gaps"]
+        and not summary["review_gaps"]
+        and summary["evidence_mode"] != "fixture_rehearsal"
+    )
     summary["blockers"] = {
         "readiness_gaps": summary["readiness_gaps"],
         "review_gaps": summary["review_gaps"],
+        "evidence_mode": summary["evidence_mode"],
         "remaining_gates": summary["remaining_gates"],
         "review_actions": summary["review_actions"],
         "current_environment": summary["closure_index"]["current_environment_blockers"],
@@ -2802,6 +2933,7 @@ def _markdown(summary: dict[str, Any]) -> str:
         f"- Hard failures: {', '.join(summary['hard_failures']) if summary['hard_failures'] else 'none'}",
         f"- Readiness gaps: {', '.join(summary['readiness_gaps']) if summary['readiness_gaps'] else 'none'}",
         f"- Review gaps: {', '.join(summary.get('review_gaps', [])) if summary.get('review_gaps') else 'none'}",
+        f"- Evidence mode: {summary.get('evidence_mode', 'operator_collected_or_pending')}",
         *(
             [
                 f"- Package audit: {package_audit.get('status', 'unknown')}",
@@ -2917,6 +3049,7 @@ def _closure_markdown(closure: dict[str, Any]) -> str:
         f"- Safety: {_safety_summary_line(closure.get('safety', {}), include_spark=True)}",
         f"- Readiness gaps: {', '.join(closure['readiness_gaps']) if closure['readiness_gaps'] else 'none'}",
         f"- Review gaps: {', '.join(closure.get('review_gaps', [])) if closure.get('review_gaps') else 'none'}",
+        f"- Evidence mode: {closure.get('evidence_mode', 'operator_collected_or_pending')}",
         "",
         "## Current Environment",
         "",
@@ -3336,6 +3469,7 @@ def main(argv: list[str] | None = None) -> int:
                             summary["closure_index"]["closure_status"] == "complete"
                             and summary["readiness_gaps"] == []
                             and summary.get("review_gaps", []) == []
+                            and summary.get("evidence_mode") != "fixture_rehearsal"
                         ),
                         "dry_audit": True,
                         "persistent_writes": False,
@@ -3344,6 +3478,8 @@ def main(argv: list[str] | None = None) -> int:
                         "requested_output_dir": str(args.output_dir),
                         "readiness_gaps": summary["readiness_gaps"],
                         "review_gaps": summary.get("review_gaps", []),
+                        "evidence_mode": summary.get("evidence_mode"),
+                        "fixture_rehearsal": summary.get("fixture_rehearsal"),
                         "hard_failures": summary["hard_failures"],
                         "closure_status": summary["closure_index"]["closure_status"],
                         "remaining_gates": [
@@ -3409,6 +3545,8 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 "readiness_gaps": summary["readiness_gaps"],
                 "review_gaps": summary.get("review_gaps", []),
+                "evidence_mode": summary.get("evidence_mode"),
+                "fixture_rehearsal": summary.get("fixture_rehearsal"),
                 "hard_failures": summary["hard_failures"],
             },
             indent=2,

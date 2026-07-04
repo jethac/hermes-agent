@@ -1075,9 +1075,15 @@ def _audit_plan_consistency(
         issues.append("plan_run:closure_status_mismatch")
     if plan_run.get("readiness_gaps") != plan_closure.get("readiness_gaps"):
         issues.append("plan_run:readiness_gaps_mismatch")
+    if plan_run.get("review_gaps") != plan_closure.get("review_gaps"):
+        issues.append("plan_run:review_gaps_mismatch")
+    if plan_run.get("evidence_mode") != plan_closure.get("evidence_mode"):
+        issues.append("plan_run:evidence_mode_mismatch")
     expected_readiness_ok = (
         plan_closure.get("closure_status") == "complete"
         and plan_closure.get("readiness_gaps") == []
+        and plan_closure.get("review_gaps") == []
+        and plan_closure.get("evidence_mode") != "fixture_rehearsal"
     )
     if plan_run.get("readiness_ok") != expected_readiness_ok:
         issues.append("plan_run:readiness_ok_mismatch")

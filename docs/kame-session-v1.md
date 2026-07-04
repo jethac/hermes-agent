@@ -73,6 +73,17 @@ Hermes' active `/model` only receives promoted wording, intent, entities, and
 compact labeled audit context. Raw witness strings must not be replayed as the
 oracle prompt.
 
+2026-07-05 adapter rule: a Moshi/Open-S2S transcript may be sent with raw voice,
+but only as interpreter context. Normalize it into `transcript_hypotheses[]`
+with `kind = "frontend_witness_hypothesis"` unless the adapter can prove a
+narrower producer, set `source` to the provider name, and include
+`role = "witness_context"`, `authority = "hypothesis"`, and
+`tool_authority = false`. The same `turn_id`, `audio_segment_ref`,
+`evidence_bundle_id`, and `evidence_merge_key` must bind the witness to the
+waveform. The witness can help Gemma recover clipped prefixes, names, numbers,
+and code-switching, but it cannot become durable user text, `oracle_text`, or
+an action payload before interpreter/oracle promotion.
+
 The same rule applies when Gemma emits transcript-like text. In KAME, Gemma is
 the direct-audio interpreter, not a second ASR service racing the frontend. Its
 corrected transcript, entities, and intent become useful to Hermes only when
@@ -85,7 +96,7 @@ misleading from Hermes' point of view. Hermes should normalize it as witness
 context for the same direct-audio interpreter packet, not as a separate ASR
 result and not as the user's prompt. The raw waveform, speech gate, speaker
 metadata, and reflex route are the authoritative inputs; the Moshi text is an
-auxiliary claim the interpreter can use, correct, or reject.
+witness claim the interpreter can use, correct, or reject.
 
 ## Roles
 

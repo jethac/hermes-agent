@@ -674,6 +674,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert summary["blockers"] == {
         "readiness_gaps": summary["readiness_gaps"],
         "review_gaps": summary["review_gaps"],
+        "evidence_mode": summary["evidence_mode"],
         "remaining_gates": summary["remaining_gates"],
         "review_actions": summary["review_actions"],
         "current_environment": blockers,
@@ -682,7 +683,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert handoff["schema_version"] == "voiceops.operator_handoff.v1"
     assert handoff["changes_readiness_by_itself"] is False
     assert handoff["final_success_signal"] == (
-        "readiness_gaps is [] and review_gaps is [] and closure_status is complete and package_audit.status is pass"
+        "readiness_gaps is [] and review_gaps is [] and evidence_mode is operator_collected_or_pending "
+        "and closure_status is complete and package_audit.status is pass"
     )
     assert "--package-audit" in handoff["final_reindex_command"]
     next_actions = summary["closure_index"]["next_actions"]
@@ -1994,6 +1996,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert payload["ok"] is True
     assert payload["readiness_ok"] is False
     assert payload["ready_for_demo"] is False
+    assert payload["evidence_mode"] == "operator_collected_or_pending"
     assert payload["artifacts"]["json"] == paths["json"]
     assert payload["artifact_manifest"]["json"] == "voiceops-plan-run.json"
     assert payload["blockers"] == summary["blockers"]
@@ -2212,8 +2215,13 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
     assert summary["hard_failures"] == []
     assert summary["readiness_gaps"] == []
     assert summary["review_gaps"] == ["milestone_3_multi_channel_policy"]
+    assert summary["evidence_mode"] == "fixture_rehearsal"
+    assert summary["fixture_rehearsal"] is True
+    assert summary["fixture_rehearsal_markers"]
     assert summary["closure_index"]["closure_status"] == "needs_external_evidence"
     assert summary["closure_index"]["remaining_gates"] == []
+    assert summary["closure_index"]["evidence_mode"] == "fixture_rehearsal"
+    assert summary["closure_index"]["fixture_rehearsal"] is True
     assert statuses["milestone_1_real_voice_operator"] == "live_evidence_supplied"
     assert statuses["milestone_2_real_spend_and_provisioning_preflight"] == "ready"
     assert statuses["milestone_4_local_spark_stack_matrix"] == "validated"
@@ -2254,7 +2262,8 @@ def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, 
     }
     assert summary["closure_index"]["operator_handoff"]["changes_readiness_by_itself"] is False
     assert summary["closure_index"]["operator_handoff"]["final_success_signal"] == (
-        "readiness_gaps is [] and review_gaps is [] and closure_status is complete and package_audit.status is pass"
+        "readiness_gaps is [] and review_gaps is [] and evidence_mode is operator_collected_or_pending "
+        "and closure_status is complete and package_audit.status is pass"
     )
     assert "--package-audit" in summary["closure_index"]["operator_handoff"]["final_reindex_command"]
     assert "present-redacted" not in serialized
@@ -2764,6 +2773,7 @@ def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
     assert payload["ok"] is True
     assert payload["ok_meaning"] == "no hard validation failures; not a readiness claim"
     assert payload["readiness_ok"] is False
+    assert payload["evidence_mode"] == "operator_collected_or_pending"
     assert payload["dry_audit"] is True
     assert payload["persistent_writes"] is False
     assert payload["temporary_artifacts_removed_on_exit"] is True

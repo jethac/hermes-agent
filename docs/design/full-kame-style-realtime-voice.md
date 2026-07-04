@@ -45,6 +45,18 @@ inline, and late Moshi/Open-S2S/VoiceClaw/OpenClaw/reflex/classic-ASR text must
 merge into that same bundle as witness evidence. It must never fork a second
 Hermes turn.
 
+2026-07-05 amendment: the Moshi/Open-S2S transcript is explicitly interpreter
+context, not a parallel STT lane. If the frontend produces a same-cut waveform
+and text, Hermes sends both to Gemma in one packet: raw audio first, metadata
+second, reflex state third, `transcript_hypotheses[]` last. The text should be
+classified as `frontend_witness_hypothesis` by default, with `source = "moshi"`
+or the precise provider name, `role = "witness_context"`,
+`authority = "hypothesis"`, and `tool_authority = false`. The interpreter may
+accept, correct, or reject that witness. Only `interpreter_promoted` or
+`oracle_promoted` fields can become durable user wording, Stripe/NemoClaw
+spend reasons, phone payloads, memory/file writes, external messages, or tool
+arguments.
+
 ## Current Decision Record
 
 Date: 2026-07-04

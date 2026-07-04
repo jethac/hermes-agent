@@ -92,7 +92,7 @@ Target KAME layout:
   submits oracle jobs to the active Hermes model; it does not configure a
   separate oracle model.
 - Speech: local transcript hypothesis evidence and TTS where practical, with
-  Moshi/S2S or classic ASR transcripts used as auxiliary witness context for
+  Moshi/S2S or classic ASR transcripts used as witness/fallback context for
   the interpreter rather than reflex input in full KAME mode. The oracle may see
   promoted wording or labeled audit context, but raw transcript hypotheses do
   not carry action authority. The system must not require ASR evidence before
@@ -1250,7 +1250,7 @@ The readiness closure index is the top-level next-action map for the remaining e
 
 The operator handoff is the ordered execution runbook derived from the closure index. It must list the live Discord voice, spend/provisioning preflight, and local Spark stack phases in order, include exact collection and re-index commands, identify expected artifacts and success checks, and state that the handoff does not change readiness by itself. The final re-index command must include `--package-audit`, and package audit is part of final headless verification after every closure re-index.
 
-The test suite includes a closure rehearsal with redacted local fixtures for all three remaining gates. It proves that supplied live voice evidence, provisioning preflight evidence, and Spark benchmark evidence with valid collector attestations can drive `readiness_gaps: []`, `closure_status: complete`, and `remaining_gates: []` without credentials, live Discord, provider actions, phone calls, network I/O, or DGX Spark execution. Real readiness still requires replacing those fixtures with actual collected evidence.
+The test suite includes a closure rehearsal with redacted local fixtures for all three remaining gates. It proves that supplied live voice evidence, provisioning preflight evidence, and Spark benchmark evidence with valid collector attestations can drive `readiness_gaps: []` and `remaining_gates: []` without credentials, live Discord, provider actions, phone calls, network I/O, or DGX Spark execution. Fixture evidence must be reported as `evidence_mode: fixture_rehearsal`, must keep `readiness_ok: false`, and must not produce `closure_status: complete`. Real readiness still requires replacing those fixtures with actual collected evidence and closing review gaps.
 
 Standalone package consistency audit:
 

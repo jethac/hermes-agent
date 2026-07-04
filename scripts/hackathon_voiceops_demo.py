@@ -852,7 +852,8 @@ def _operator_handoff_preview(demo: dict[str, Any], readiness: dict[str, Any]) -
             "--output-dir artifacts/voiceops-package-audit/current"
         ),
         "final_success_signal": (
-            "readiness_gaps is [] and review_gaps is [] and closure_status is complete and package_audit.status is pass"
+            "readiness_gaps is [] and review_gaps is [] and evidence_mode is operator_collected_or_pending "
+            "and closure_status is complete and package_audit.status is pass"
         ),
     }
 

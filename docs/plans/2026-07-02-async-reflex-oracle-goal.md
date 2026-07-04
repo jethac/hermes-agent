@@ -254,7 +254,7 @@ The evidence bundle must preserve provenance:
 - raw audio reference: primary evidence
 - speaker and channel metadata: canonical turn context
 - reflex transcript: low-latency hypothesis
-- Moshi/S2S transcript: auxiliary hypothesis
+- Moshi/S2S transcript: frontend witness hypothesis
 - classic ASR transcript: optional fallback or comparison hypothesis
 - interpreter correction: first durable transcript candidate
 
