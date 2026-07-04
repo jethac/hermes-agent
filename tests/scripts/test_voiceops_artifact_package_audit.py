@@ -1632,6 +1632,34 @@ def test_package_audit_rejects_spark_scaffold_source_hash_drift(tmp_path):
     )
 
 
+def test_package_audit_rejects_spark_matrix_kame_contract_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    matrix_path = artifact_root / "voiceops-spark-matrix" / "current" / "spark-model-matrix.json"
+    matrix = json.loads(matrix_path.read_text(encoding="utf-8"))
+    matrix["policy"]["raw_audio_primary_interpreter_evidence"] = False
+    matrix["policy"]["transcript_hypotheses_are_witness_context"] = False
+    matrix["policy"]["transcript_only_counts_for_one_spark_readiness"] = True
+    matrix["policy"]["transcript_hypothesis_required_fields"] = ["source", "authority"]
+    matrix["policy"]["transcript_hypothesis_contract"]["role"] = "verified_transcript"
+    matrix["policy"]["transcript_hypothesis_contract"]["tool_authority"] = True
+    _write_json(matrix_path, matrix)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "spark_matrix:kame_contract:raw_audio_primary_not_true" in report["issues"]
+    assert "spark_matrix:kame_contract:witness_context_not_true" in report["issues"]
+    assert "spark_matrix:kame_contract:transcript_only_counts_for_readiness" in report["issues"]
+    assert "spark_matrix:kame_contract:role_mismatch" in report["issues"]
+    assert "spark_matrix:kame_contract:tool_authority_mismatch" in report["issues"]
+    assert any(
+        issue.startswith("spark_matrix:kame_contract:missing_transcript_hypothesis_fields:")
+        and "text_digest" in issue
+        and "promotion_required" in issue
+        for issue in report["issues"]
+    )
+
+
 def test_package_audit_rejects_scaffold_approval_decision_ref_path_escape(tmp_path):
     artifact_root = _generate_package(tmp_path)
     scaffold_path = (

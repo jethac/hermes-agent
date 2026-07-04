@@ -1013,6 +1013,48 @@ def _audit_spark_evidence_scaffold(evidence_path: Path, issues: list[str]) -> No
         issues.append(f"spark_evidence_scaffold:{issue}")
 
 
+def _audit_spark_matrix_kame_contract(spark_matrix: Mapping[str, Any], issues: list[str]) -> None:
+    policy = spark_matrix.get("policy") if isinstance(spark_matrix.get("policy"), Mapping) else {}
+    required_fields = {
+        "kind",
+        "source",
+        "text_digest",
+        "role",
+        "authority",
+        "promotion_required",
+        "tool_authority",
+        "arrival_phase",
+        "latency_ms",
+        "confidence",
+        "speaker_or_actor_ref",
+        "channel_or_surface_ref",
+    }
+    if policy.get("raw_audio_primary_interpreter_evidence") is not True:
+        issues.append("spark_matrix:kame_contract:raw_audio_primary_not_true")
+    if policy.get("transcript_hypotheses_are_witness_context") is not True:
+        issues.append("spark_matrix:kame_contract:witness_context_not_true")
+    if policy.get("transcript_only_counts_for_one_spark_readiness") is not False:
+        issues.append("spark_matrix:kame_contract:transcript_only_counts_for_readiness")
+    observed_fields = {
+        str(item)
+        for item in policy.get("transcript_hypothesis_required_fields", [])
+        if str(item).strip()
+    }
+    missing_fields = sorted(required_fields.difference(observed_fields))
+    if missing_fields:
+        issues.append("spark_matrix:kame_contract:missing_transcript_hypothesis_fields:" + ",".join(missing_fields))
+    contract = policy.get("transcript_hypothesis_contract") if isinstance(policy.get("transcript_hypothesis_contract"), Mapping) else {}
+    expected_contract = {
+        "role": "witness_context",
+        "authority": "hypothesis",
+        "promotion_required": "interpreter_promoted_or_oracle_promoted",
+        "tool_authority": False,
+    }
+    for key, expected in expected_contract.items():
+        if contract.get(key) != expected:
+            issues.append(f"spark_matrix:kame_contract:{key}_mismatch")
+
+
 def _iter_plan_run_commands(value: Any) -> list[str]:
     commands: list[str] = []
     if isinstance(value, str):
@@ -3361,6 +3403,7 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         spark_dir / "spark-benchmark-scaffold" / "spark-benchmark-evidence.json",
         issues,
     )
+    _audit_spark_matrix_kame_contract(spark_matrix, issues)
     _audit_markdown_consistency(
         spark_local_target_selected=spark_local_target_selected,
         demo_markdown=demo_markdown,

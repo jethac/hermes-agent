@@ -27,6 +27,37 @@ STACK_SMOKE_KIND = "voiceops_spark_stack_smoke"
 PRIMARY_LOCAL_ROLES = ("interpreter", "oracle", "reflex", "tts")
 STACK_SMOKE_REQUIRED_COMPONENTS = ("reflex", "interpreter", "oracle", "tts", "sidecar")
 STACK_SMOKE_REQUIRED_ORACLE_ROUTES = ("tools", "files", "memory", "project_context")
+TRANSCRIPT_HYPOTHESIS_REQUIRED_FIELDS = (
+    "kind",
+    "source",
+    "text_digest",
+    "role",
+    "authority",
+    "promotion_required",
+    "tool_authority",
+    "arrival_phase",
+    "latency_ms",
+    "confidence",
+    "speaker_or_actor_ref",
+    "channel_or_surface_ref",
+)
+TRANSCRIPT_HYPOTHESIS_ALLOWED_KINDS = (
+    "frontend_witness_hypothesis",
+    "s2s_transcript_hypothesis",
+    "reflex_transcript_hypothesis",
+    "classic_asr_hypothesis",
+)
+TRANSCRIPT_HYPOTHESIS_ARRIVAL_PHASES = (
+    "before_raw_audio",
+    "with_raw_audio",
+    "after_interpreter_start",
+)
+TRANSCRIPT_HYPOTHESIS_CONTRACT = {
+    "role": "witness_context",
+    "authority": "hypothesis",
+    "promotion_required": "interpreter_promoted_or_oracle_promoted",
+    "tool_authority": False,
+}
 SPARK_BENCHMARK_EVIDENCE_NOT_BEFORE = dt.datetime(2026, 6, 29, tzinfo=dt.timezone.utc)
 SPARK_BENCHMARK_SCAFFOLD_EVIDENCE = (
     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json"
@@ -845,9 +876,36 @@ def _valid_audio_time_range_ms(value: Any) -> bool:
 def _transcript_hypothesis_is_labeled(value: Any) -> bool:
     if not isinstance(value, dict):
         return False
-    return str(value.get("authority") or "").strip().lower() == "hypothesis" and bool(
-        str(value.get("text") or value.get("summary") or "").strip()
-    )
+    missing = [field for field in TRANSCRIPT_HYPOTHESIS_REQUIRED_FIELDS if field not in value]
+    if missing:
+        return False
+    if str(value.get("kind") or "").strip() not in TRANSCRIPT_HYPOTHESIS_ALLOWED_KINDS:
+        return False
+    if str(value.get("source") or "").strip() == "":
+        return False
+    digest = str(value.get("text_digest") or "").strip()
+    if not (digest.startswith("sha256:") and _valid_sha256(digest.removeprefix("sha256:"))):
+        return False
+    if str(value.get("role") or "").strip() != TRANSCRIPT_HYPOTHESIS_CONTRACT["role"]:
+        return False
+    if str(value.get("authority") or "").strip() != TRANSCRIPT_HYPOTHESIS_CONTRACT["authority"]:
+        return False
+    if str(value.get("promotion_required") or "").strip() != TRANSCRIPT_HYPOTHESIS_CONTRACT["promotion_required"]:
+        return False
+    if value.get("tool_authority") is not False:
+        return False
+    if str(value.get("arrival_phase") or "").strip() not in TRANSCRIPT_HYPOTHESIS_ARRIVAL_PHASES:
+        return False
+    if _coerce_number(value.get("latency_ms")) is None:
+        return False
+    confidence = value.get("confidence")
+    if confidence is not None and _coerce_number(confidence) is None:
+        return False
+    if not str(value.get("speaker_or_actor_ref") or "").strip():
+        return False
+    if not str(value.get("channel_or_surface_ref") or "").strip():
+        return False
+    return True
 
 
 def _auxiliary_transcript_hypotheses_are_labeled(value: Any) -> bool:
@@ -1186,6 +1244,11 @@ def build_matrix(evidence_paths: Iterable[Path] = ()) -> dict[str, Any]:
             "oracle_selected_by": "Hermes /model",
             "reflex_tool_authority": "none_or_low_risk_only",
             "live_spend_default": "dry_run_until_explicit_approval",
+            "transcript_hypotheses_are_witness_context": True,
+            "raw_audio_primary_interpreter_evidence": True,
+            "transcript_only_counts_for_one_spark_readiness": False,
+            "transcript_hypothesis_required_fields": list(TRANSCRIPT_HYPOTHESIS_REQUIRED_FIELDS),
+            "transcript_hypothesis_contract": dict(TRANSCRIPT_HYPOTHESIS_CONTRACT),
         },
         "candidates": [asdict(candidate) for candidate in candidates],
         "evaluations": evaluations,
@@ -1577,11 +1640,11 @@ def _stack_smoke_source_artifact_shape() -> list[dict[str, Any]]:
             "oracle_called": False,
             "audio_segment_ref": "artifact://replace-with-redacted-local-audio-ref",
             "audio_time_range_ms": [0, 800],
-            "reflex_transcript_hypothesis": {
-                "authority": "hypothesis",
-                "source": "moshi_or_reflex",
-                "text": "[redacted local transcript hypothesis]",
-            },
+            "reflex_transcript_hypothesis": _example_transcript_hypothesis(
+                source="moshi_or_reflex",
+                kind="reflex_transcript_hypothesis",
+                digest_seed="redacted local transcript hypothesis",
+            ),
             "auxiliary_transcript_hypotheses": [],
         },
         {
@@ -1591,17 +1654,20 @@ def _stack_smoke_source_artifact_shape() -> list[dict[str, Any]]:
             "oracle_calls": 1,
             "audio_segment_ref": "artifact://replace-with-redacted-oracle-bound-audio-ref",
             "audio_time_range_ms": [1000, 3200],
-            "reflex_transcript_hypothesis": {
-                "authority": "hypothesis",
-                "source": "moshi_or_reflex",
-                "text": "[redacted reflex transcript hypothesis]",
-            },
+            "reflex_transcript_hypothesis": _example_transcript_hypothesis(
+                source="moshi_or_reflex",
+                kind="reflex_transcript_hypothesis",
+                digest_seed="redacted reflex transcript hypothesis",
+            ),
             "auxiliary_transcript_hypotheses": [
-                {
-                    "authority": "hypothesis",
-                    "source": "classic_asr_fallback_optional",
-                    "text": "[redacted optional witness/fallback transcript hypothesis]",
-                }
+                _example_transcript_hypothesis(
+                    source="classic_asr_fallback_optional",
+                    kind="classic_asr_hypothesis",
+                    arrival_phase="after_interpreter_start",
+                    digest_seed="redacted optional witness/fallback transcript hypothesis",
+                    latency_ms=320,
+                    confidence=0.75,
+                )
             ],
             "interpreter_evidence": {
                 "source": "gemma_interpreter",
@@ -1613,6 +1679,31 @@ def _stack_smoke_source_artifact_shape() -> list[dict[str, Any]]:
             "tool_critical_text_source": "gemma_interpreter",
         },
     ]
+
+
+def _example_transcript_hypothesis(
+    *,
+    source: str,
+    kind: str,
+    digest_seed: str,
+    arrival_phase: str = "with_raw_audio",
+    latency_ms: int = 90,
+    confidence: float | None = 0.8,
+) -> dict[str, Any]:
+    return {
+        "kind": kind,
+        "source": source,
+        "text_digest": "sha256:" + hashlib.sha256(digest_seed.encode("utf-8")).hexdigest(),
+        "role": TRANSCRIPT_HYPOTHESIS_CONTRACT["role"],
+        "authority": TRANSCRIPT_HYPOTHESIS_CONTRACT["authority"],
+        "promotion_required": TRANSCRIPT_HYPOTHESIS_CONTRACT["promotion_required"],
+        "tool_authority": TRANSCRIPT_HYPOTHESIS_CONTRACT["tool_authority"],
+        "arrival_phase": arrival_phase,
+        "latency_ms": latency_ms,
+        "confidence": confidence,
+        "speaker_or_actor_ref": "speaker:replace-with-redacted-speaker-ref",
+        "channel_or_surface_ref": "surface:replace-with-redacted-channel-ref",
+    }
 
 
 def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
@@ -1726,7 +1817,13 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
             "source_artifact.kame_turns[].audio_segment_ref",
             "source_artifact.kame_turns[].audio_time_range_ms",
             "source_artifact.kame_turns[].reflex_transcript_hypothesis.authority=hypothesis",
+            "source_artifact.kame_turns[].reflex_transcript_hypothesis.role=witness_context",
+            "source_artifact.kame_turns[].reflex_transcript_hypothesis.text_digest",
+            "source_artifact.kame_turns[].reflex_transcript_hypothesis.tool_authority=false",
             "source_artifact.kame_turns[].auxiliary_transcript_hypotheses[].authority=hypothesis",
+            "source_artifact.kame_turns[].auxiliary_transcript_hypotheses[].role=witness_context",
+            "source_artifact.kame_turns[].auxiliary_transcript_hypotheses[].text_digest",
+            "source_artifact.kame_turns[].auxiliary_transcript_hypotheses[].tool_authority=false",
             "source_artifact.kame_turns[].interpreter_evidence.source=gemma_interpreter",
             "source_artifact.kame_turns[].interpreter_corrected_transcript",
             "source_artifact.kame_turns[].tool_critical_text_source=gemma_interpreter|oracle_judgment",
@@ -1764,6 +1861,10 @@ def _closure_plan(matrix: dict[str, Any]) -> dict[str, Any]:
                 "requires_oracle_bound_turn_with_oracle_call": True,
                 "requires_raw_audio_reference": True,
                 "requires_transcript_hypotheses_labeled_authority_hypothesis": True,
+                "requires_transcript_hypotheses_witness_context_contract": True,
+                "required_transcript_hypothesis_fields": list(TRANSCRIPT_HYPOTHESIS_REQUIRED_FIELDS),
+                "transcript_hypothesis_contract": dict(TRANSCRIPT_HYPOTHESIS_CONTRACT),
+                "raw_transcript_text_counts_for_readiness": False,
                 "requires_gemma_interpreter_correction": True,
                 "requires_tool_critical_text_source": "gemma_interpreter_or_oracle_judgment",
             },
