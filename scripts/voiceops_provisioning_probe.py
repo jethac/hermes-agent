@@ -56,6 +56,36 @@ KAME_ACTION_PROMOTED_FIELDS = {
     "enable-whatsapp-egress": ("user_request", "oracle_action_plan", "channel_policy"),
     "publish-status": ("user_request", "oracle_action_plan", "channel_policy"),
 }
+NEMOCLAW_APPROVED_ACTION_CONTRACTS = {
+    "provision-voip-provider": {
+        "provider": "stripe-projects",
+        "command_re": r"^stripe projects add [a-z0-9][a-z0-9._/-]{0,80}$",
+        "required_preflight_gates": {"stripe_cli", "stripe_projects_cli", "mpp_agent"},
+        "approval_artifact": "nemoclaw-action-packet.json",
+    },
+    "buy-service-credit": {
+        "provider": "stripe-link-cli",
+        "command_re": (
+            r"^link-cli spend-request create --merchant-name [A-Za-z0-9_.-]{1,80} "
+            r"--merchant-url https://[A-Za-z0-9./?&=_:-]{1,200} --amount [1-9][0-9]{0,5} "
+            r"--request-approval$"
+        ),
+        "required_preflight_gates": {"stripe_link_cli", "mpp_agent"},
+        "approval_artifact": "nemoclaw-action-packet.json",
+    },
+    "call-user-phone": {
+        "provider": "voiceops-phone-bridge",
+        "command_re": r"^queue outbound call --context [A-Za-z0-9._/-]+\.json$",
+        "required_preflight_gates": {"phone_target", "phone_provider", "mpp_agent", "channel_policy"},
+        "approval_artifact": "nemoclaw-action-packet.json",
+    },
+    "publish-status": {
+        "provider": "hermes-gateway",
+        "command_re": r"^post redacted approval and handoff status to configured channels$",
+        "required_preflight_gates": {"channel_policy", "mpp_agent"},
+        "approval_artifact": "nemoclaw-action-packet.json",
+    },
+}
 TOOL_DISCLOSURE_TEST_REFS = (
     "tests/tools/test_tool_search.py::TestAssembly::test_defer_core_all_hides_core_behind_bridge",
     "tests/agent/test_realtime_voice_oracle.py::test_voice_oracle_applies_scoped_tool_search_override",
@@ -710,6 +740,7 @@ def write_preflight_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
         source_path = sources_dir / source_names[section_name]
         source_payload = {
             "schema_version": PREFLIGHT_REDACTED_SOURCE_SCHEMA_VERSION,
+            "artifact_kind": PREFLIGHT_SOURCE_ARTIFACT_KIND,
             "example_only": True,
             "section": section_name,
             "redacted": True,
@@ -1390,6 +1421,9 @@ def _redacted_artifact_issues(artifact_bytes: bytes, *, section_name: str | None
     issues: list[str] = []
     if str(artifact.get("schema_version") or "") != PREFLIGHT_REDACTED_SOURCE_SCHEMA_VERSION:
         issues.append("missing_or_invalid_schema_version")
+    artifact_kind = str(artifact.get("artifact_kind") or artifact.get("source_artifact_kind") or "").strip()
+    if artifact_kind != PREFLIGHT_SOURCE_ARTIFACT_KIND:
+        issues.append("artifact_kind_mismatch")
     if section_name is not None and str(artifact.get("section") or "") != section_name:
         issues.append("section_mismatch")
     issues.extend(_example_only_presence_issues(artifact))
@@ -1970,6 +2004,8 @@ def _evidence_label_values(payload: Any) -> Iterable[str]:
 def _kame_action_evidence_issues(action: Mapping[str, Any]) -> list[str]:
     issues: list[str] = []
     action_id = str(action.get("action_id") or "")
+    if action_id not in KAME_ACTION_PROMOTED_FIELDS:
+        issues.append(f"{action_id}:unknown_action_id")
     evidence = action.get("kame_evidence") if isinstance(action.get("kame_evidence"), Mapping) else {}
     if not evidence:
         return [f"{action_id}:missing_kame_evidence"]
@@ -1990,7 +2026,7 @@ def _kame_action_evidence_issues(action: Mapping[str, Any]) -> list[str]:
         if authority not in required_promotions:
             issues.append(f"{action_id}:kame_evidence_missing_required_promotion:{authority}")
     promoted_fields = evidence.get("promoted_fields") if isinstance(evidence.get("promoted_fields"), Mapping) else {}
-    for field in KAME_ACTION_PROMOTED_FIELDS.get(action_id, ("user_request", "oracle_action_plan")):
+    for field in KAME_ACTION_PROMOTED_FIELDS.get(action_id, ()):
         promoted = promoted_fields.get(field) if isinstance(promoted_fields.get(field), Mapping) else {}
         if not promoted:
             issues.append(f"{action_id}:missing_promoted_field:{field}")
@@ -2056,8 +2092,22 @@ def validate_nemoclaw_action_packet(packet: Mapping[str, Any]) -> dict[str, Any]
             continue
         action_id = str(action.get("action_id") or "")
         command = str(action.get("command") or "")
+        provider = str(action.get("provider") or "")
         contract = action.get("approval_contract") if isinstance(action.get("approval_contract"), Mapping) else {}
         indexed_contract = contracts.get(action_id)
+        approved_contract = NEMOCLAW_APPROVED_ACTION_CONTRACTS.get(action_id)
+        if approved_contract is None:
+            issues.append(f"{action_id}:unknown_action_id")
+        else:
+            if provider != approved_contract["provider"]:
+                issues.append(f"{action_id}:provider_not_allowlisted")
+            if command and not re.fullmatch(str(approved_contract["command_re"]), command):
+                issues.append(f"{action_id}:command_shape_not_allowlisted")
+            required_gates = set(contract.get("required_preflight_gates") or [])
+            if required_gates != approved_contract["required_preflight_gates"]:
+                issues.append(f"{action_id}:required_preflight_gates_not_allowlisted")
+            if contract.get("approval_artifact") != approved_contract["approval_artifact"]:
+                issues.append(f"{action_id}:approval_artifact_not_allowlisted")
         if action.get("requires_approval") is not True:
             issues.append(f"{action_id}:requires_approval_not_true")
         if action.get("status") not in {"queued", "held-budget"}:
@@ -2739,6 +2789,8 @@ def build_setup_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
             "collector_attestation_required_fields": list(COLLECTOR_ATTESTATION_REQUIRED_FIELDS),
             "placeholder_collector_attestation_accepted": False,
             "source_artifact_kind": PREFLIGHT_SOURCE_ARTIFACT_KIND,
+            "source_artifact_must_declare_kind": True,
+            "source_artifact_kind_field": "artifact_kind",
             "source_artifacts_must_exist": True,
             "source_artifact_sha256_must_match": True,
             "source_artifacts_must_be_redacted_json": True,

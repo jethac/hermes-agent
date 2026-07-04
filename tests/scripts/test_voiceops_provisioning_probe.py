@@ -46,11 +46,12 @@ def _nemoclaw_packet(command: str = "stripe projects add twilio/voice") -> dict[
         "allowed_decisions": ["approve_once", "deny", "hold"],
         "command_sha256": hashlib.sha256(command.encode("utf-8")).hexdigest(),
         "default_decision": "hold",
-        "required_preflight_gates": ["stripe_projects_account", "mpp_approval_boundary"],
+        "required_preflight_gates": ["stripe_cli", "stripe_projects_cli", "mpp_agent"],
         "status": "pending",
     }
     action = {
         "action_id": "provision-voip-provider",
+        "provider": "stripe-projects",
         "command": command,
         "requires_approval": True,
         "status": "queued",
@@ -202,6 +203,7 @@ def _write_preflight_evidence(tmp_path: Path, payload: dict[str, object] | None 
         source_path = tmp_path / f"{section_name}-source.json"
         source_payload = {
             "schema_version": "voiceops.milestone2.redacted_source_artifact.v1",
+            "artifact_kind": "redacted_setup_evidence",
             "section": section_name,
             "redacted": True,
             "redaction_policy": "references only; no raw secrets, tokens, or full phone numbers",
@@ -638,6 +640,45 @@ def test_nemoclaw_action_packet_validation_rejects_tampered_command_hash(tmp_pat
     assert report["area_status"]["nemoclaw_action_packet"] == "fail"
 
 
+def test_nemoclaw_action_packet_validation_rejects_unknown_action_id():
+    packet = _nemoclaw_packet(command="rm -rf /tmp/example")
+    action = packet["approval_required_actions"][0]
+    action["action_id"] = "delete-production-account"
+    action["provider"] = "shell"
+    action["kame_evidence"] = build_kame_action_evidence("delete-production-account")
+    packet["approval_contracts"] = {"delete-production-account": action["approval_contract"]}
+    packet["dry_run_commands"] = ["rm -rf /tmp/example"]
+
+    validation = validate_nemoclaw_action_packet(packet)
+
+    assert validation["status"] == "invalid"
+    assert "delete-production-account:unknown_action_id" in validation["validation_issues"]
+    assert "delete-production-account:command_shape_not_allowlisted" not in validation["validation_issues"]
+
+
+def test_nemoclaw_action_packet_validation_rejects_wrong_provider_and_gates():
+    packet = _nemoclaw_packet()
+    action = packet["approval_required_actions"][0]
+    action["provider"] = "stripe-link-cli"
+    action["approval_contract"]["required_preflight_gates"] = ["mpp_agent"]
+    packet["approval_contracts"]["provision-voip-provider"] = action["approval_contract"]
+
+    validation = validate_nemoclaw_action_packet(packet)
+
+    assert validation["status"] == "invalid"
+    assert "provision-voip-provider:provider_not_allowlisted" in validation["validation_issues"]
+    assert "provision-voip-provider:required_preflight_gates_not_allowlisted" in validation["validation_issues"]
+
+
+def test_nemoclaw_action_packet_validation_rejects_unapproved_command_shape():
+    packet = _nemoclaw_packet(command="stripe projects delete twilio/voice")
+
+    validation = validate_nemoclaw_action_packet(packet)
+
+    assert validation["status"] == "invalid"
+    assert "provision-voip-provider:command_shape_not_allowlisted" in validation["validation_issues"]
+
+
 def test_write_probe_artifacts(tmp_path):
     report = build_probe_report(
         env={"VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567", "TWILIO_ACCOUNT_SID": "AC123"},
@@ -800,6 +841,8 @@ def test_write_probe_artifacts(tmp_path):
     assert setup_closure["evidence_contract"]["source_artifacts_must_exist"] is True
     assert "collector_attestation" in setup_closure["evidence_contract"]["required_section_provenance_fields"]
     assert setup_closure["evidence_contract"]["placeholder_collector_attestation_accepted"] is False
+    assert setup_closure["evidence_contract"]["source_artifact_must_declare_kind"] is True
+    assert setup_closure["evidence_contract"]["source_artifact_kind_field"] == "artifact_kind"
     assert setup_closure["evidence_contract"]["post_approval_receipts_schema_version"] == (
         "voiceops.milestone2.post_approval_receipts.v1"
     )
@@ -1126,6 +1169,63 @@ def test_preflight_evidence_rejects_source_artifact_without_schema_or_matching_s
     assert "stripe_link.source_artifact:section_mismatch" in loaded["validation_issues"]
 
 
+def test_preflight_evidence_rejects_source_artifact_without_matching_artifact_kind(tmp_path):
+    evidence = _complete_preflight_evidence()
+    missing_kind_source = tmp_path / "stripe-projects-redacted.json"
+    missing_kind_bytes = json.dumps(
+        {
+            "schema_version": "voiceops.milestone2.redacted_source_artifact.v1",
+            "section": "stripe_projects",
+            "redacted": True,
+            "redaction_policy": "references only; no raw secrets, tokens, or full phone numbers",
+        },
+        sort_keys=True,
+    ).encode("utf-8")
+    missing_kind_source.write_bytes(missing_kind_bytes)
+    wrong_kind_source = tmp_path / "stripe-link-redacted.json"
+    wrong_kind_bytes = json.dumps(
+        {
+            "schema_version": "voiceops.milestone2.redacted_source_artifact.v1",
+            "artifact_kind": "generic_redacted_json",
+            "section": "stripe_link",
+            "redacted": True,
+            "redaction_policy": "references only; no raw secrets, tokens, or full phone numbers",
+        },
+        sort_keys=True,
+    ).encode("utf-8")
+    wrong_kind_source.write_bytes(wrong_kind_bytes)
+    evidence["stripe_projects"].update(
+        {
+            "source_artifact": missing_kind_source.name,
+            "source_artifact_kind": "redacted_setup_evidence",
+            "source_artifact_sha256": hashlib.sha256(missing_kind_bytes).hexdigest(),
+            "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
+            "collector_attestation": _test_collector_attestation(
+                "stripe_projects",
+                hashlib.sha256(missing_kind_bytes).hexdigest(),
+            ),
+        }
+    )
+    evidence["stripe_link"].update(
+        {
+            "source_artifact": wrong_kind_source.name,
+            "source_artifact_kind": "redacted_setup_evidence",
+            "source_artifact_sha256": hashlib.sha256(wrong_kind_bytes).hexdigest(),
+            "source_artifact_redacted_at": "2026-06-29T00:00:00Z",
+            "collector_attestation": _test_collector_attestation(
+                "stripe_link",
+                hashlib.sha256(wrong_kind_bytes).hexdigest(),
+            ),
+        }
+    )
+    evidence_path = _write_preflight_evidence(tmp_path, evidence)
+
+    loaded = load_preflight_evidence(evidence_path)
+
+    assert "stripe_projects.source_artifact:artifact_kind_mismatch" in loaded["validation_issues"]
+    assert "stripe_link.source_artifact:artifact_kind_mismatch" in loaded["validation_issues"]
+
+
 def test_preflight_evidence_rejects_invalid_timestamps(tmp_path):
     evidence = _complete_preflight_evidence()
     evidence["stripe_projects"]["projects_catalog_checked_at"] = "June 29 2026"
@@ -1157,6 +1257,7 @@ def test_preflight_evidence_manifest_merges_redacted_section_files(tmp_path):
         source_bytes = json.dumps(
             {
                 "schema_version": "voiceops.milestone2.redacted_source_artifact.v1",
+                "artifact_kind": "redacted_setup_evidence",
                 "section": section_name,
                 "redacted": True,
                 "redaction_policy": "references only; no raw secrets or tokens",
@@ -1541,6 +1642,7 @@ def test_refresh_preflight_manifest_source_sha256_updates_section_files(tmp_path
             json.dumps(
                 {
                     "schema_version": "voiceops.milestone2.redacted_source_artifact.v1",
+                    "artifact_kind": "redacted_setup_evidence",
                     "section": section_name,
                     "redacted": True,
                     "redaction_policy": "references only; no raw secrets, tokens, cards, or full phone numbers",
@@ -1586,6 +1688,7 @@ def test_preflight_evidence_rejects_stale_source_and_attestation_hashes(tmp_path
         json.dumps(
             {
                 "schema_version": "voiceops.milestone2.redacted_source_artifact.v1",
+                "artifact_kind": "redacted_setup_evidence",
                 "section": "stripe_projects",
                 "redacted": True,
                 "redaction_policy": "references only; no raw secrets, tokens, cards, or full phone numbers",
@@ -1610,6 +1713,7 @@ def test_refresh_preflight_single_file_source_sha256_updates_collector_attestati
         json.dumps(
             {
                 "schema_version": "voiceops.milestone2.redacted_source_artifact.v1",
+                "artifact_kind": "redacted_setup_evidence",
                 "section": "stripe_projects",
                 "redacted": True,
                 "redaction_policy": "references only; no raw secrets, tokens, cards, or full phone numbers",
@@ -1645,6 +1749,7 @@ def test_refresh_preflight_manifest_source_sha256_refuses_wrong_source_section(t
         json.dumps(
             {
                 "schema_version": "voiceops.milestone2.redacted_source_artifact.v1",
+                "artifact_kind": "redacted_setup_evidence",
                 "section": "stripe_link",
                 "redacted": True,
                 "redaction_policy": "references only; no raw secrets, tokens, cards, or full phone numbers",
@@ -1936,6 +2041,7 @@ def test_preflight_evidence_rejects_source_artifact_symlink_escape(tmp_path):
         json.dumps(
             {
                 "schema_version": "voiceops.milestone2.redacted_source_artifact.v1",
+                "artifact_kind": "redacted_setup_evidence",
                 "section": "stripe_projects",
                 "redacted": True,
                 "redaction_policy": "references only; no raw secrets, tokens, cards, or full phone numbers",

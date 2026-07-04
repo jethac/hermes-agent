@@ -361,6 +361,21 @@ decision that allowed the action. If only transcript hypotheses are available,
 Hermes may ask a clarification or prepare a draft, but it must not execute,
 approve, or claim readiness for irreversible work.
 
+2026-07-05 NemoClaw contract amendment: a NemoClaw approval packet is not valid
+because it is internally self-consistent. It must match the VoiceOps action
+contract: known action id, expected provider, allowlisted command shape,
+required preflight gates, expected approval artifact, promoted KAME evidence,
+and tool-disclosure reference. Unknown actions, shell-like substitutions, or
+swapped provider/gate combinations must fail before operator approval is even
+requested.
+
+2026-07-05 setup-evidence provenance amendment: redacted Milestone 2 setup
+evidence is accepted only when the section and its referenced source artifact
+both identify themselves as `redacted_setup_evidence` and the section hash,
+source artifact hash, and collector attestation agree. The manifest path is
+metadata, not authority; the source artifact must be self-describing so a copied
+or renamed JSON file cannot satisfy setup proof by position alone.
+
 2026-07-04 frontend-witness amendment: when a Moshi/open-S2S frontend exposes
 an "STT" string, Hermes should classify it as a frontend witness transcript, not
 as a dedicated ASR result. The preferred packet is raw audio plus witness text in

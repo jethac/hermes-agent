@@ -398,6 +398,11 @@ Target KAME layout:
   action text and rationale. Hypothesis-only evidence can prepare a draft,
   request clarification, or populate an audit trail, but it cannot authorize
   irreversible work.
+- NemoClaw action-contract rule: approval packets must validate against a
+  static allowlist of known action ids, providers, command shapes, required
+  preflight gates, and approval artifacts. A packet that invents a new action or
+  swaps in a shell-like command is invalid even if its internal command hashes
+  and approval contracts are self-consistent.
 - Operator-state rule: pending approval records must carry the same promoted
   KAME evidence used by the NemoClaw packet, plus a reference to the artifact's
   tool-disclosure proof. The operator-state artifact itself must include that
@@ -798,6 +803,11 @@ It should wrap or present:
 
 The video does not need to prove every NemoClaw policy in depth, but it should make clear that the agent is not receiving unchecked authority just because the user spoke a command.
 
+The local packet validator is part of that story. It does not only check JSON
+shape and command hashes; it rejects unknown action ids, unexpected providers,
+unexpected command forms, wrong preflight gates, and wrong approval artifacts
+before the packet can become approval evidence.
+
 ### Audit Ledger
 
 Every operational action needs a durable record:
@@ -1136,7 +1146,7 @@ uv run python scripts/voiceops_provisioning_probe.py \
   --preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json
 ```
 
-The supplied evidence path is read-only. It may be one complete `voiceops.milestone2.preflight_evidence.v1` JSON file or a `voiceops.milestone2.preflight_evidence_manifest.v1` manifest that references separate redacted section files for Stripe Projects, Stripe Link, MPP/NemoClaw, phone handoff, and rollback ownership. It must contain account aliases, capability booleans, provider references, credential-location references, rollback owners, and a `source_artifact` for every redacted evidence section. Every section must also include `source_artifact_kind: redacted_setup_evidence`, `source_artifact_sha256`, `source_artifact_redacted_at`, and `collector_attestation`; the SHA-256 must match the referenced redacted JSON source artifact, the attestation redacted hash must match that SHA-256, and the redaction and collection timestamps must be parseable with timezone information. Source artifacts must exist, be UTF-8 JSON, be marked redacted or carry a redaction policy, and resolve as relative paths inside the supplied evidence or manifest package; absolute paths, `~`, parent traversal, symlink escapes, and process-working-directory fallback are rejected. Collector attestations must identify the collector name/version, run id, command argv, git commit, timestamp window, raw/redacted SHA-256 hashes, and parent manifest hash; placeholder or `example_only` attestations are rejected. It must not contain Stripe secrets, provider tokens, raw card data, full phone numbers, or proof of unapproved live spend. The generated `.example.json` and `.manifest.example.json` files show redacted completed shapes for headless setup, but they are rejected as proof while `example_only: true` remains present.
+The supplied evidence path is read-only. It may be one complete `voiceops.milestone2.preflight_evidence.v1` JSON file or a `voiceops.milestone2.preflight_evidence_manifest.v1` manifest that references separate redacted section files for Stripe Projects, Stripe Link, MPP/NemoClaw, phone handoff, and rollback ownership. It must contain account aliases, capability booleans, provider references, credential-location references, rollback owners, and a `source_artifact` for every redacted evidence section. Every section must also include `source_artifact_kind: redacted_setup_evidence`, `source_artifact_sha256`, `source_artifact_redacted_at`, and `collector_attestation`; the referenced source artifact must also declare `artifact_kind: redacted_setup_evidence`. The SHA-256 must match the referenced redacted JSON source artifact, the attestation redacted hash must match that SHA-256, and the redaction and collection timestamps must be parseable with timezone information. Source artifacts must exist, be UTF-8 JSON, be marked redacted or carry a redaction policy, and resolve as relative paths inside the supplied evidence or manifest package; absolute paths, `~`, parent traversal, symlink escapes, and process-working-directory fallback are rejected. Collector attestations must identify the collector name/version, run id, command argv, git commit, timestamp window, raw/redacted SHA-256 hashes, and parent manifest hash; placeholder or `example_only` attestations are rejected. It must not contain Stripe secrets, provider tokens, raw card data, full phone numbers, or proof of unapproved live spend. The generated `.example.json` and `.manifest.example.json` files show redacted completed shapes for headless setup, but they are rejected as proof while `example_only: true` remains present.
 The generated `provisioning-preflight-scaffold/` directory is the preferred operator starting point for split evidence: replace each section report and redacted source artifact with real local setup proof, refresh the SHA-256 fields, and remove every `example_only` marker before ingesting the manifest.
 
 ```bash
