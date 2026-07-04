@@ -1388,6 +1388,41 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "terminal_result_status_text"
     ]
     assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_smoke_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_case_count"] == 8
+    assert set(voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_categories"]) == {
+        "credential",
+        "file",
+        "memory",
+        "message",
+        "phone",
+        "provisioning",
+        "shell",
+        "spend",
+    }
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "unflagged_high_risk_tool_all_cases_failed_closed"
+        ]
+        is True
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "unflagged_high_risk_tool_all_progress_suppressed"
+        ]
+        is True
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "unflagged_high_risk_tool_all_payloads_redacted"
+        ]
+        is True
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "unflagged_high_risk_tool_all_spoken_payloads_clean"
+        ]
+        is True
+    )
     assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_suppressed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_failed_closed"] is True
     assert (

@@ -138,6 +138,36 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["terminal_result_status_available"] is True
     assert "completed: Finished Suppress terminal result." in report["terminal_result_status_text"]
     assert report["unflagged_high_risk_tool_smoke_ok"] is True
+    assert report["unflagged_high_risk_tool_case_count"] == 8
+    assert set(report["unflagged_high_risk_tool_categories"]) == {
+        "credential",
+        "file",
+        "memory",
+        "message",
+        "phone",
+        "provisioning",
+        "shell",
+        "spend",
+    }
+    assert set(report["unflagged_high_risk_tool_names"]) == {
+        "credential_write",
+        "phone_call",
+        "provision_service",
+        "run_command",
+        "stripe_link_purchase",
+        "whatsapp_send_message",
+        "write_file",
+        "write_memory",
+    }
+    assert report["unflagged_high_risk_tool_all_cases_failed_closed"] is True
+    assert report["unflagged_high_risk_tool_all_progress_suppressed"] is True
+    assert report["unflagged_high_risk_tool_all_payloads_redacted"] is True
+    assert report["unflagged_high_risk_tool_all_spoken_payloads_clean"] is True
+    assert all(case["ok"] is True for case in report["unflagged_high_risk_tool_cases"])
+    assert all(
+        case["suppression_reason"] == "unapproved_high_risk_tool_event"
+        for case in report["unflagged_high_risk_tool_cases"]
+    )
     assert report["unflagged_high_risk_tool_suppressed"] is True
     assert report["unflagged_high_risk_tool_failed_closed"] is True
     assert report["unflagged_high_risk_tool_suppression_reason"] == "unapproved_high_risk_tool_event"

@@ -1924,6 +1924,35 @@ async def build_plan_run_async(
                     "unflagged_high_risk_tool_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
                         "unflagged_high_risk_tool_smoke_ok"
                     ],
+                    "unflagged_high_risk_tool_cases": list(
+                        voice_operator["proofs"]["async_oracle_jobs"].get("unflagged_high_risk_tool_cases")
+                        or []
+                    ),
+                    "unflagged_high_risk_tool_case_count": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ].get("unflagged_high_risk_tool_case_count"),
+                    "unflagged_high_risk_tool_categories": list(
+                        voice_operator["proofs"]["async_oracle_jobs"].get(
+                            "unflagged_high_risk_tool_categories"
+                        )
+                        or []
+                    ),
+                    "unflagged_high_risk_tool_names": list(
+                        voice_operator["proofs"]["async_oracle_jobs"].get("unflagged_high_risk_tool_names")
+                        or []
+                    ),
+                    "unflagged_high_risk_tool_all_cases_failed_closed": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ].get("unflagged_high_risk_tool_all_cases_failed_closed"),
+                    "unflagged_high_risk_tool_all_progress_suppressed": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ].get("unflagged_high_risk_tool_all_progress_suppressed"),
+                    "unflagged_high_risk_tool_all_payloads_redacted": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ].get("unflagged_high_risk_tool_all_payloads_redacted"),
+                    "unflagged_high_risk_tool_all_spoken_payloads_clean": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ].get("unflagged_high_risk_tool_all_spoken_payloads_clean"),
                     "unflagged_high_risk_tool_suppressed": voice_operator["proofs"]["async_oracle_jobs"][
                         "unflagged_high_risk_tool_suppressed"
                     ],

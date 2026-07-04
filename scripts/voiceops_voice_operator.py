@@ -2013,6 +2013,17 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
     status_ordinal_labels_visible = smoke.get("status_ordinal_labels_visible") is True and status_ordinal_labels >= set(
         ASYNC_ORACLE_STATUS_ORDINAL_LABELS
     )
+    unflagged_high_risk_categories = set(smoke.get("unflagged_high_risk_tool_categories") or ())
+    expected_unflagged_high_risk_categories = {
+        "credential",
+        "file",
+        "memory",
+        "message",
+        "phone",
+        "provisioning",
+        "shell",
+        "spend",
+    }
     reflex_status_overflow_visible = (
         smoke.get("reflex_status_overflow_smoke_ok") is True
         and int(smoke.get("reflex_status_overflow_visible_job_count") or 0) == 8
@@ -2128,6 +2139,13 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("runtime_kame_action_gate_tool_disclosure_ref_observed") is True,
         "unflagged_high_risk_tool_event_fails_closed": smoke.get("unflagged_high_risk_tool_smoke_ok")
         is True
+        and unflagged_high_risk_categories >= expected_unflagged_high_risk_categories
+        and int(smoke.get("unflagged_high_risk_tool_case_count") or 0)
+        >= len(expected_unflagged_high_risk_categories)
+        and smoke.get("unflagged_high_risk_tool_all_cases_failed_closed") is True
+        and smoke.get("unflagged_high_risk_tool_all_progress_suppressed") is True
+        and smoke.get("unflagged_high_risk_tool_all_payloads_redacted") is True
+        and smoke.get("unflagged_high_risk_tool_all_spoken_payloads_clean") is True
         and smoke.get("unflagged_high_risk_tool_suppressed") is True
         and smoke.get("unflagged_high_risk_tool_failed_closed") is True
         and smoke.get("unflagged_high_risk_tool_suppression_reason")
@@ -3227,6 +3245,30 @@ def build_voice_operator_report(
             "terminal_result_status_text": async_oracle_smoke.get("terminal_result_status_text"),
             "unflagged_high_risk_tool_smoke_ok": bool(
                 async_oracle_smoke.get("unflagged_high_risk_tool_smoke_ok")
+            ),
+            "unflagged_high_risk_tool_cases": list(
+                async_oracle_smoke.get("unflagged_high_risk_tool_cases") or []
+            ),
+            "unflagged_high_risk_tool_case_count": async_oracle_smoke.get(
+                "unflagged_high_risk_tool_case_count"
+            ),
+            "unflagged_high_risk_tool_categories": list(
+                async_oracle_smoke.get("unflagged_high_risk_tool_categories") or []
+            ),
+            "unflagged_high_risk_tool_names": list(
+                async_oracle_smoke.get("unflagged_high_risk_tool_names") or []
+            ),
+            "unflagged_high_risk_tool_all_cases_failed_closed": bool(
+                async_oracle_smoke.get("unflagged_high_risk_tool_all_cases_failed_closed")
+            ),
+            "unflagged_high_risk_tool_all_progress_suppressed": bool(
+                async_oracle_smoke.get("unflagged_high_risk_tool_all_progress_suppressed")
+            ),
+            "unflagged_high_risk_tool_all_payloads_redacted": bool(
+                async_oracle_smoke.get("unflagged_high_risk_tool_all_payloads_redacted")
+            ),
+            "unflagged_high_risk_tool_all_spoken_payloads_clean": bool(
+                async_oracle_smoke.get("unflagged_high_risk_tool_all_spoken_payloads_clean")
             ),
             "unflagged_high_risk_tool_suppressed": bool(
                 async_oracle_smoke.get("unflagged_high_risk_tool_suppressed")

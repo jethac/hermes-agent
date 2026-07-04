@@ -2228,6 +2228,22 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "terminal_result_status_available": bool(async_smoke.get("terminal_result_status_available")),
             "terminal_result_status_text": async_smoke.get("terminal_result_status_text"),
             "unflagged_high_risk_tool_smoke_ok": bool(async_smoke.get("unflagged_high_risk_tool_smoke_ok")),
+            "unflagged_high_risk_tool_cases": async_smoke.get("unflagged_high_risk_tool_cases") or [],
+            "unflagged_high_risk_tool_case_count": async_smoke.get("unflagged_high_risk_tool_case_count"),
+            "unflagged_high_risk_tool_categories": async_smoke.get("unflagged_high_risk_tool_categories") or [],
+            "unflagged_high_risk_tool_names": async_smoke.get("unflagged_high_risk_tool_names") or [],
+            "unflagged_high_risk_tool_all_cases_failed_closed": bool(
+                async_smoke.get("unflagged_high_risk_tool_all_cases_failed_closed")
+            ),
+            "unflagged_high_risk_tool_all_progress_suppressed": bool(
+                async_smoke.get("unflagged_high_risk_tool_all_progress_suppressed")
+            ),
+            "unflagged_high_risk_tool_all_payloads_redacted": bool(
+                async_smoke.get("unflagged_high_risk_tool_all_payloads_redacted")
+            ),
+            "unflagged_high_risk_tool_all_spoken_payloads_clean": bool(
+                async_smoke.get("unflagged_high_risk_tool_all_spoken_payloads_clean")
+            ),
             "unflagged_high_risk_tool_suppressed": bool(async_smoke.get("unflagged_high_risk_tool_suppressed")),
             "unflagged_high_risk_tool_failed_closed": bool(
                 async_smoke.get("unflagged_high_risk_tool_failed_closed")

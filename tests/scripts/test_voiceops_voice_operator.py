@@ -244,6 +244,60 @@ def _async_oracle_smoke_payload() -> dict:
             "completed: Finished Suppress terminal result."
         ),
         "unflagged_high_risk_tool_smoke_ok": True,
+        "unflagged_high_risk_tool_cases": [
+            {
+                "category": category,
+                "tool_name": tool_name,
+                "ok": True,
+                "suppressed": True,
+                "failed_closed": True,
+                "suppression_reason": "unapproved_high_risk_tool_event",
+                "progress_suppressed": True,
+                "payload_redacted": True,
+                "spoken_payload_clean": True,
+                "failure_spoken": True,
+                "secret_canary_checked": True,
+                "spoken": [
+                    "Preparing the spend request.",
+                    "I couldn't finish Buy service credits: KAME action gate failed; suppressed unapproved high-risk tool event",
+                ],
+            }
+            for category, tool_name in (
+                ("memory", "write_memory"),
+                ("file", "write_file"),
+                ("shell", "run_command"),
+                ("spend", "stripe_link_purchase"),
+                ("phone", "phone_call"),
+                ("message", "whatsapp_send_message"),
+                ("credential", "credential_write"),
+                ("provisioning", "provision_service"),
+            )
+        ],
+        "unflagged_high_risk_tool_case_count": 8,
+        "unflagged_high_risk_tool_categories": [
+            "memory",
+            "file",
+            "shell",
+            "spend",
+            "phone",
+            "message",
+            "credential",
+            "provisioning",
+        ],
+        "unflagged_high_risk_tool_names": [
+            "write_memory",
+            "write_file",
+            "run_command",
+            "stripe_link_purchase",
+            "phone_call",
+            "whatsapp_send_message",
+            "credential_write",
+            "provision_service",
+        ],
+        "unflagged_high_risk_tool_all_cases_failed_closed": True,
+        "unflagged_high_risk_tool_all_progress_suppressed": True,
+        "unflagged_high_risk_tool_all_payloads_redacted": True,
+        "unflagged_high_risk_tool_all_spoken_payloads_clean": True,
         "unflagged_high_risk_tool_suppressed": True,
         "unflagged_high_risk_tool_failed_closed": True,
         "unflagged_high_risk_tool_suppression_reason": "unapproved_high_risk_tool_event",
@@ -1294,6 +1348,25 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         "terminal_result_status_text"
     ]
     assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_smoke_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_case_count"] == 8
+    assert set(report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_categories"]) == {
+        "credential",
+        "file",
+        "memory",
+        "message",
+        "phone",
+        "provisioning",
+        "shell",
+        "spend",
+    }
+    assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_all_cases_failed_closed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_all_progress_suppressed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_all_payloads_redacted"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_all_spoken_payloads_clean"] is True
+    assert all(
+        case["ok"] is True
+        for case in report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_cases"]
+    )
     assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_suppressed"] is True
     assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_failed_closed"] is True
     assert (
