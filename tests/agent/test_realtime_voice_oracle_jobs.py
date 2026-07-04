@@ -844,6 +844,7 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
                 "source": "classic_asr_fallback_optional",
                 "text": "what is three to the power of seventeen",
                 "confidence": 0.88,
+                "latency_ms": 132,
                 "arrival_phase": "with_raw_audio",
             }
         ],
@@ -899,6 +900,7 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.88,
+            "latency_ms": 132,
             "arrival_phase": "with_raw_audio",
         },
     )
@@ -1037,6 +1039,7 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.88,
+            "latency_ms": 132,
             "arrival_phase": "with_raw_audio",
         },
     )
@@ -1412,6 +1415,7 @@ async def test_raw_audio_job_waits_for_interpreter_promotion_before_runner():
                     "source": "moshi",
                     "text": "spend two hundred dollars and call my phone now",
                     "confidence": 0.62,
+                    "latency_ms": 94,
                 }
             ],
             interface_already_said="I am preparing the handoff and will ask before spend.",
@@ -1447,6 +1451,7 @@ async def test_raw_audio_job_waits_for_interpreter_promotion_before_runner():
     assert updated.interpreter_corrected_transcript == "prepare the phone handoff"
     assert updated.interpreter_normalized_intent == "prepare verified phone handoff"
     assert seen_jobs[0].oracle_text == "prepare verified phone handoff"
+    assert seen_jobs[0].request.auxiliary_transcript_hypotheses[0]["latency_ms"] == 94
     assert any(
         event["type"] == "oracle.job.progress"
         and event["payload"].get("operation") == "waiting_for_interpreter"

@@ -209,17 +209,19 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_status_state"] == "completed"
     assert report["external_frontend_source_reached_oracle"] is True
     assert report["external_frontend_input_source"] == "ask_brain"
-    assert report["external_frontend_oracle_text"] == "Prepare external KAME handoff"
+    assert report["external_frontend_oracle_text"] == "prepare an external KAME handoff"
     assert report["external_frontend_provisional_request_summary"] == {
+        "text": "Prepare external KAME handoff",
+        "source": "gemma_interpreter",
+        "authority": "interpreter_promoted",
+        "tool_authority": False,
+    }
+    assert report["external_frontend_status_provisional_request_summary"] == {
         "text": "Prepare external KAME handoff",
         "source": "reflex_audio",
         "authority": "reflex_hypothesis",
         "tool_authority": False,
     }
-    assert (
-        report["external_frontend_status_provisional_request_summary"]
-        == report["external_frontend_provisional_request_summary"]
-    )
     assert report["external_frontend_provisional_request_summary_non_authoritative"] is True
     assert report["external_frontend_evidence_bundle_propagated"] is True
     assert report["external_frontend_evidence_bundle_id"].startswith("kame-evidence-")
@@ -234,6 +236,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_transcript_hypotheses"][0]["source"] == "moshi"
     assert report["external_frontend_transcript_hypotheses"][0]["role"] == "witness_context"
     assert report["external_frontend_transcript_hypotheses"][0]["authority"] == "hypothesis"
+    assert report["external_frontend_transcript_hypotheses"][0]["latency_ms"] == 140
     assert (
         report["external_frontend_transcript_hypotheses"][0]["promotion_required"]
         == "interpreter_promoted_or_oracle_promoted"

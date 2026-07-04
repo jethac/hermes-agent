@@ -4248,6 +4248,11 @@ def _oracle_request_auxiliary_hypotheses_from_evidence(
             hypothesis["kind"] = kind
         if isinstance(item.get("partial"), bool):
             hypothesis["partial"] = item["partial"]
+        latency_ms = item.get("latency_ms")
+        if isinstance(latency_ms, (int, float)) and not isinstance(latency_ms, bool):
+            latency_int = int(latency_ms)
+            if latency_int >= 0:
+                hypothesis["latency_ms"] = latency_int
         superseded_partials = item.get("superseded_partial_texts")
         if isinstance(superseded_partials, (list, tuple)):
             compact_partials = tuple(
