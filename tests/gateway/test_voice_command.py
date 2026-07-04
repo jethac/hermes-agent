@@ -1118,7 +1118,8 @@ class TestVoiceChannelCommands:
         assert "Lifecycle: ready" in result
         assert "Playback: active" in result
         assert "Interface: vllm gemma-4-E2B-it (audio=native_audio)" in result
-        assert "Oracle: gemma-4-26B-A4B-it" in result
+        assert "Oracle: Hermes active /model" in result
+        assert "Oracle: gemma-4-26B-A4B-it" not in result
         assert "ASR: nemotron speech-0.6b (mode=on_escalation)" in result
         assert "TTS: cartesia sonic-2 (voice=5ee9feff-1265-424a-9d7f-8e4d431a12c7)" in result
         assert (

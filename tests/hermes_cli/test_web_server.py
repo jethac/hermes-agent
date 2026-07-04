@@ -7857,7 +7857,6 @@ class TestRealtimeVoiceWebSocket:
         assert config.asr_model == "nemotron-speech"
         assert config.asr_base_url == "http://spark.local:9000"
         assert config.metadata["asr_base_url"] == "http://spark.local:9000"
-        assert config.preferred_local_oracle_model is None
         assert "oracle_model" not in config.to_wire()
         assert config.oracle_timeout_seconds == 12.0
         assert config.voice_response_policy == "brief_summary"

@@ -148,7 +148,6 @@ class DiscordRealtimeVoiceSession:
         asr_provider: Optional[str] = None,
         asr_model: Optional[str] = None,
         asr_base_url: Optional[str] = None,
-        preferred_local_oracle_model: Optional[str] = None,
         oracle_timeout_seconds: float = 60.0,
         max_spoken_sentences: int = 2,
         voice_response_policy: str = "sentence_cap",
@@ -189,7 +188,6 @@ class DiscordRealtimeVoiceSession:
         self.asr_provider = asr_provider
         self.asr_model = asr_model
         self.asr_base_url = asr_base_url
-        self.preferred_local_oracle_model = preferred_local_oracle_model
         self.oracle_timeout_seconds = oracle_timeout_seconds
         self.max_spoken_sentences = max_spoken_sentences
         self.voice_response_policy = str(voice_response_policy or "sentence_cap")
@@ -250,7 +248,6 @@ class DiscordRealtimeVoiceSession:
             asr_provider=self.asr_provider,
             asr_model=self.asr_model,
             asr_base_url=self.asr_base_url,
-            preferred_local_oracle_model=self.preferred_local_oracle_model,
             oracle_timeout_seconds=self.oracle_timeout_seconds,
             max_spoken_sentences=self.max_spoken_sentences,
             voice_response_policy=self.voice_response_policy,
@@ -289,7 +286,6 @@ class DiscordRealtimeVoiceSession:
                 "asr_provider": self.asr_provider,
                 "asr_model": self.asr_model,
                 "asr_base_url": self.asr_base_url,
-                "preferred_local_oracle_model": self.preferred_local_oracle_model,
                 "oracle_timeout_seconds": self.oracle_timeout_seconds,
                 "max_spoken_sentences": self.max_spoken_sentences,
                 "voice_response_policy": self.voice_response_policy,

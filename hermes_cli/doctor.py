@@ -1060,7 +1060,6 @@ def _realtime_voice_evidence_manifest_payload() -> dict[str, Any]:
         "interface_audio_input": str(status.get("interface_audio_input") or ""),
         "interface_max_audio_seconds": status.get("interface_max_audio_seconds"),
         "asr_mode": str(status.get("asr_mode") or ""),
-        "preferred_local_oracle_model": str(status.get("preferred_local_oracle_model") or ""),
         "available": status.get("available") is True,
         "unavailable_reason": str(status.get("unavailable_reason") or "") or None,
         "require_live_like": status.get("require_live_like") is True,
@@ -1241,7 +1240,6 @@ def _realtime_voice_smoke_config():
         ),
         interface_audio_input=str(realtime.get("interface_audio_input") or "") or None,
         asr_mode=RealtimeVoiceASRMode(str(realtime.get("asr_mode") or RealtimeVoiceASRMode.ON_ESCALATION.value)),
-        preferred_local_oracle_model=str(realtime.get("preferred_local_oracle_model") or "") or None,
         oracle_timeout_seconds=_positive_float_config(
             realtime.get("oracle_timeout_seconds"),
             default=60.0,
@@ -1283,7 +1281,6 @@ def _realtime_voice_smoke_config():
             ),
             "interface_audio_input": str(realtime.get("interface_audio_input") or "") or None,
             "asr_mode": str(realtime.get("asr_mode") or "") or None,
-            "preferred_local_oracle_model": str(realtime.get("preferred_local_oracle_model") or "") or None,
             "oracle_timeout_seconds": _positive_float_config(
                 realtime.get("oracle_timeout_seconds"),
                 default=60.0,

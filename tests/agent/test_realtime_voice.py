@@ -247,7 +247,6 @@ def test_session_config_round_trips_kame_fields():
         asr_provider="streaming_stt",
         asr_model="nemotron-speech",
         asr_base_url="http://asr.local:8767",
-        preferred_local_oracle_model="gemma-4-26B-A4B-it",
         max_spoken_sentences=4,
         voice_response_policy="full",
         tts_provider="streaming_tts",
@@ -279,7 +278,6 @@ def test_session_config_round_trips_kame_fields():
     assert restored.asr_model == "nemotron-speech"
     assert restored.asr_base_url == "http://asr.local:8767"
     assert "preferred_local_oracle_model" not in wire
-    assert restored.preferred_local_oracle_model is None
     assert restored.max_spoken_sentences == 4
     assert restored.voice_response_policy == "full"
     assert restored.tts_provider == "streaming_tts"
@@ -293,6 +291,14 @@ def test_session_config_round_trips_kame_fields():
     assert restored.output_events == {"caption_aliases": True}
     assert restored.quality_targets_ms == {"kame_speech_end_to_playback_start_ms": 2500}
     assert restored.barge_in_policy == {"min_rms": 350, "min_speech_ms": 120}
+
+
+def test_session_config_rejects_voice_scoped_oracle_selector_aliases():
+    with pytest.raises(TypeError):
+        RealtimeVoiceSessionConfig(
+            session_id="voice-123",
+            preferred_local_oracle_model="nemotron-3-super",  # type: ignore[call-arg]
+        )
 
 
 def test_session_config_round_trips_from_reflex_asr_mode():
@@ -323,7 +329,6 @@ def test_kame_session_contract_reports_redacted_stack_choices():
         asr_provider="nemotron-speech",
         asr_model="fastconformer",
         asr_base_url="http://asr.local:8765/secret-asr",
-        preferred_local_oracle_model="nemotron-3-super",
         oracle_timeout_seconds=42.0,
         tts_provider="magpie",
         tts_model="magpie-preview",

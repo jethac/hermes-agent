@@ -94,11 +94,6 @@ class DiscordVoiceSessionState:
     asr_provider: Optional[str] = None
     asr_model: Optional[str] = None
     asr_base_url: Optional[str] = None
-    oracle_provider: Optional[str] = None
-    oracle_provider_name: Optional[str] = None
-    preferred_local_oracle_model: Optional[str] = None
-    oracle_base_url: Optional[str] = None
-    oracle_api_mode: Optional[str] = None
     oracle_timeout_seconds: float = 60.0
     max_spoken_sentences: int = 2
     voice_response_policy: str = "sentence_cap"

@@ -2832,13 +2832,7 @@ class GatewaySlashCommandsMixin:
                     )
                     if interface_line:
                         lines.append(interface_line)
-                    oracle_line = _voice_status_provider_line(
-                        "Oracle",
-                        None,
-                        session.get("preferred_local_oracle_model"),
-                    )
-                    if oracle_line:
-                        lines.append(oracle_line)
+                    lines.append("Oracle: Hermes active /model")
                     asr_line = _voice_status_provider_line(
                         "ASR",
                         session.get("asr_provider"),
