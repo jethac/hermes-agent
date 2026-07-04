@@ -542,8 +542,9 @@ idle -> starting -> listening -> assistant_pending -> speaking -> listening -> c
 
 Keep these pieces of state:
 
-- current final user segment
-- partial transcript text and stability
+- accepted audio cut, VAD/energy decision, and speaker/channel binding
+- transcript hypotheses with source, partial/final state, and witness authority
+- promoted interpreter/oracle wording for durable user text
 - active assistant draft id
 - active playback generation
 - active sidecar input generation
@@ -559,6 +560,13 @@ When a sidecar handles microphone input, Hermes also advances an `input_generati
 
 The session owns persistence. Engines produce events; the session decides which events become durable Hermes messages.
 
+In full KAME mode, raw transcript state is not the durable user message. The
+session persists the accepted raw-audio cut, witness hypotheses, interpreter
+adjudication, and promoted wording separately. Text-oracle or degraded fallback
+mode may still track final transcript text directly, but full KAME oracle
+prompts must use promoted interpreter/oracle evidence rather than whichever
+partial or final transcript arrived first.
+
 ## Hermes Oracle Adapter
 
 The oracle is not Gemma by definition. It is a Hermes adapter that calls the
@@ -568,17 +576,22 @@ selector.
 
 Responsibilities:
 
-- Build a voice-specific prompt wrapper around current transcript state.
+- Build a voice-specific prompt wrapper around promoted KAME evidence. In
+  fallback/text-oracle mode only, this may use final transcript state directly.
 - Include normal Hermes system prompt, memory, context, tools, and profile state.
-- Enforce tool-call policy for partial vs final transcript.
+- Enforce tool-call policy for transcript hypotheses vs promoted
+  interpreter/oracle evidence.
 - Return incremental text guidance to the planner.
 - Cancel or supersede in-flight oracle calls on barge-in.
 
-Partial transcript policy:
+Transcript and witness policy:
 
-- Pure answer drafting is allowed.
-- Read-only tools may be allowed after a stability threshold.
-- Write, shell, browser, messaging, and external side-effect tools require final transcript or confirmation.
+- Hypothesis-only text may support captions, diagnostics, local narration, or
+  low-risk drafting.
+- Read-only tools may be allowed only after the configured evidence gate.
+- Write, shell, browser, messaging, payment, provisioning, phone, memory, file,
+  and other external side-effect tools require promoted interpreter/oracle
+  evidence or explicit confirmation.
 
 ## Portable Text Oracle + Streaming TTS Fallback
 
@@ -873,7 +886,10 @@ npm run test:ui -- src/app/chat/composer/hooks/use-realtime-voice-session.test.t
 2. Add fake in-process `RealtimeVoiceEngine` for websocket testing.
 3. Add `/api/voice/realtime` endpoint behind `voice.realtime.enabled`. Done.
 4. Add desktop websocket client and playback path. Done.
-5. Add STT provider adapter. Done for the sidecar streaming path; local fallback still reuses Hermes' existing provider chain at utterance boundaries.
+5. Add fallback/witness transcript provider adapter. Done for the sidecar
+   streaming path; local fallback still reuses Hermes' existing provider chain
+   at utterance boundaries. In full KAME mode, provider text is
+   `classic_asr_hypothesis` or frontend witness context, not the scheduler.
 6. Add Hermes oracle adapter. Done.
 7. Add TTS adapter. Done by reusing Hermes' existing provider chain.
 8. Add barge-in and commit semantics. Done in the session and desktop playback layers.

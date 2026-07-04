@@ -10,6 +10,51 @@ Preferred local reflex: fastest stable floor-control model, such as Moshi/Person
 Preferred local interpreter: Gemma 4 E2B/E4B/12B audio-multimodal, consuming bounded raw-audio cuts plus witness hypotheses
 Preferred local oracle target: Hermes active `/model`, with Nemotron 3 Super as the first Spark-local NVIDIA target to measure before readiness claims
 
+## Current Decision Record
+
+Date: 2026-07-04
+
+The KAME voice design is now a three-tier sensor fan-in system:
+
+1. **Reflex:** the lowest-latency live voice loop. It owns VAD-adjacent floor
+   control, barge-in, acknowledgement, short status narration, and provisional
+   routing.
+2. **Interpreter:** a Gemma-style direct-audio model. It receives one bounded
+   speech cut after the energy/noise gate, with raw audio first and every
+   transcript-looking side signal as labeled witness context.
+3. **Oracle:** Hermes' active `/model`. Voice config must not choose a separate
+   oracle model; `/model` and the normal Hermes provider config remain the
+   authority for durable reasoning and tools.
+
+This is not an STT-first pipeline and not a parallel ASR race. If Moshi,
+OpenClaw, VoiceClaw, a reflex caption path, or classic ASR emits text for the
+same accepted speech cut, Hermes should pass that text to Gemma alongside the
+raw waveform. The text is `frontend_witness_hypothesis`,
+`reflex_transcript_hypothesis`, `s2s_transcript_hypothesis`, or
+`classic_asr_hypothesis` context. It is never the transcript of record merely
+because it arrived first.
+
+The normal interpreter payload is:
+
+```text
+raw_audio
+metadata: VAD, energy, speaker, channel, timing
+reflex: route, acknowledgement already spoken, provisional intent
+transcript_hypotheses: Moshi/OpenClaw/VoiceClaw/reflex/classic-ASR witnesses
+```
+
+Gemma may use a Moshi/Open-S2S witness to recover clipped starts, names,
+numbers, code-switching, or a rough intent. Gemma must also be able to reject
+that witness when the waveform, speaker/channel metadata, energy gate, or
+conversation state contradicts it. Only `interpreter_promoted` or
+`oracle_promoted` fields may reach durable history, Stripe, NemoClaw, phone
+payloads, memory, files, external messages, or tool arguments.
+
+Dedicated ASR remains useful, but only as fallback, captions, diagnostics,
+literal checks, or degraded text-only compatibility. It should not block
+reflex acknowledgement, create a second Hermes turn, schedule a second oracle
+job, or satisfy high-risk action gates when raw audio is available.
+
 Canonical rule: every provider is assigned to a role before it is trusted.
 Open S2S systems such as Moshi, VoiceClaw, OpenClaw Talk, Ultravox-like
 frontends, or hosted realtime APIs may be reflexes, witness producers,

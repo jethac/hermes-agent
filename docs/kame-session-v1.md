@@ -9,6 +9,31 @@ VoiceClaw/OpenClaw-style frontends, phone/SIP, WhatsApp voice, desktop mic, and
 future clients. It lets a fast frontend act as the reflex without inheriting
 Hermes' tools or durable transcript authority.
 
+## Current Contract
+
+`kame_session_v1` carries one accepted speech cut, not one transcript. The
+preferred packet contains the clipped waveform plus all same-cut witness text:
+
+1. raw audio reference and timing
+2. VAD, energy, speaker, channel, and transport metadata
+3. reflex route and acknowledgement already spoken
+4. transcript hypotheses from Moshi/open-S2S, VoiceClaw/OpenClaw, reflex text,
+   or classic ASR
+
+This allows a Moshi-style frontend to provide both audio and an STT-looking
+string without making the string authoritative. The string is a witness claim:
+what that frontend believed it heard. It is sent to the Gemma interpreter as
+context beside the waveform. It must not become `oracle_text`, durable user
+history, a spend reason, a phone payload, a memory/file write, an external
+message, or a tool argument unless Gemma or the Hermes oracle promotes it.
+
+If raw audio exists, witness text must merge into the same `turn_id`,
+`audio_segment_ref`, `evidence_bundle_id`, and `evidence_merge_key`. Early,
+inline, and late witness packets update the same bundle and job. They do not
+create a second Hermes turn or second oracle job. If raw audio is missing, the
+packet is degraded text-only compatibility mode and cannot satisfy full KAME or
+high-risk action gates.
+
 The canonical voice turn is one raw-audio evidence bundle with optional sensor
 attachments. A Moshi/open-S2S transcript, VoiceClaw/OpenClaw text, or classic
 ASR string is a witness attached to that bundle. It is not a separate Hermes

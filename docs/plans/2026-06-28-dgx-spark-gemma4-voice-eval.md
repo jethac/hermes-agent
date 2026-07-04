@@ -238,9 +238,10 @@ Runner behavior:
 - Uses `DGX_SPARK_ORACLE_PROVIDER_TARGET` only as the provider probe model id;
   Hermes still uses the active `/model` selection for the oracle. The runner
   still accepts `DGX_SPARK_ORACLE_MODEL` and `DGX_SPARK_KAME_ORACLE_MODEL` only
-  as deprecated probe-target aliases; they must not be documented as Hermes
-  voice configuration and must not select the runtime oracle. Runtime oracle
-  selection remains Hermes `/model`.
+  as deprecated probe-target aliases for older benchmark scripts. They are not
+  Hermes voice configuration, are not a runtime oracle selector, and must not be
+  used in new docs or demos except to explain legacy compatibility. Runtime
+  oracle selection remains Hermes `/model`.
 - Calls `/v1/chat/completions`, accepting either root or `/v1` base URLs.
 - Writes `oracle-probe.json`.
 - Records elapsed milliseconds, completion tokens, approximate tokens/sec, and
@@ -390,8 +391,9 @@ export DGX_SPARK_LOCAL_VOICE_TTS_MODEL=magpie-or-riva-tts
 export DGX_SPARK_EVAL_RUNS=3
 ```
 
-The `STT` names above are legacy bridge/config names for compatibility with
-existing tooling. In full KAME mode they feed only `classic_asr_hypothesis` or
+The `STT` names above are legacy bridge/config names for optional
+fallback/witness transcript services in existing tooling. In full KAME mode
+they feed only `classic_asr_hypothesis` or
 auxiliary witness evidence. They are not the reflex input, not the scheduler,
 and not the durable user message.
 

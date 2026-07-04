@@ -217,10 +217,14 @@ Inside the CLI:
 /voice on
 ```
 
-### Recording flow
+### Classic recording flow
 
 Default key:
 - `Ctrl+B`
+
+This CLI path is the classic utterance-level voice flow. It records a bounded
+clip, uses the configured speech provider to produce text, and then asks Hermes
+to respond. It is useful, but it is not the full realtime KAME Discord path.
 
 Workflow:
 1. press `Ctrl+B`
@@ -353,7 +357,13 @@ Useful when you want private interaction without server-channel mention behavior
 
 This is the most advanced mode.
 
-Hermes joins a Discord VC, listens to user speech, transcribes it, runs the normal agent pipeline, and speaks replies back into the channel.
+Hermes joins a Discord VC and speaks replies back into the channel. In the full
+KAME path, Discord audio is treated as raw voice evidence: a low-latency reflex
+handles floor control and acknowledgement, a Gemma-style interpreter receives
+the accepted raw-audio cut plus any transcript-looking witness hypotheses, and
+Hermes' active `/model` remains the oracle for durable work. Classic STT output,
+when present, is fallback/caption/witness context rather than the normal
+scheduler or transcript of record.
 
 ## Required Discord permissions
 
@@ -429,14 +439,14 @@ Check:
 - privileged intents are enabled
 - the bot has Connect/Speak permissions
 
-### "It transcribes but does not speak"
+### "It transcribes but does not speak" in classic/fallback STT mode
 
 Check:
 - TTS provider config
 - API key / quota for ElevenLabs or OpenAI
 - `ffmpeg` install for Edge conversion paths
 
-### "Whisper outputs garbage"
+### "Whisper outputs garbage" in classic/fallback STT mode
 
 Try:
 - quieter environment

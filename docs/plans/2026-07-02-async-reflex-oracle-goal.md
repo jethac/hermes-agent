@@ -30,6 +30,25 @@ oracle. There is no separate `oracle_model`, no second Hermes turn from Moshi
 text, and no ASR proof requirement before acknowledgement or job creation when
 raw audio is available.
 
+Implementation pivot: the runtime should stop treating provider STT as the
+primary voice path. The normal path is raw audio plus optional witness context
+into Gemma. Moshi/open-S2S text, reflex captions, and classic ASR output are
+kept because they are useful hints, but they are attached under
+`transcript_hypotheses[]` and can only influence durable wording through
+interpreter or oracle promotion.
+
+This changes the next implementation checks:
+
+- the speech gate must produce one accepted cut before direct-audio
+  interpretation
+- witness-before-cut, witness-with-cut, and witness-after-start updates must
+  converge on one bundle and one oracle job
+- Gemma receives raw audio before witness text in the interpreter request
+- rejected or unpromoted witness text must be proven absent from Stripe,
+  NemoClaw, phone, memory, file, message, tool, and durable-history sinks
+- degraded text-only fallback must remain visible and fail full-KAME/action
+  gates
+
 The latest implementation posture is stricter than "keep STT in parallel." The
 runtime may collect multiple hearing observations for one speech cut, but those
 observations must join one interpreter packet. A Moshi/Open-S2S witness, reflex
