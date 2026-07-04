@@ -211,6 +211,17 @@ interpreter produces transcript text, that text is `interpreter_promoted`; if a
 frontend produces transcript text, it is only a hypothesis until Gemma or the
 oracle promotes it.
 
+2026-07-04 artifact amendment: full-KAME evidence must prove the negative
+case, not only the promoted happy path. A live turn that includes Moshi,
+VoiceClaw/OpenClaw, reflex, or classic-ASR witness text should expose
+`unpromoted_witness_sink_checks` with `spend_clean`, `phone_clean`,
+`nemoclaw_clean`, `tool_clean`, `memory_clean`, `file_clean`, `message_clean`,
+and `durable_history_clean`, plus an empty `unpromoted_witness_sink_values`
+object. This is the headless proof that witness text stayed context for Gemma
+and did not leak into Stripe spend reasons, provider choices, NemoClaw packets,
+phone scripts, tool arguments, memory/file writes, external messages, or
+durable Hermes history before interpreter/oracle promotion.
+
 | Tier | Primary input | Immediate output | Authority boundary |
 | --- | --- | --- | --- |
 | Reflex | live audio, VAD/energy, current session state | acknowledgement, barge-in, route, rough intent, optional witness transcript | floor control only; provisional `reflex_hypothesis` |
@@ -560,8 +571,9 @@ model pretending to own every job:
    separate `oracle_model` setting.
 
 This split is what makes the system KAME-style. A direct Gemma audio request can
-help the interpreter, and a cloud STT/TTS bridge can prove transport behavior,
-but neither is the full reflex/oracle architecture by itself. A transcript
+help the interpreter, and a legacy cloud speech/TTS bridge can prove transport
+or degraded fallback behavior, but neither is the full reflex/oracle
+architecture by itself. A transcript
 producer, even one embedded in the reflex S2S model, is a sensor feeding the
 bundle; it is not an extra tier with authority.
 
@@ -1950,16 +1962,18 @@ Deliverables:
 - explicit playback lifecycle events
 - explicit cancellation tokens
 - latency span logging for every stage
-- no regression in Discord join, leave, playback, STT, TTS, or fallback behavior
+- no regression in Discord join, leave, playback, TTS, legacy STT fallback, or
+  transcript-hypothesis behavior
 
 ### Phase 2: Fast Reflex MVP
 
 Insert a fast reflex between user turns and Hermes oracle calls. The preferred
 implementation is a Moshi/PersonaPlex-class S2S or smaller realtime model that
 can acknowledge, control floor state, classify local/defer/oracle_direct/clarify
-routes, and emit a rough transcript hypothesis. A text-only STT-fed path is
-acceptable only as a fallback while the realtime reflex is unavailable or being
-validated.
+routes, and emit a rough transcript hypothesis. A transcript-fed path is
+acceptable only as an explicitly degraded text-only fallback while the realtime
+reflex is unavailable or being validated; it cannot satisfy full KAME readiness
+or high-risk action gates.
 
 Deliverables:
 
@@ -1975,9 +1989,9 @@ Deliverables:
 
 This phase is a degraded pre-KAME reflex/oracle MVP. It proves the
 interface-model boundary and async oracle bridge, but it cannot claim full KAME
-readiness and cannot authorize high-risk work from transcript-only or STT-fed
-evidence. The full three-tier KAME design is not complete until Phase 3 adds
-raw-audio Gemma interpretation.
+readiness and cannot authorize high-risk work from transcript-only or
+hypothesis-only evidence. The full three-tier KAME design is not complete until
+Phase 3 adds raw-audio Gemma interpretation.
 
 ### Phase 3: Gemma Interpreter Evidence Lane
 
@@ -2143,7 +2157,7 @@ Integration tests:
 - late output from cancelled jobs is not spoken or committed
 - sidecar unavailable fallback
 - TTS unavailable fallback
-- realtime reflex unavailable degraded fallback to STT-fed routing; this is
+- realtime reflex unavailable degraded fallback to transcript-fed routing; this is
   pre-KAME compatibility and must not be presented as full KAME evidence
 - fail-closed sidecar failure after oracle-job acceptance emits `SESSION_ERROR`
   and drains/cancels active oracle jobs with the configured shutdown timeout

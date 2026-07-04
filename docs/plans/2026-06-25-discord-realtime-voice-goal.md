@@ -581,6 +581,9 @@ voice when live voice is active.
   - you are in a live Discord voice session
   - do not deny live listening/speaking capability when state says active
   - mention degradation only if relevant
+  - include only promoted interpreter/oracle wording as the user turn of record;
+    unpromoted Moshi/open-S2S/reflex/classic-ASR witness text may appear only
+    as labeled audit/context fields, not as the user prompt
 
 **Acceptance criteria:**
 
@@ -639,7 +642,7 @@ TTS delay.
 - Preflight lazy voice dependencies during `/voice join` or `hermes doctor`.
 - Use a short acknowledgement for any request that will run tools or exceed a
   small latency threshold.
-- Do not wait for Moshi, classic ASR, or other transcript-hypothesis evidence
+- Do not wait for Moshi/open-S2S/reflex/classic-ASR transcript hypotheses
   before the reflex acknowledgement or raw-audio interpreter request when a
   speech cut is available.
 - Chunk spoken output by phrase/sentence instead of waiting for a whole final
@@ -650,8 +653,9 @@ TTS delay.
 **Acceptance criteria:**
 
 - First spoken acknowledgement can be emitted independently of final response.
-- First spoken acknowledgement is independent of optional Moshi/STT/ASR witness
-  evidence.
+- First spoken acknowledgement is independent of optional
+  Moshi/open-S2S/reflex/classic-ASR transcript hypotheses, and those
+  hypotheses cannot block raw-audio Gemma interpretation.
 - Chunked TTS starts before full oracle answer completion in realtime mode.
 - Logs include time to reflex acknowledgement, first assistant text/audio, and
   optional transcript-hypothesis latency when enabled.

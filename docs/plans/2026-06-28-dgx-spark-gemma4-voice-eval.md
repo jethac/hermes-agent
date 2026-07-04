@@ -35,7 +35,7 @@ Recent DGX Spark reports suggest this ranking for Hermes:
 | --- | --- | --- | --- |
 | Local oracle | Nemotron 3 Super via Hermes `/model` to a local Spark endpoint | Sponsor-aligned serious reasoning target with an explicit Spark-local deployment path; must be benchmarked before one-Spark readiness is claimed. | Serving image/version and memory profile details matter. |
 | Oracle comparison | Gemma 4 26B-A4B via vLLM | Reported around 24-40 decode tok/s, with strong prefill and workable memory use on single Spark. | Comparison target, not the primary VoiceOps brain. |
-| Cloud voice baseline | Cartesia bridge | We already have a Hermes STT/TTS bridge. Good for proving the voice path while local speech work proceeds. | Cloud dependency; not a local-only answer. |
+| Cloud voice baseline | Cartesia bridge | Good for proving transport, playback, outbound TTS, and degraded/provider-comparison behavior while local speech work proceeds. Any provider transcript output is optional hypothesis evidence, not the KAME control path. | Cloud dependency; not a local-only answer. |
 | Local auxiliary transcript/TTS fallback | Nemotron Speech or Riva-like ASR + Magpie/Riva TTS | Pipecat/Nemotron/Magpie is the only well-instrumented Spark speech-services stack found, around 1.2s server-side voice-to-voice in reported runs. In Hermes KAME, ASR output is an optional `classic_asr_hypothesis` for diagnostics, captions, or fallback, not the normal reflex control path. | Need a Hermes-compatible bridge; full Riva setup reports include install pain. |
 | Reflex/floor-control S2S | Moshi/PersonaPlex-class models | Useful architecture fit for immediate acknowledgement and rough transcript hypotheses; Spark reports mention choppy/unusable full-duplex audio in some deployments. | Candidate for reflex only after stable audio/noise-gate validation; transcript output is evidence, not truth. |
 | Direct speech LLM | Ultravox | No confirmed DGX Spark deployment numbers found. | Watchlist only. |
@@ -256,9 +256,12 @@ command is confirmed.
 ## Track B: Cartesia Cloud Voice Fallback / Provider Comparison
 
 Goal: determine whether Hermes plus the selected oracle feels good when the
-voice layer is a high-quality cloud STT/TTS fallback bridge. This isolates
-oracle quality and Discord transport behavior from local audio stack issues,
-but it is not the target full KAME control path.
+voice layer uses a high-quality cloud transport/TTS fallback bridge. This
+isolates oracle quality and Discord transport behavior from local audio stack
+issues, but it is not the target full KAME control path. If the provider emits
+transcript-like text, retain it only as transcript-hypothesis evidence; it must
+not become durable user text or a Stripe/NemoClaw/phone/tool sink without
+interpreter/oracle promotion.
 
 Headless variables:
 
@@ -380,6 +383,11 @@ export DGX_SPARK_LOCAL_VOICE_TTS_MODEL=magpie-or-riva-tts
 export DGX_SPARK_EVAL_RUNS=3
 ```
 
+The `STT` names above are legacy bridge/config names for compatibility with
+existing tooling. In full KAME mode they feed only `classic_asr_hypothesis` or
+auxiliary witness evidence. They are not the reflex input, not the scheduler,
+and not the durable user message.
+
 Runner behavior:
 
 ```bash
@@ -426,12 +434,12 @@ local-only operation.
 
 ## Evaluation Matrix
 
-| Track | Brain | Voice frontend | Must run headless? | Purpose |
+| Track | Hermes `/model` target | Voice frontend | Must run headless? | Purpose |
 | --- | --- | --- | --- | --- |
 | A | Nemotron 3 Super via local Spark endpoint | none | Yes | Prove preferred local oracle viability. |
 | B | Nemotron 3 Super via local Spark endpoint | Cartesia bridge | Yes | Establish high-quality fallback/provider comparison. |
 | C | Nemotron 3 Super via local Spark endpoint | Local DGX KAME stack | Yes | Test local-only target. |
-| D | Gemma 4 26B-A4B via vLLM | best passing voice frontend | Yes | Compare non-NVIDIA local brain quality and latency. |
+| D | Hermes `/model` set to Gemma 4 26B-A4B via vLLM | best passing voice frontend | Yes | Compare non-NVIDIA local oracle quality and latency through the normal Hermes model path. |
 
 ## Decision Rules
 

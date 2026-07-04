@@ -121,8 +121,8 @@ Target KAME layout:
   or a call/message payload without interpreter or oracle judgment. The
   transcript that arrives first is never automatically the transcript of
   record. Headless VoiceOps artifacts must expose sink-specific checks showing
-  unpromoted witness text is absent from spend, call, tool, memory, file, and
-  external-message action payloads.
+  unpromoted witness text is absent from spend, phone, NemoClaw, tool, memory,
+  file, external-message, and durable-history action payloads.
 - Persistence rule: this promotion rule applies to both visible chat history and
   internal oracle recovery records. Hypothesis strings may live in the
   voice-session audit ledger with provenance, but they must not be replayed as
@@ -782,6 +782,9 @@ Recorded artifact must show:
 - Stripe spend reason, provider selection, NemoClaw action packet, phone-call
   payload, tool arguments, memory/file writes, and external messages free of
   unpromoted witness text
+- `unpromoted_witness_sink_checks` proving spend, phone, NemoClaw, tool,
+  memory, file, message, and durable-history sinks are clean, plus empty
+  `unpromoted_witness_sink_values`
 - readiness gaps still marked external when live Discord, spend/provisioning,
   or Spark/PGX evidence has not actually been collected
 

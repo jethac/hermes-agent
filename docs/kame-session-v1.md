@@ -465,3 +465,28 @@ audit should expose:
 - sink checks proving rejected or unpromoted witness text did not enter spend,
   provider, NemoClaw, phone, tool, memory, file, message, or durable-history
   payloads
+
+For live evidence and package-audit artifacts, the sink proof should use this
+concrete shape:
+
+```json
+{
+  "unpromoted_witness_sink_checks": {
+    "spend_clean": true,
+    "phone_clean": true,
+    "nemoclaw_clean": true,
+    "tool_clean": true,
+    "memory_clean": true,
+    "file_clean": true,
+    "message_clean": true,
+    "durable_history_clean": true
+  },
+  "unpromoted_witness_sink_values": {}
+}
+```
+
+`unpromoted_witness_sink_values` must stay empty for a passing full-KAME
+artifact. If any rejected, diagnostic-only, or unpromoted Moshi/Open-S2S,
+VoiceClaw/OpenClaw, reflex, or classic-ASR witness text appears in one of those
+sinks, the artifact should fail the Stripe/NemoClaw/phone/tool/memory/file/
+message/durable-history action gate even if the rest of the voice turn worked.

@@ -234,9 +234,12 @@ memory writes, and external messages should reference `interpreter_promoted` or
 `oracle_promoted` evidence before they are eligible to execute. Hypothesis-only
 text may explain what the frontend thought it heard, but it cannot become the
 spend reason, provider choice, phone script, durable transcript, or tool
-argument by itself. The artifact bundle should also show that broad Hermes tools
-were deferred behind `tool_search`/bridge tools until the active oracle needed
-them, reducing context pressure during the live voice session.
+argument by itself. The artifact bundle should expose
+`unpromoted_witness_sink_checks` for spend, phone, NemoClaw, tool, memory, file,
+message, and durable history, and should keep `unpromoted_witness_sink_values`
+empty. It should also show that broad Hermes tools were deferred behind
+`tool_search`/bridge tools until the active oracle needed them, reducing
+context pressure during the live voice session.
 
 ## Why This Fits The Hackathon
 

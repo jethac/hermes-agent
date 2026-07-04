@@ -348,6 +348,11 @@ Moshi witness to recover or confirm wording before emitting
 a hallucinated, ambiguous-speaker, stale, wrong-speaker, wrong-channel, or
 low-energy witness while keeping that text out of `oracle_text`, spend reasons,
 phone payloads, memory, files, tools, external messages, and durable history.
+The live artifact should make that sink proof explicit with
+`unpromoted_witness_sink_checks.{spend,phone,nemoclaw,tool,memory,file,message,durable_history}_clean = true`
+and `unpromoted_witness_sink_values = {}`. If any sink value contains rejected,
+diagnostic-only, or otherwise unpromoted witness text, the VoiceOps proof fails
+even if the interpreter and oracle produced a usable response.
 
 The same headless evidence path should preserve cross-surface audit continuity.
 External KAME frontend requests may carry `audit_id`, `source_audit_id`, and
