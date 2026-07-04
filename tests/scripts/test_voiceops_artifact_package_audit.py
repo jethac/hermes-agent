@@ -294,6 +294,32 @@ def test_package_audit_rejects_tool_disclosure_plan_projection_drift(tmp_path):
     assert "plan_run:voice_operator.tool_disclosure.visible_schema_tokens_mismatch" in report["issues"]
 
 
+def test_package_audit_rejects_async_oracle_plan_projection_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
+    plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
+    voice_result = next(
+        result
+        for result in plan_run["results"]
+        if result["milestone"] == "milestone_1_real_voice_operator"
+    )
+    voice_result["details"]["async_oracle_smoke"]["status_bounded_overflow_hidden_job_count"] = 0
+    voice_result["details"]["async_oracle_smoke"]["status_bounded_overflow_more_spoken_status"] = ""
+    _write_json(plan_run_path, plan_run)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "plan_run:voice_operator.async_oracle_smoke.status_bounded_overflow_hidden_job_count_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "plan_run:voice_operator.async_oracle_smoke.status_bounded_overflow_more_spoken_status_mismatch"
+        in report["issues"]
+    )
+
+
 def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     artifact_root = _generate_package(tmp_path)
     readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
@@ -385,6 +411,9 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["hypothesis_final_witness_intent_non_durable"] = False
     readiness["proofs"]["async_oracle_jobs"]["explicit_asr_fallback_final_remains_durable"] = False
     readiness["proofs"]["async_oracle_jobs"]["explicit_asr_fallback_durable_messages"] = []
+    readiness["proofs"]["async_oracle_jobs"]["status_bounded_overflow_visible"] = False
+    readiness["proofs"]["async_oracle_jobs"]["status_bounded_overflow_hidden_job_count"] = 0
+    readiness["proofs"]["async_oracle_jobs"]["status_bounded_overflow_more_spoken_status"] = ""
     _write_json(readiness_path, readiness)
 
     report = audit_package(artifact_root)
@@ -661,6 +690,18 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.runtime_kame_action_gate_missing_tool_disclosure_ok_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.status_bounded_overflow_visible_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.status_bounded_overflow_hidden_job_count_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.status_bounded_overflow_more_spoken_status_mismatch"
         in report["issues"]
     )
 

@@ -1792,11 +1792,69 @@ def _audit_voice_operator_artifact_consistency(
         plan_run=plan_run,
         issues=issues,
     )
+    _audit_voice_operator_async_oracle_plan_projection(
+        readiness=readiness,
+        plan_run=plan_run,
+        issues=issues,
+    )
     _audit_voice_operator_ephemeral_router_plan_projection(
         readiness=readiness,
         plan_run=plan_run,
         issues=issues,
     )
+
+
+def _voice_operator_plan_details(plan_run: Mapping[str, Any]) -> Mapping[str, Any]:
+    voice_result = next(
+        (
+            result
+            for result in plan_run.get("results", [])
+            if isinstance(result, Mapping)
+            and result.get("milestone") == "milestone_1_real_voice_operator"
+        ),
+        {},
+    )
+    return voice_result.get("details") if isinstance(voice_result.get("details"), Mapping) else {}
+
+
+def _audit_voice_operator_async_oracle_plan_projection(
+    *,
+    readiness: Mapping[str, Any],
+    plan_run: Mapping[str, Any],
+    issues: list[str],
+) -> None:
+    proof = (
+        readiness.get("proofs", {}).get("async_oracle_jobs")
+        if isinstance(readiness.get("proofs"), Mapping)
+        and isinstance(readiness.get("proofs", {}).get("async_oracle_jobs"), Mapping)
+        else {}
+    )
+    details = _voice_operator_plan_details(plan_run)
+    projected = details.get("async_oracle_smoke") if isinstance(details.get("async_oracle_smoke"), Mapping) else {}
+    expected = {
+        "status_bounded_overflow_visible": proof.get("status_bounded_overflow_visible"),
+        "status_bounded_overflow_visible_job_count": proof.get(
+            "status_bounded_overflow_visible_job_count"
+        ),
+        "status_bounded_overflow_hidden_job_count": proof.get(
+            "status_bounded_overflow_hidden_job_count"
+        ),
+        "status_bounded_overflow_more_spoken_status": proof.get(
+            "status_bounded_overflow_more_spoken_status"
+        ),
+        "status_bounded_overflow_last_visible_ordinal": proof.get(
+            "status_bounded_overflow_last_visible_ordinal"
+        ),
+        "status_bounded_overflow_last_visible_label": proof.get(
+            "status_bounded_overflow_last_visible_label"
+        ),
+        "status_bounded_overflow_hidden_ids_absent": proof.get(
+            "status_bounded_overflow_hidden_ids_absent"
+        ),
+    }
+    for field, expected_value in expected.items():
+        if projected.get(field) != expected_value:
+            issues.append(f"plan_run:voice_operator.async_oracle_smoke.{field}_mismatch")
 
 
 def _audit_voice_operator_ephemeral_router_plan_projection(
@@ -1811,16 +1869,7 @@ def _audit_voice_operator_ephemeral_router_plan_projection(
         and isinstance(readiness.get("proofs", {}).get("ephemeral_tool_router"), Mapping)
         else {}
     )
-    voice_result = next(
-        (
-            result
-            for result in plan_run.get("results", [])
-            if isinstance(result, Mapping)
-            and result.get("milestone") == "milestone_1_real_voice_operator"
-        ),
-        {},
-    )
-    details = voice_result.get("details") if isinstance(voice_result.get("details"), Mapping) else {}
+    details = _voice_operator_plan_details(plan_run)
     projected = details.get("ephemeral_tool_router") if isinstance(details.get("ephemeral_tool_router"), Mapping) else {}
     expected = {
         "ok": proof.get("ok"),
@@ -1851,16 +1900,7 @@ def _audit_voice_operator_tool_disclosure_plan_projection(
         and isinstance(readiness.get("proofs", {}).get("tool_disclosure"), Mapping)
         else {}
     )
-    voice_result = next(
-        (
-            result
-            for result in plan_run.get("results", [])
-            if isinstance(result, Mapping)
-            and result.get("milestone") == "milestone_1_real_voice_operator"
-        ),
-        {},
-    )
-    details = voice_result.get("details") if isinstance(voice_result.get("details"), Mapping) else {}
+    details = _voice_operator_plan_details(plan_run)
     projected = details.get("tool_disclosure") if isinstance(details.get("tool_disclosure"), Mapping) else {}
     expected = {
         "ok": proof.get("ok"),
@@ -2056,6 +2096,29 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
                 "status_turn_oracle_request_count_after"
             ),
             "status_text": async_smoke.get("status_text"),
+            "status_ordinal_labels_visible": bool(async_smoke.get("status_ordinal_labels_visible")),
+            "status_ordinal_labels": list(async_smoke.get("status_ordinal_labels") or []),
+            "status_bounded_overflow_visible": bool(
+                async_smoke.get("reflex_status_overflow_smoke_ok")
+            ),
+            "status_bounded_overflow_visible_job_count": async_smoke.get(
+                "reflex_status_overflow_visible_job_count"
+            ),
+            "status_bounded_overflow_hidden_job_count": async_smoke.get(
+                "reflex_status_overflow_hidden_job_count"
+            ),
+            "status_bounded_overflow_more_spoken_status": async_smoke.get(
+                "reflex_status_overflow_more_spoken_status"
+            ),
+            "status_bounded_overflow_last_visible_ordinal": async_smoke.get(
+                "reflex_status_overflow_last_visible_ordinal"
+            ),
+            "status_bounded_overflow_last_visible_label": async_smoke.get(
+                "reflex_status_overflow_last_visible_label"
+            ),
+            "status_bounded_overflow_hidden_ids_absent": bool(
+                async_smoke.get("reflex_status_overflow_hidden_ids_absent")
+            ),
             "terminal_status_committed": bool(async_smoke.get("terminal_status_committed")),
             "completed_result_status_visible": bool(async_smoke.get("completed_result_status_visible")),
             "terminal_status_text": async_smoke.get("terminal_status_text"),

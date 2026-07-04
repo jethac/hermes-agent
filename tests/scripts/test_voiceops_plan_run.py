@@ -1234,6 +1234,19 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "job four",
         "job five",
     ]
+    assert voice_result["details"]["async_oracle_smoke"]["status_bounded_overflow_visible"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["status_bounded_overflow_visible_job_count"] == 8
+    assert voice_result["details"]["async_oracle_smoke"]["status_bounded_overflow_hidden_job_count"] == 2
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["status_bounded_overflow_more_spoken_status"]
+        == "+2 more"
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["status_bounded_overflow_last_visible_ordinal"] == 8
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["status_bounded_overflow_last_visible_label"]
+        == "job eight"
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["status_bounded_overflow_hidden_ids_absent"] is True
     assert voice_result["details"]["async_oracle_smoke"]["terminal_status_committed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["completed_result_status_visible"] is True
     assert "completed: First sentence. Second sentence. Third sentence." in voice_result["details"][

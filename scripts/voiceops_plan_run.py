@@ -1608,6 +1608,27 @@ async def build_plan_run_async(
                     "status_ordinal_labels": list(
                         voice_operator["proofs"]["async_oracle_jobs"]["status_ordinal_labels"]
                     ),
+                    "status_bounded_overflow_visible": voice_operator["proofs"]["async_oracle_jobs"][
+                        "status_bounded_overflow_visible"
+                    ],
+                    "status_bounded_overflow_visible_job_count": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["status_bounded_overflow_visible_job_count"],
+                    "status_bounded_overflow_hidden_job_count": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["status_bounded_overflow_hidden_job_count"],
+                    "status_bounded_overflow_more_spoken_status": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["status_bounded_overflow_more_spoken_status"],
+                    "status_bounded_overflow_last_visible_ordinal": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["status_bounded_overflow_last_visible_ordinal"],
+                    "status_bounded_overflow_last_visible_label": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["status_bounded_overflow_last_visible_label"],
+                    "status_bounded_overflow_hidden_ids_absent": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["status_bounded_overflow_hidden_ids_absent"],
                     "terminal_status_committed": voice_operator["proofs"]["async_oracle_jobs"][
                         "terminal_status_committed"
                     ],
