@@ -284,6 +284,9 @@ and final results without treating witness text as durable user history.
 - Raw audio is the primary interpreter evidence when `audio.segment_ref` exists.
 - Transcript hypotheses are clues for the Gemma interpreter, not durable user
   messages.
+- Moshi/open-S2S/reflex/classic-ASR text may arrive in parallel as witness or
+  fallback context, but it must not block reflex acknowledgement or oracle-job
+  envelope creation when the accepted raw audio and reflex route are sufficient.
 - Negative speech evidence outranks transcript-looking text. Low-energy witness
   text remains diagnostic and has no scheduling or tool authority.
 - Text-only external requests are degraded compatibility mode.
@@ -310,6 +313,8 @@ audit should expose:
   `evidence_merge_key`
 - transcript hypotheses with `tool_authority = false`
 - interpreter prompt/input order showing raw audio before witness text
+- acknowledgement and oracle-job envelope creation were not blocked on ASR or
+  Moshi/open-S2S transcript hypotheses when raw audio plus reflex route existed
 - witness arrival phase: before cut, with cut, or after interpreter start
 - witness metadata for source, confidence, latency, partial/final state,
   audio time range, speaker guess, and channel guess when available
@@ -325,6 +330,8 @@ audit should expose:
 - interpreter adjudication outcome for every active transcript hypothesis
 - Moshi/open-S2S transcript context, when present, attached beside raw audio as
   a same-bundle hypothesis rather than routed as a second user turn
+- duplicate-turn and duplicate-oracle-job suppression for transcript hypotheses
+  that arrive before, with, or after the accepted audio cut
 - sink checks proving rejected or unpromoted witness text did not enter spend,
   provider, NemoClaw, phone, tool, memory, file, message, or durable-history
   payloads

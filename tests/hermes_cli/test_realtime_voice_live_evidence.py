@@ -134,6 +134,10 @@ def _complete_live_turn():
     return {
         "kind": "live_turn",
         "collector_attestation": _collector_attestation("live_turn"),
+        "turn_id": "voiceops-live-turn-budget",
+        "audio_segment_ref": "artifact://redacted/voiceops-live-turn-budget.wav",
+        "evidence_bundle_id": "kame-evidence-live-turn-budget",
+        "evidence_merge_key": "kame-merge-live-turn-budget",
         "transcript_observed": True,
         "audio_segment_ref_observed": True,
         "interpreter_evidence_observed": True,
@@ -214,6 +218,13 @@ def _alpha_realtime_voice_report(
             {
                 "kind": "session_turn",
                 "ok": True,
+                "turn_id": "voiceops-report-turn-001",
+                "audio_segment_ref": "artifact://redacted/voiceops-report-turn-001.wav",
+                "evidence_bundle_id": "kame-evidence-voiceops-report-turn-001",
+                "evidence_merge_key": "kame-merge-voiceops-report-turn-001",
+                "audio_segment_ref_observed": True,
+                "interpreter_evidence_observed": True,
+                "transcript_hypotheses_labeled": True,
                 "text": assistant_text,
                 **ALPHA_REQUIRED_SESSION_TURN_METADATA[text],
                 "transcript_final_ms": 10,
@@ -245,6 +256,13 @@ def _alpha_realtime_voice_report(
             {
                 "kind": "audio_session",
                 "ok": True,
+                "turn_id": "voiceops-report-turn-001",
+                "audio_segment_ref": "artifact://redacted/voiceops-report-turn-001.wav",
+                "evidence_bundle_id": "kame-evidence-voiceops-report-turn-001",
+                "evidence_merge_key": "kame-merge-voiceops-report-turn-001",
+                "audio_segment_ref_observed": True,
+                "interpreter_evidence_observed": True,
+                "transcript_hypotheses_labeled": True,
                 "fixture": fixture,
                 "codec": "webm_opus",
                 "audio_bytes": 1234,
@@ -1038,7 +1056,14 @@ def test_live_evidence_derives_complete_sections_from_realtime_voice_report(monk
     assert sidecar["provider_transport_observed"] is True
     assert sidecar["latency_metrics_ms"] == {"session_start_ms": 12.0, "shutdown_ms": 80.0}
     assert sidecar["source_artifact"] == str(report_path.resolve())
+    assert live_turn["turn_id"] == "voiceops-report-turn-001"
+    assert live_turn["audio_segment_ref"] == "artifact://redacted/voiceops-report-turn-001.wav"
+    assert live_turn["evidence_bundle_id"] == "kame-evidence-voiceops-report-turn-001"
+    assert live_turn["evidence_merge_key"] == "kame-merge-voiceops-report-turn-001"
     assert live_turn["transcript_observed"] is True
+    assert live_turn["audio_segment_ref_observed"] is True
+    assert live_turn["interpreter_evidence_observed"] is True
+    assert live_turn["transcript_hypotheses_labeled"] is True
     assert live_turn["assistant_audio_observed"] is True
     assert live_turn["barge_in_observed"] is True
     assert live_turn["barge_in_stop_ms"] == 45.0

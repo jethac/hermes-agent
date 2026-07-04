@@ -113,6 +113,10 @@ def _write_live_voice_evidence(root: Path) -> Path:
         "live_turn",
         {
             "kind": "live_turn",
+            "turn_id": "voiceops-live-turn-budget",
+            "audio_segment_ref": "artifact://redacted/voiceops-live-turn-budget.wav",
+            "evidence_bundle_id": "kame-evidence-live-turn-budget",
+            "evidence_merge_key": "kame-merge-live-turn-budget",
             "audio_segment_ref_observed": True,
             "interpreter_evidence_observed": True,
             "transcript_hypotheses_labeled": True,
@@ -871,6 +875,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "plan_index_command_probes"
     ]
     assert "schema_version" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert "turn_id" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert "audio_segment_ref" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert "evidence_bundle_id" in gates["live_discord_voice_operator"]["required_evidence_fields"]
+    assert "evidence_merge_key" in gates["live_discord_voice_operator"]["required_evidence_fields"]
     assert "transcript_observed" in gates["live_discord_voice_operator"]["required_evidence_fields"]
     assert "audio_segment_ref_observed" in gates["live_discord_voice_operator"]["required_evidence_fields"]
     assert "interpreter_evidence_observed" in gates["live_discord_voice_operator"]["required_evidence_fields"]

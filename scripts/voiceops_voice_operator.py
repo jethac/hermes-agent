@@ -259,6 +259,13 @@ LIVE_EVIDENCE_REQUIRED_TURN_BOOLS = (
     "no_voice_denial_observed",
 )
 
+LIVE_EVIDENCE_REQUIRED_TURN_KAME_IDS = (
+    "turn_id",
+    "audio_segment_ref",
+    "evidence_bundle_id",
+    "evidence_merge_key",
+)
+
 LIVE_EVIDENCE_TEMPLATE_SOURCE_ARTIFACTS = {
     "discord-live-probe.json",
     "voice-status-or-sidecar-report.json",
@@ -771,7 +778,7 @@ def build_live_probe_evidence_template() -> dict[str, Any]:
     }
     return {
         "schema_version": LIVE_EVIDENCE_SCHEMA_VERSION,
-        "redaction_policy": "references and booleans only; no Discord tokens, provider tokens, full phone numbers, or raw transcripts with secrets",
+        "redaction_policy": "redacted refs, stable KAME ids, booleans, and latency numbers only; no Discord tokens, provider tokens, full phone numbers, or raw transcripts with secrets",
         "discord_live_probe": {
             "source_artifact": "discord-live-probe.json",
             "kind": "discord_live_probe",
@@ -820,6 +827,10 @@ def build_live_probe_evidence_template() -> dict[str, Any]:
         "live_turn": {
             "source_artifact": "voice-turn-evidence.json",
             "collector_attestation": dict(collector_template),
+            "turn_id": None,
+            "audio_segment_ref": None,
+            "evidence_bundle_id": None,
+            "evidence_merge_key": None,
             "transcript_observed": False,
             "audio_segment_ref_observed": False,
             "interpreter_evidence_observed": False,
@@ -902,6 +913,10 @@ def build_live_probe_evidence_example() -> dict[str, Any]:
     example["live_turn"].update(
         {
             "collector_attestation": _example_collector_attestation("live_turn"),
+            "turn_id": "voiceops-live-turn-example",
+            "audio_segment_ref": "artifact://redacted/live-turn-example.wav",
+            "evidence_bundle_id": "kame-evidence-live-turn-example",
+            "evidence_merge_key": "kame-merge-live-turn-example",
             "transcript_observed": True,
             "audio_segment_ref_observed": True,
             "interpreter_evidence_observed": True,
@@ -1190,6 +1205,7 @@ def _looks_like_sidecar_session(payload: Mapping[str, Any]) -> bool:
 def _looks_like_live_turn(payload: Mapping[str, Any]) -> bool:
     return (
         any(key in payload for key in LIVE_EVIDENCE_REQUIRED_TURN_BOOLS)
+        or any(key in payload for key in LIVE_EVIDENCE_REQUIRED_TURN_KAME_IDS)
         or "transcript_observed" in payload
         or "speech_end_to_first_audio_ms" in payload
     )
@@ -1356,6 +1372,14 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
     for key in LIVE_EVIDENCE_REQUIRED_TURN_BOOLS:
         if live_turn.get(key) is not True:
             issues.append(f"live_turn:{key}_not_true")
+    live_turn_kame_ids = {
+        key: str(live_turn.get(key) or "").strip()
+        for key in LIVE_EVIDENCE_REQUIRED_TURN_KAME_IDS
+    }
+    for key, value in live_turn_kame_ids.items():
+        if not value:
+            issues.append(f"live_turn:missing_{key}")
+    kame_lineage_ids_complete = all(live_turn_kame_ids.values())
     transcript_hypotheses_observed = (
         live_turn.get("transcript_hypotheses_labeled") is True
         or live_turn.get("transcript_observed") is True
@@ -1419,10 +1443,17 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
         },
         "live_turn": {
             "ok": all(live_turn.get(key) is True for key in LIVE_EVIDENCE_REQUIRED_TURN_BOOLS)
+            and kame_lineage_ids_complete
+            and not transcript_only_witness_rejected_for_full_kame
             and first_audio_ms is not None
             and first_audio_ms <= 3000
             and barge_in_ms is not None
             and barge_in_ms <= 150,
+            "kame_lineage_ids_complete": kame_lineage_ids_complete,
+            "turn_id": live_turn_kame_ids["turn_id"],
+            "audio_segment_ref": live_turn_kame_ids["audio_segment_ref"],
+            "evidence_bundle_id": live_turn_kame_ids["evidence_bundle_id"],
+            "evidence_merge_key": live_turn_kame_ids["evidence_merge_key"],
             "raw_audio_interpreter_evidence_observed": raw_audio_interpreter_evidence_observed,
             "transcript_hypotheses_observed": transcript_hypotheses_observed,
             "transcript_only_witness_rejected_for_full_kame": transcript_only_witness_rejected_for_full_kame,
@@ -4102,7 +4133,8 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "source_artifact, and collector_attestation."
             ),
             "live_turn": (
-                "Write live-turn.json with kind=live_turn, audio_segment_ref_observed, "
+                "Write live-turn.json with kind=live_turn, turn_id, audio_segment_ref, "
+                "evidence_bundle_id, evidence_merge_key, audio_segment_ref_observed, "
                 "interpreter_evidence_observed, transcript_hypotheses_labeled, optional transcript_observed, "
                 "assistant_audio_observed, barge_in_observed, spoken_reply_short, no_voice_denial_observed, "
                 "speech_end_to_first_audio_ms, barge_in_stop_ms, source_artifact, and collector_attestation. "
@@ -4163,6 +4195,10 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
                 "example_only": True,
                 "source_artifact": "sections/live-turn-source.json",
                 "collector_attestation": _example_collector_attestation("live_turn"),
+                "turn_id": "voiceops-live-turn-example",
+                "audio_segment_ref": "artifact://redacted/live-turn-example.wav",
+                "evidence_bundle_id": "kame-evidence-live-turn-example",
+                "evidence_merge_key": "kame-merge-live-turn-example",
                 "transcript_observed": True,
                 "audio_segment_ref_observed": True,
                 "interpreter_evidence_observed": True,
@@ -4178,7 +4214,7 @@ def _live_probe_closure_plan(report: dict[str, Any]) -> dict[str, Any]:
         "do_not": [
             "paste Discord bot tokens or provider tokens into evidence files",
             "include full phone numbers or private transcript content with secrets",
-            "include raw transcript text; record only redacted booleans, latency numbers, and artifact references",
+            "include raw transcript text; record only redacted KAME ids, booleans, latency numbers, and artifact references",
             "hand-edit manifest.json or example_only evidence to claim a passing live probe",
             "claim production readiness from the headless loopback smoke alone",
         ],

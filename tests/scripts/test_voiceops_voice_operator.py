@@ -939,6 +939,10 @@ def _complete_live_evidence() -> dict:
     evidence["live_turn"].update(
         {
             "collector_attestation": _collector_attestation("live_turn"),
+            "turn_id": "voiceops-live-turn-budget",
+            "audio_segment_ref": "artifact://redacted/voiceops-live-turn-budget.wav",
+            "evidence_bundle_id": "kame-evidence-live-turn-budget",
+            "evidence_merge_key": "kame-merge-live-turn-budget",
             "transcript_observed": True,
             "audio_segment_ref_observed": True,
             "interpreter_evidence_observed": True,
@@ -2656,10 +2660,33 @@ def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing
     assert report["live_evidence"]["overall_status"] == "live_evidence_supplied_not_readiness_claim"
     assert report["live_probe_required_for_completion"]["missing_gates"] == []
     assert report["proofs"]["live_evidence"]["ok"] is True
+    assert live_evidence["live_turn"]["kame_lineage_ids_complete"] is True
+    assert live_evidence["live_turn"]["turn_id"] == "voiceops-live-turn-budget"
+    assert live_evidence["live_turn"]["audio_segment_ref"] == "artifact://redacted/voiceops-live-turn-budget.wav"
+    assert live_evidence["live_turn"]["evidence_bundle_id"] == "kame-evidence-live-turn-budget"
+    assert live_evidence["live_turn"]["evidence_merge_key"] == "kame-merge-live-turn-budget"
     assert live_evidence["live_turn"]["raw_audio_interpreter_evidence_observed"] is True
     assert live_evidence["live_turn"]["transcript_hypotheses_observed"] is True
     assert live_evidence["live_turn"]["transcript_only_witness_rejected_for_full_kame"] is False
     assert not any("collector_attestation" in issue for issue in live_evidence["issues"])
+
+
+def test_live_evidence_requires_concrete_kame_lineage_ids():
+    evidence = _complete_live_evidence()
+    evidence["live_turn"]["turn_id"] = ""
+    evidence["live_turn"]["audio_segment_ref"] = None
+    evidence["live_turn"].pop("evidence_bundle_id")
+    evidence["live_turn"]["evidence_merge_key"] = " "
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert live_evidence["overall_status"] == "partial_live_evidence"
+    assert "live_turn:missing_turn_id" in live_evidence["issues"]
+    assert "live_turn:missing_audio_segment_ref" in live_evidence["issues"]
+    assert "live_turn:missing_evidence_bundle_id" in live_evidence["issues"]
+    assert "live_turn:missing_evidence_merge_key" in live_evidence["issues"]
+    assert live_evidence["live_turn"]["kame_lineage_ids_complete"] is False
+    assert live_evidence["live_turn"]["ok"] is False
 
 
 def test_live_evidence_rejects_transcript_only_witness_for_full_kame():
@@ -3128,6 +3155,10 @@ def test_voice_operator_ingests_realtime_live_evidence_manifest(tmp_path):
     live_turn = {
         "kind": "live_turn",
         "collector_attestation": _collector_attestation("live_turn"),
+        "turn_id": "voiceops-live-turn-budget",
+        "audio_segment_ref": "artifact://redacted/voiceops-live-turn-budget.wav",
+        "evidence_bundle_id": "kame-evidence-live-turn-budget",
+        "evidence_merge_key": "kame-merge-live-turn-budget",
         "transcript_observed": True,
         "audio_segment_ref_observed": True,
         "interpreter_evidence_observed": True,
@@ -3241,6 +3272,10 @@ def test_voice_operator_ingests_repeated_standalone_live_evidence_files(tmp_path
             "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
             "kind": "live_turn",
             "source_artifact": turn_path.name,
+            "turn_id": "voiceops-live-turn-budget",
+            "audio_segment_ref": "artifact://redacted/voiceops-live-turn-budget.wav",
+            "evidence_bundle_id": "kame-evidence-live-turn-budget",
+            "evidence_merge_key": "kame-merge-live-turn-budget",
             "transcript_observed": True,
             "audio_segment_ref_observed": True,
             "interpreter_evidence_observed": True,
@@ -3313,6 +3348,10 @@ def test_voice_operator_accepts_standalone_section_evidence_type_identity(tmp_pa
             {
                 "evidence_type": "live_turn",
                 "source_artifact": turn_path.name,
+                "turn_id": "voiceops-live-turn-budget",
+                "audio_segment_ref": "artifact://redacted/voiceops-live-turn-budget.wav",
+                "evidence_bundle_id": "kame-evidence-live-turn-budget",
+                "evidence_merge_key": "kame-merge-live-turn-budget",
                 "transcript_observed": True,
                 "audio_segment_ref_observed": True,
                 "interpreter_evidence_observed": True,
@@ -3613,6 +3652,10 @@ def test_live_evidence_rejects_complete_payload_without_schema_and_source_artifa
     evidence["live_turn"].update(
         {
             "collector_attestation": _collector_attestation("live_turn"),
+            "turn_id": "voiceops-live-turn-budget",
+            "audio_segment_ref": "artifact://redacted/voiceops-live-turn-budget.wav",
+            "evidence_bundle_id": "kame-evidence-live-turn-budget",
+            "evidence_merge_key": "kame-merge-live-turn-budget",
             "transcript_observed": True,
             "audio_segment_ref_observed": True,
             "interpreter_evidence_observed": True,
@@ -3649,6 +3692,10 @@ def test_voice_operator_rejects_manifest_with_example_only_referenced_section(tm
     live_turn = build_live_probe_evidence_template()["live_turn"]
     live_turn.update(
         {
+            "turn_id": "voiceops-live-turn-budget",
+            "audio_segment_ref": "artifact://redacted/voiceops-live-turn-budget.wav",
+            "evidence_bundle_id": "kame-evidence-live-turn-budget",
+            "evidence_merge_key": "kame-merge-live-turn-budget",
             "transcript_observed": True,
             "audio_segment_ref_observed": True,
             "interpreter_evidence_observed": True,
@@ -3699,6 +3746,10 @@ def test_voice_operator_rejects_manifest_with_missing_or_invalid_schema(tmp_path
     live_turn = build_live_probe_evidence_template()["live_turn"]
     live_turn.update(
         {
+            "turn_id": "voiceops-live-turn-budget",
+            "audio_segment_ref": "artifact://redacted/voiceops-live-turn-budget.wav",
+            "evidence_bundle_id": "kame-evidence-live-turn-budget",
+            "evidence_merge_key": "kame-merge-live-turn-budget",
             "transcript_observed": True,
             "audio_segment_ref_observed": True,
             "interpreter_evidence_observed": True,
@@ -3766,6 +3817,10 @@ def test_live_evidence_rejects_nested_example_only_sections():
     evidence["live_turn"].update(
         {
             "example_only": True,
+            "turn_id": "voiceops-live-turn-budget",
+            "audio_segment_ref": "artifact://redacted/voiceops-live-turn-budget.wav",
+            "evidence_bundle_id": "kame-evidence-live-turn-budget",
+            "evidence_merge_key": "kame-merge-live-turn-budget",
             "transcript_observed": True,
             "audio_segment_ref_observed": True,
             "interpreter_evidence_observed": True,

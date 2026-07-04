@@ -730,11 +730,46 @@ def _derive_live_turn_from_realtime_report(
     ]
     denial_observed = any(_looks_like_voice_denial(text) for text in texts if text)
     spoken_reply_short = any(0 < len(text) <= 240 for text in texts)
+    turn_id = _first_non_empty_from_entries(entries, "turn_id", "kame_turn_id")
+    audio_segment_ref = _first_non_empty_from_entries(
+        entries,
+        "audio_segment_ref",
+        "kame_audio_segment_ref",
+        "audio_ref",
+    )
+    evidence_bundle_id = _first_non_empty_from_entries(
+        entries,
+        "evidence_bundle_id",
+        "kame_evidence_bundle_id",
+    )
+    evidence_merge_key = _first_non_empty_from_entries(
+        entries,
+        "evidence_merge_key",
+        "kame_evidence_merge_key",
+    )
+    audio_segment_ref_observed = bool(audio_segment_ref) or any(
+        entry.get("audio_segment_ref_observed") is True for entry in turn_entries
+    )
+    interpreter_evidence_observed = bool(
+        evidence_bundle_id and evidence_merge_key and (turn_id or audio_segment_ref)
+    ) or any(entry.get("interpreter_evidence_observed") is True for entry in turn_entries)
+    transcript_hypotheses_labeled = any(
+        entry.get("transcript_hypotheses_labeled") is True
+        or _non_empty(entry.get("transcript_hypotheses"))
+        for entry in turn_entries
+    )
     return {
         "kind": "live_turn",
         "source_artifact": str(report_path),
         "derived_from": "hermes doctor --realtime-voice-report",
+        "turn_id": turn_id,
+        "audio_segment_ref": audio_segment_ref,
+        "evidence_bundle_id": evidence_bundle_id,
+        "evidence_merge_key": evidence_merge_key,
         "transcript_observed": bool(alpha_valid and transcript_observed),
+        "audio_segment_ref_observed": bool(alpha_valid and audio_segment_ref_observed),
+        "interpreter_evidence_observed": bool(alpha_valid and interpreter_evidence_observed),
+        "transcript_hypotheses_labeled": bool(alpha_valid and transcript_hypotheses_labeled),
         "assistant_audio_observed": bool(alpha_valid and assistant_audio_observed),
         "barge_in_observed": bool(alpha_valid and isinstance(barge_in, dict) and barge_in.get("ok") is True),
         "spoken_reply_short": bool(alpha_valid and spoken_reply_short),
@@ -749,6 +784,20 @@ def _first_entry(entries: list[dict[str, Any]], kind: str) -> dict[str, Any] | N
         if str(entry.get("kind") or "") == kind:
             return entry
     return None
+
+
+def _first_non_empty_from_entries(entries: list[dict[str, Any]], *keys: str) -> str:
+    for entry in entries:
+        for key in keys:
+            value = entry.get(key)
+            if _non_empty(value):
+                return str(value).strip()
+        metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
+        for key in keys:
+            value = metadata.get(key)
+            if _non_empty(value):
+                return str(value).strip()
+    return ""
 
 
 def _first_passing_entry(entries: list[dict[str, Any]], kind: str) -> dict[str, Any] | None:

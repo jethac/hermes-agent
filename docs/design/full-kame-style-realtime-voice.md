@@ -639,6 +639,14 @@ Runtime status exposes both a stable `evidence_bundle_id` and an audio-aware
 `evidence_merge_key` so late witness/audio attachment can be audited without
 turning raw artifact paths or transcripts into durable identifiers.
 
+The acknowledgement path is allowed to run ahead of transcript evidence. When
+VAD/energy gating has accepted a raw audio cut and the reflex has a route, the
+reflex may acknowledge the user and create the oracle-job envelope without
+waiting for Moshi/open-S2S, reflex transcript, or classic-ASR hypotheses. Those
+hypotheses attach to the same bundle when they arrive and can help the
+interpreter correct or reject wording, but they are not the scheduler and they
+must not create a second durable user turn.
+
 Canonical shape:
 
 ```json
@@ -1286,6 +1294,10 @@ are not a prerequisite for a voice turn. In full KAME mode the ordering is:
 
 The absence of ASR evidence must not block the reflex acknowledgement or prevent
 oracle job creation when the raw audio and reflex route are sufficient.
+The useful question for Moshi/open-S2S and ASR is whether their hypotheses help
+the interpreter recover clipped prefixes, names, numbers, code switches, or
+intent without being captured by hallucinated text. They are measured as
+evidence quality and fallback value, not as the control path.
 
 Modes:
 
@@ -1873,6 +1885,8 @@ Deliverables:
 - short local replies through existing TTS path
 - structured oracle requests to Hermes
 - rough transcript hypothesis surfaced as non-durable evidence
+- acknowledgement and oracle-job envelope creation proven not to wait on
+  Moshi/open-S2S or classic-ASR hypotheses when raw audio plus route are ready
 - tests with fake reflex and fake oracle
 - metrics showing which turns avoided the oracle
 

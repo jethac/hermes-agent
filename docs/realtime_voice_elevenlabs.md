@@ -297,10 +297,16 @@ prove:
 4. Barge-in sends an acknowledgement within the configured target and clears or
    resets queued TTS output.
 5. Latency metrics are present for:
-   - audio to provider transcript hypothesis,
+   - audio to provider transcript hypothesis, measured as auxiliary evidence
+     rather than the acknowledgement critical path,
    - raw-audio/interpreter or fallback-text input to first assistant text,
    - assistant text to first audio,
    - barge-in acknowledgement.
+6. In full KAME mode, provider STT does not block reflex acknowledgement or
+   oracle-job envelope creation when raw audio plus reflex route are already
+   available; the transcript is attached as `classic_asr_hypothesis` or other
+   labeled witness context and cannot become durable user text by arriving
+   first.
 
 ElevenLabs can emit short Japanese utterances as a fast final transcript without
 an earlier partial. The alpha evidence runner records an ElevenLabs-specific
