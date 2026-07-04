@@ -19,11 +19,15 @@ target full KAME control path. In full KAME mode, the reflex owns floor control,
 Gemma interprets clipped raw audio plus labeled transcript hypotheses, and
 Hermes' active `/model` remains the oracle. ElevenLabs STT output should enter
 that path only as optional transcript-hypothesis context unless Hermes is
-explicitly running a text-oracle fallback.
+explicitly running a degraded text-only fallback.
 
-Only explicit text-oracle fallback mode may route provider STT directly into
-Hermes text handling. Full KAME evidence should preserve the raw audio reference
-and treat ElevenLabs text as `classic_asr_hypothesis` context.
+Only explicit degraded text-only fallback mode may route provider STT into
+Hermes text handling. That path is useful for bring-up, captions,
+clarification, and low-risk drafting, but it is not full raw-audio KAME
+evidence and cannot authorize spend, tools, calls, files, memory writes,
+external messages, or durable user text by itself. Full KAME evidence should
+preserve the raw audio reference and treat ElevenLabs text as
+`classic_asr_hypothesis` context.
 
 ## Provider-Neutral Architecture
 
@@ -282,7 +286,7 @@ prove:
    provider-normalized transcript matching.
 3. The full Hermes realtime session path produces:
    - provenance-labeled `classic_asr_hypothesis` events,
-   - Hermes assistant text only in explicit text-oracle fallback mode,
+   - Hermes assistant text only in explicit degraded text-only fallback mode,
    - streaming TTS audio chunks.
 4. Barge-in sends an acknowledgement within the configured target and clears or
    resets queued TTS output.

@@ -94,6 +94,14 @@ route, the acknowledgement already spoken, and any Moshi/open-S2S or classic ASR
 hypotheses. It promotes only the evidence that is safe to hand to Hermes'
 active `/model`.
 
+The demo should describe this as witness-assisted interpretation. If Moshi,
+VoiceClaw, OpenClaw, or another open-S2S frontend emits an STT-like transcript,
+Hermes should send that text to Gemma with the same raw voice clip, not around
+Gemma and not as a second Hermes turn. Gemma then decides whether the witness
+was useful, incomplete, wrong-speaker, stale, or hallucinated. The active Hermes
+oracle receives promoted transcript/intent/entities and compact labeled audit
+context; it does not receive unpromoted Moshi text as the durable user prompt.
+
 The open-model strategy is role-based. Moshi/PersonaPlex-class models are reflex
 candidates. Gemma 4 audio-multimodal is the interpreter candidate.
 Nemotron/Riva-style ASR is auxiliary evidence or fallback. Magpie/Riva,
@@ -258,6 +266,9 @@ system heard the user.
 - The interpreter evidence artifact records whether each witness transcript was
   accepted as support, corrected by raw audio, or rejected/diagnostic-only
   before any Stripe/NemoClaw/phone/tool action uses the wording.
+- The oracle request artifact shows promoted interpreter/oracle fields as the
+  action source, with unpromoted Moshi/S2S/ASR text retained only as labeled
+  audit context.
 - The active Hermes model routes to the local PGX Nemotron 3 Super endpoint.
 - Heavy planning/build/debug requests go directly through the active Hermes oracle, without the Gemma 12B + Nemotron Nano MoA path.
 - Stripe-linked provisioning is constrained by an explicit budget.

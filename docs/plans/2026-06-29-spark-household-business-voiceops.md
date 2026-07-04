@@ -128,8 +128,9 @@ Target KAME layout:
 - Evidence-bundle rule: a Moshi/open-S2S transcript can and should be provided
   to Gemma alongside raw voice when available, but it is context, not control.
   Gemma's role is interpreter/evidence adjudicator, not a blocking ASR service.
-  The reflex may queue/narrate work from provisional intent, while durable user
-  wording and tool-critical fields require interpreter or oracle promotion.
+  The reflex may propose a queue envelope and narrate work from provisional
+  intent, while durable user wording and tool-critical fields require
+  interpreter or oracle promotion.
 - No-ASR-gate rule: the normal KAME path must not require ASR evidence before
   acknowledgement, job creation, or raw-audio interpretation. Dedicated ASR is
   fallback, diagnostics, captions, or high-risk literal-evidence support. Moshi,
@@ -157,6 +158,18 @@ Target KAME layout:
   it against the raw waveform and metadata. Rejected/diagnostic witness text may
   stay in the audit bundle, but it must not become a spend reason, phone script,
   provider choice, file/memory content, durable user text, or tool argument.
+- Witness-assisted interpreter rule: when Moshi/open-S2S produces an STT-like
+  transcript for a speech cut, use it to help Gemma interpret the same clipped
+  raw voice. Do not run Moshi text as a second Hermes conversation and do not
+  send it to the oracle as the user message. The interpreter request should show
+  raw audio first and the Moshi/OpenClaw/VoiceClaw/classic-ASR strings as
+  labeled `transcript_hypotheses[]`; the interpreter response should show which
+  hypotheses were accepted, corrected, rejected, or kept diagnostic-only.
+- Oracle-context rule: the active Hermes `/model` should receive promoted
+  transcript/intent/entities plus compact labeled audit context. It should not
+  receive unpromoted Moshi/STT witness strings as if they were the durable user
+  prompt, because that recreates the old STT-first failure mode under a new
+  name.
 - Alternative-provider rule: Gemini Live-style hosted realtime APIs, Moshi,
   Ultravox, Qwen Omni, Nemotron/Riva ASR, Magpie/Riva TTS, Piper, Cartesia, and
   similar systems are provider candidates, not authority models. Each candidate
@@ -471,11 +484,13 @@ VoiceClaw/OpenClaw, classic ASR, and other transcript-side-channel sources can
 only add labeled hypotheses to the same evidence bundle unless the interpreter
 or oracle later promotes them.
 
-The scheduler must also guard persistence. A provisional `oracle_text` derived
-from reflex or transcript hypotheses is allowed for queuing and narration, but
-the persisted Hermes user message should be the promoted interpreter/oracle
-wording. Durable oracle records should preserve raw hypothesis fields only in the
-voice-session audit trail, not as replayable verified user turns.
+The scheduler must also guard persistence. Before promotion, use
+`provisional_request_summary` for queueing and narration rather than
+`oracle_text`. That summary is not persistable as verified user text and has no
+tool authority. The persisted Hermes user message should be the promoted
+interpreter/oracle wording. Durable oracle records should preserve raw
+hypothesis fields only in the voice-session audit trail, not as replayable
+verified user turns.
 
 ### Oracle
 

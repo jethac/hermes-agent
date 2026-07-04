@@ -414,16 +414,19 @@ During a live Discord voice session:
 
 ### Oracle Job
 
-An oracle job is a structured unit of backend Hermes work created by a reflex
-route. It is not the same thing as a spoken turn. One spoken conversation can
-create many oracle jobs.
+An oracle job is a structured unit of backend Hermes work proposed by a reflex
+route and accepted by the Hermes oracle manager. It is not the same thing as a
+spoken turn. One spoken conversation can create many provisional job envelopes,
+but action authority comes only after the manager validates the envelope against
+the evidence bundle and policy gates.
 
 For external realtime clients, an oracle job is also the compatibility target
 for VoiceClaw/OpenClaw-style brain calls. A client may submit an
 `ask_brain`-shaped request, but Hermes must translate it into the same
 `OracleJob` shape used by Discord KAME sessions before it reaches the oracle.
-No external frontend should receive direct Hermes tools as a shortcut around
-the job manager.
+Text-only `ask_brain` requests are degraded and non-authoritative until
+interpreter/oracle promotion exists. No external frontend should receive direct
+Hermes tools as a shortcut around the job manager.
 
 Minimum fields:
 
@@ -567,8 +570,8 @@ remain audit evidence unless interpreter or oracle judgment promotes it.
 That promotion rule applies even when a transcript-looking field is delivered
 inside an `interpreter_evidence` update: sources such as Moshi, VoiceClaw,
 OpenClaw, and classic ASR can enrich the evidence bundle, but they cannot patch
-`oracle_text`, durable transcript, normalized intent, or tool-critical arguments
-unless a trusted interpreter source explicitly promotes the wording.
+promoted oracle text, durable transcript, normalized intent, or tool-critical
+arguments unless a trusted interpreter source explicitly promotes the wording.
 
 ## Routing Behavior
 
@@ -599,12 +602,12 @@ Scheduler: creates oracle job
 If Gemma interpreter evidence arrives before the job starts, the scheduler folds
 it into the job request before execution. That fold-in should update the
 oracle-facing transcript, transcript source, transcript confidence, normalized
-intent, entities, disagreement metadata, and `oracle_text` when the corrected
-evidence changes what Hermes is about to do. If it arrives after the job starts,
-the job manager attaches it as a bounded update for tool-critical checks and
-final audit. That evidence may include the raw-audio interpretation, Moshi/S2S
-transcript hypotheses, and optional ASR hypotheses, but the raw audio plus
-interpreter judgment remains the higher-authority evidence path.
+intent, entities, disagreement metadata, and promoted request text when the
+corrected evidence changes what Hermes is about to do. If it arrives after the
+job starts, the job manager attaches it as a bounded update for tool-critical
+checks and final audit. That evidence may include the raw-audio interpretation,
+Moshi/S2S transcript hypotheses, and optional ASR hypotheses, but the raw audio
+plus interpreter judgment remains the higher-authority evidence path.
 
 Queued-job fold-in must keep the original hypothesis fields as evidence rather
 than deleting them. The oracle request should be able to show: "the reflex

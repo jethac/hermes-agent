@@ -38,6 +38,17 @@ may collect transcript text opportunistically, but the unit of work remains one
 speech cut with raw audio as primary evidence, plus whatever labeled hypotheses
 were available before or after the cut.
 
+Current refinement: the useful Moshi/open-S2S shape is witness-assisted
+interpretation. If the reflex/frontend can emit an STT-like string, Hermes
+should preserve it and send it to Gemma with the clipped raw voice, VAD/energy
+timing, speaker/channel metadata, reflex route, and spoken acknowledgement.
+Gemma should read that text as "what the realtime frontend believed it heard,"
+not as a verified transcript. The interpreter output should include both
+promoted fields and explicit witness adjudication so later code can tell whether
+the witness was accepted, corrected, rejected, or kept diagnostic-only. The
+oracle should receive promoted intent/transcript/entities plus labeled audit
+context, not a standalone Moshi-text user turn.
+
 This also means the runtime should not block reflex acknowledgement waiting for
 Moshi/STT text. If the waveform and reflex route are available, create the
 bundle and let the interpreter start. Transcript hypotheses can attach before
@@ -243,7 +254,7 @@ keeping the evidence boundary strict:
    reflex route and acknowledgement, then Moshi/OpenClaw/VoiceClaw/classic-ASR
    transcript hypotheses with provenance labels.
 4. Gemma interprets that bundle and emits promoted wording, entities,
-   confidence, disagreements, and an oracle request patch.
+   confidence, disagreements, witness adjudication, and an oracle request patch.
 5. Hermes sends only promoted wording and labeled evidence to the active
    `/model` oracle for durable work and external effects.
 
@@ -372,8 +383,11 @@ history or tool-critical arguments.
 If the raw audio is unavailable, the session is no longer in full KAME mode for
 that turn. A text-only Moshi/OpenClaw/VoiceClaw bridge can still submit an
 `ask_brain` compatibility request, but the request must be marked degraded,
-must preserve the source as `hypothesis` or `fallback_text`, and must require
-explicit oracle responsibility before high-risk actions proceed.
+must preserve the source as `hypothesis` or `fallback_text`, and may only
+draft, clarify, or produce low-risk status until raw-audio evidence plus
+interpreter/oracle promotion exists. High-risk tools, spend, provisioning,
+files, memory writes, external messages, and calls fail closed on text-only
+fallback evidence.
 
 ## Signal Authority Rules
 
@@ -384,13 +398,13 @@ input must keep provenance until a later layer promotes it.
 | Signal | Producer | Used For | Authority |
 | --- | --- | --- | --- |
 | `raw_audio` | transport/session cut | interpreter evidence, replay/debug, disagreement checks | primary interpreter input |
-| `reflex_intent` | live reflex | routing, immediate acknowledgement, oracle-job creation | provisional routing |
+| `reflex_intent` | live reflex | routing, immediate acknowledgement, provisional job envelope creation | provisional routing |
 | `reflex_transcript_hypothesis` | live reflex | early clue for the Gemma interpreter, user-visible rough caption when desired | hypothesis only |
 | `s2s_transcript_hypothesis` | Moshi/VoiceClaw/OpenClaw-style frontend | what the realtime voice model thought it heard | hypothesis only |
 | `frontend_witness_hypothesis` | any S2S/reflex frontend exposing STT-like text | umbrella label for "what the frontend believed it heard" when the exact producer is ambiguous | hypothesis only |
 | `classic_asr_hypothesis` | dedicated ASR fallback/evidence lane | literal wording comparison, captions, diagnostics | optional hypothesis |
 | `interpreter_corrected_transcript` | Gemma-style interpreter | durable user request candidate and tool-critical wording | first promoted transcript |
-| `oracle_text` / final result | Hermes active `/model` | tool use, memory, files, spend, calls, durable outcome | action authority after policy checks |
+| promoted oracle text / final result | Hermes active `/model` | tool use, memory, files, spend, calls, durable outcome | action authority after policy checks |
 
 This allows a three-tier design without making STT the control path. Moshi/S2S
 transcripts are valuable because they summarize the live reflex's hearing of
@@ -405,10 +419,12 @@ when the raw audio contains names, numbers, code-switched phrases, or clipped
 prefixes, but neither can certify what the user said. The interpreter owns that
 promotion step.
 
-If the reflex has enough signal to acknowledge or create a background oracle
-job, it should do so immediately. The interpreter can attach corrected evidence
-before the job starts, or as a bounded late update before irreversible spend,
-provisioning, message, memory, file, or call actions rely on the earlier text.
+If the reflex has enough signal to acknowledge or create a provisional
+background job envelope, it should do so immediately. The envelope is status and
+queueing state, not action authority. The interpreter can attach corrected
+evidence before the job starts, or as a bounded late update before any oracle
+work commits irreversible spend, provisioning, message, memory, file, or call
+arguments.
 
 The frontend transcript adapter should therefore be boring and strict:
 
@@ -774,9 +790,9 @@ job envelope with explicit evidence fields:
 Every evidence field should also carry an authority label. The minimum labels
 are `primary_audio`, `reflex_hypothesis`, `auxiliary_hypothesis`,
 `interpreter_promoted`, `oracle_promoted`, and `diagnostic_only`. The scheduler
-may use provisional reflex intent to queue or narrate work, but durable replay
-must make clear which fields were hypotheses and which field actually drove the
-oracle/tool action.
+may use provisional reflex intent to create a queue envelope or narrate work,
+but durable replay must make clear which fields were hypotheses and which field
+actually drove the oracle/tool action.
 
 If an external frontend can provide only text and no replayable audio reference,
 Hermes may still run it through the compatibility path, but that turn is degraded
@@ -1277,13 +1293,32 @@ The interface should submit a compact structured oracle job request:
   "user_id": "discord-user-id",
   "priority": "normal",
   "route": "defer",
-  "oracle_text": "provisional action request text; requires interpreter/oracle promotion before irreversible action",
+  "audio_segment_ref": "artifact-or-buffer-ref",
+  "evidence_bundle_id": "voice-session-id:turn-id",
+  "evidence_merge_key": "audio-aware-join-proof",
+  "provisional_request_summary": {
+    "text": "compact provisional request summary for queueing and narration",
+    "authority": "reflex_hypothesis",
+    "tool_authority": false
+  },
   "reflex_intent": "compact live intent",
-  "reflex_transcript_hypothesis": "three to the power of seventeen",
+  "reflex_transcript_hypothesis": {
+    "text": "three to the power of seventeen",
+    "authority": "reflex_hypothesis",
+    "tool_authority": false
+  },
   "auxiliary_transcript_hypotheses": [
-    {"source": "moshi", "text": "three to the power of seventeen", "confidence": 0.74}
+    {
+      "source": "moshi",
+      "kind": "frontend_witness_hypothesis",
+      "text": "three to the power of seventeen",
+      "confidence": 0.74,
+      "authority": "auxiliary_hypothesis",
+      "tool_authority": false
+    }
   ],
   "interpreter_corrected_transcript": "what is three to the power of seventeen",
+  "interpreter_authority": "interpreter_promoted",
   "interpreter_confidence": 0.94,
   "interpreter_disagreements": ["reflex transcript omitted request prefix"],
   "interpreter_entities": [{"type": "math_expression", "value": "3^17"}],
@@ -1316,18 +1351,18 @@ transcripts are auxiliary witness context or fallback evidence only; they may
 help explain interpreter provenance, but durable text and tool arguments require
 `interpreter_promoted` or `oracle_promoted` authority.
 
-`oracle_text` may start from a compact reflex intent so the job can be queued
-without waiting. That text remains provisional until interpreter evidence or
-oracle judgment promotes it. Irreversible tool, spend, provisioning, file,
-memory, message, or call actions must use the promoted transcript/intent fields
-or explicitly record that the oracle accepted responsibility for acting on a
-provisional request.
+`provisional_request_summary` may start from a compact reflex intent so the job
+can be queued without waiting. It is not durable user text and has no tool
+authority. Irreversible tool, spend, provisioning, file, memory, message, or
+call actions must use `interpreter_promoted` or `oracle_promoted` evidence
+grounded in the raw-audio bundle.
 
 Queued interpreter evidence must be folded into the oracle request before the
 job starts. If the interpreter produces a corrected transcript or intent while a
-job is still queued, the scheduler should update `oracle_text`, `transcript`,
+job is still queued, the scheduler should update the promoted `transcript`,
 `transcript_source`, `transcript_confidence`, `intent`, and relevant metadata
-before dispatch. Late evidence for a running job should be delivered as a
+before dispatch. The provisional summary may be retained only as labeled
+pre-promotion provenance. Late evidence for a running job should be delivered as a
 bounded update and audited before irreversible tool, spend, provisioning, or
 call actions rely on the earlier request.
 
@@ -1335,9 +1370,9 @@ The scheduler must distinguish promoted interpreter output from auxiliary
 hypotheses inside the same update envelope. A Moshi/OpenClaw/VoiceClaw/classic
 ASR source may attach transcript text, confidence, timing, and disagreements to
 the queued job, but that text remains `authority = "hypothesis"` and must not
-rewrite `oracle_text`, durable transcript, normalized intent, spend reason, or
-call/message payload. Only the trusted interpreter promotion source, or a later
-oracle judgment, can make the wording action-authoritative.
+rewrite promoted oracle text, durable transcript, normalized intent, spend
+reason, or call/message payload. Only the trusted interpreter promotion source,
+or a later oracle judgment, can make the wording action-authoritative.
 
 ## Barge-In
 
@@ -1628,9 +1663,11 @@ Deliverables:
 - tests with fake reflex and fake oracle
 - metrics showing which turns avoided the oracle
 
-This phase is a KAME-compatible reflex/oracle MVP. It proves the interface-model
-boundary and async oracle bridge, but the full three-tier KAME design is not
-complete until Phase 3 adds raw-audio Gemma interpretation.
+This phase is a degraded pre-KAME reflex/oracle MVP. It proves the
+interface-model boundary and async oracle bridge, but it cannot claim full KAME
+readiness and cannot authorize high-risk work from transcript-only or STT-fed
+evidence. The full three-tier KAME design is not complete until Phase 3 adds
+raw-audio Gemma interpretation.
 
 ### Phase 3: Gemma Interpreter Evidence Lane
 
