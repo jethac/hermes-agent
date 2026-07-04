@@ -2,9 +2,10 @@
 
 ## North Star
 
-Run a household and small business from one DGX Spark, conversationally.
+Run a household and small business from Hermes VoiceOps, conversationally, with
+DGX Spark as the preferred local-first compute target.
 
-Hermes should become a local-first operating layer that can listen, decide, act, spend, provision, monitor, and escalate across the channels the user already lives in. The first live control surface is Discord voice. WhatsApp and phone/SMS are the next operational surfaces. The Spark is the private compute base. Stripe is the controlled spend and provisioning rail.
+Hermes should become a local-first operating layer that can listen, decide, act, spend, provision, monitor, and escalate across the channels the user already lives in. The first live control surface is Discord voice. WhatsApp and phone/SMS are the next operational surfaces. The Spark is the preferred private compute base, not the voice architecture itself. Stripe is the controlled spend and provisioning rail.
 
 This is not a voice feature. Voice is the control plane. The product is trusted operational agency.
 
@@ -15,7 +16,10 @@ Hermes VoiceOps is a local-first operator for daily life and business:
 - Household: bills, subscriptions, maintenance, calendar conflicts, errands, urgent alerts, home services.
 - Business: customer ops, vendor setup, SaaS provisioning, recurring reviews, payments, reporting, and incident response.
 - Voice surfaces: Discord live voice for the desk, WhatsApp for mobile chat, phone/SMS for urgent fallback.
-- Compute: DGX Spark runs the KAME reflex, speech stack, and preferred local models where practical.
+- Compute: DGX Spark is the preferred local deployment target for the KAME
+  reflex, speech stack, and local models where practical. The architecture is
+  still role-defined: reflex, Gemma-style interpreter, and Hermes active
+  `/model` oracle.
 - Reasoning: Nemotron 3 Super is the preferred Spark-local NVIDIA candidate for
   Hermes's active oracle, while Hermes `/model` remains authoritative. A clearly
   labeled hosted `/model` fallback is acceptable only when the local Spark path
@@ -236,11 +240,13 @@ Target KAME layout:
   voice as a clue for Gemma, not ahead of raw voice as a transcript prompt and
   not around Gemma as a separate Hermes turn.
 - Witness role-marker rule: every normalized transcript hypothesis should carry
-  hypothesis authority, `tool_authority = false`, and a context-only role marker
-  such as `role = "witness_context"`. This lets package audits prove that
-  vendor text was included for interpretation without being smuggled into
-  `oracle_text`, spend reasons, provider choices, phone scripts, memory/file
-  writes, external messages, tool arguments, or durable history.
+  the exact witness-context contract: `role = "witness_context"`,
+  `authority = "hypothesis"`,
+  `promotion_required = "interpreter_promoted_or_oracle_promoted"`, and
+  `tool_authority = false`. This lets package audits prove that vendor text was
+  included for interpretation without being smuggled into `oracle_text`, spend
+  reasons, provider choices, phone scripts, memory/file writes, external
+  messages, tool arguments, or durable history.
 - Bundle schema rule: every speech cut creates one interpreter evidence bundle
   keyed by `turn_id` and `audio_segment_ref`. The bundle carries primary audio,
   VAD/energy timing, speaker metadata, channel/transport metadata, reflex route
@@ -434,7 +440,7 @@ low-latency voice behavior, not deep reasoning or verbatim transcription.
 Target:
 
 - Moshi/PersonaPlex-class S2S, a small local realtime model, or an even simpler
-  tuned timing/classifier path on DGX Spark or the local gateway host
+  tuned timing/classifier path on the configured realtime runtime
 - owns turn-taking, floor control, barge-in, short acknowledgements, intent triage, and local conversational glue
 - emits a rough transcript hypothesis when available
 - may answer locally only for low-risk interface turns
@@ -1101,9 +1107,10 @@ The command writes:
 
 The policy artifacts are static and headless. They read no secrets, perform no network I/O, send no Discord/WhatsApp/SMS messages, and place no calls. They define channel authorization, approval routing, escalation levels, audit ID continuity, redaction rules, and a pending human review packet for Discord, WhatsApp, and phone/SMS before those surfaces are used for real operations. The review packet does not enable egress; it records the signoffs and gates that must be satisfied before a separate runtime approval can do that.
 
-## Milestone 4: Local Spark Stack
+## Milestone 4: Local Deployment Evidence
 
-Move as much of the stack as possible onto one DGX Spark:
+Prove the three KAME roles on the selected local runtime, with one DGX Spark as
+the preferred evidence target:
 
 - local reflex model launch evidence
 - local Gemma interpreter launch evidence
@@ -1114,7 +1121,7 @@ Move as much of the stack as possible onto one DGX Spark:
   captions, or comparison runs
 - all-local smoke with oracle, reflex, raw-audio interpreter, TTS, and sidecar
   together
-- benchmark evidence accepted by the generated DGX Spark matrix validator
+- benchmark evidence accepted by the generated local/Spark matrix validator
 
 The target Spark shape is the same three-tier KAME contract as the Discord
 voice design: a fast reflex owns floor control, Gemma-style direct-audio
@@ -1190,9 +1197,9 @@ uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-di
 
 This is the headless readiness plan for the current pivot: generate the package
 and package audit first, then close the external gates with collected live
-Discord voice evidence, spend/provisioning preflight evidence, and Spark/PGX
-model evidence. Transcript-only or frontend-only demos must stay blocked from
-full KAME and Spark-local readiness.
+Discord voice evidence, spend/provisioning preflight evidence, and local
+deployment evidence for the selected runtime. Transcript-only or frontend-only
+demos must stay blocked from full KAME and local-readiness claims.
 
 Artifact-writing indexer with final package audit:
 

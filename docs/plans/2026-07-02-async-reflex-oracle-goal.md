@@ -96,6 +96,16 @@ visible in compact oracle job status, bounded job updates, live evidence, and
 headless package audits. The phase proves merge timing only; it never upgrades
 the witness from hypothesis authority.
 
+Runtime decision: every normalized transcript hypothesis must also carry the
+explicit witness-context contract:
+`role = "witness_context"`, `authority = "hypothesis"`,
+`promotion_required = "interpreter_promoted_or_oracle_promoted"`, and
+`tool_authority = false`. This applies equally to Moshi/Open-S2S output,
+VoiceClaw/OpenClaw text, reflex captions, and classic-ASR fallback strings.
+Those fields are how runtime status, VoiceOps readiness, plan-run projection,
+and package audit prove that transcript-looking text remained interpreter
+context until Gemma or the oracle promoted it.
+
 The Moshi transcript is useful context, not control. It should help Gemma detect
 clipped prefixes, names, numbers, code-switching, and hallucinated commands,
 but it must remain `frontend_witness_hypothesis` or another explicit
@@ -127,9 +137,10 @@ user keeps speaking -> reflex keeps listening/responding
                   \-> oracle task 4 runs in background
 ```
 
-The practical first high-end capacity target is four concurrent oracle jobs for
-a DGX Spark running Nemotron-3 Super. That limit should be configurable,
-visible in status, and enforced by the scheduler, but this plan does not claim
+The practical first high-end benchmark target is four concurrent oracle jobs
+for a DGX Spark running Nemotron-3 Super. `max_concurrent` itself is runtime
+configuration, not part of the KAME architecture contract. The limit should be
+visible in status and enforced by the scheduler, but this plan does not claim
 the DGX Spark deployment has been validated.
 
 ## Thesis

@@ -1765,11 +1765,11 @@ Targets for the DGX Spark implementation:
 
 These are product targets, not assumptions. The system must log actual p50/p90 values per provider and model.
 
-## DGX Spark Deployment Target
+## Local Deployment Target Example
 
-The intended end state is one DGX Spark running the complete stack. This section
-is a target architecture and launch-plan shape, not a validated deployment
-claim:
+The preferred local-first end state is one DGX Spark running the complete
+stack. This section is a hardware profile and launch-plan shape, not the KAME
+architecture contract and not a validated deployment claim:
 
 ```text
 Hermes gateway
@@ -2039,6 +2039,15 @@ first, then reflex state, then Moshi/OpenClaw/VoiceClaw/reflex/classic-ASR
 hypotheses. The first transcript-looking string to arrive is useful evidence,
 not the user message of record.
 
+Every normalized transcript hypothesis must carry the same non-authoritative
+witness contract: `role = "witness_context"`, `authority = "hypothesis"`,
+`promotion_required = "interpreter_promoted_or_oracle_promoted"`, and
+`tool_authority = false`. The exact fields matter because they are what
+runtime status, live evidence, VoiceOps readiness reports, plan-run artifacts,
+and package audits use to prove that Moshi/STT-looking text remained context
+for Gemma rather than becoming `oracle_text`, durable history, or an action
+argument by field name.
+
 If the same frontend can provide only text and no raw audio reference, it is a
 degraded compatibility input, not a full KAME turn. The system may preserve that
 text as witness context for audit or clarification, but high-risk approval
@@ -2209,17 +2218,24 @@ Manual smoke tests:
 - local/cloud fallback reason is visible and accurate
 
 Production review must also include KAME-specific evidence checks. A generic
-voice production review is not enough for this branch. Required KAME gates are:
+voice production review is not enough for this branch. Required KAME gates
+prove the role contract first; hardware-specific benchmark evidence is attached
+as local deployment evidence:
 
-- DGX Spark benchmark evidence accepted by the generated KAME matrix validator
+- local deployment benchmark evidence accepted by the generated KAME matrix
+  validator for the selected runtime
 - Moshi/PersonaPlex-class reflex or equivalent fast floor-control launch
-  evidence from the target runtime
-- Gemma 4 interpreter launch evidence from the target DGX Spark runtime
+  evidence from the selected runtime
+- Gemma 4 interpreter launch evidence from the selected runtime
 - evidence that Gemma interpreter corrects or confirms reflex transcript
   hypotheses from raw audio before tool-critical oracle work
 - evidence that Moshi/OpenClaw/VoiceClaw transcript text, when present, is
   attached to the same raw-audio interpreter packet as context rather than sent
   as a second Hermes turn
+- evidence that every transcript hypothesis is normalized with
+  `role = "witness_context"`, `authority = "hypothesis"`,
+  `promotion_required = "interpreter_promoted_or_oracle_promoted"`, and
+  `tool_authority = false`
 - Nemotron 3 Super evaluated as the preferred Spark-local oracle target selected
   through Hermes `/model`
 - `max_concurrent=4` measured against the Nemotron 3 Super endpoint, or
@@ -2229,8 +2245,8 @@ voice production review is not enough for this branch. Required KAME gates are:
 - oracle outcome comparison with reflex-only, Gemma interpreter, and
   Gemma-plus-optional-auxiliary-transcript evidence
 - all-local DGX Spark smoke with oracle, reflex, raw-audio interpreter, TTS,
-  and sidecar together; auxiliary transcript evidence is optional comparison or
-  fallback evidence when enabled
+  and sidecar together when claiming one-Spark readiness; auxiliary transcript
+  evidence is optional comparison or fallback evidence when enabled
 - async KAME VoiceOps proof coverage for single-bundle witness fusion,
   interpreter prompt ordering/policy, unpromoted hypothesis action-sink
   rejection, runtime KAME action gates, unflagged high-risk tool fail-closed

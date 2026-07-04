@@ -234,7 +234,7 @@ user keeps speaking -> reflex keeps conversing
                   \-> oracle task 4 runs in background
 ```
 
-The logical capacity limit should come from the available oracle compute and safety policy. For a DGX Spark running Nemotron-3 Super, a plausible first bound is four concurrent oracle tasks. The reflex should expose that limit conversationally: accept work until the pool is full, summarize active work, prioritize or cancel tasks when asked, and avoid pretending that background work is complete before the oracle reports evidence.
+The logical capacity limit should come from the active `/model` runtime and safety policy. For a DGX Spark running Nemotron-3 Super, a plausible first benchmark bound is four concurrent oracle tasks, but the architecture is a bounded work pool sized by the selected runtime. The reflex should expose that limit conversationally: accept work until the pool is full, summarize active work, prioritize or cancel tasks when asked, and avoid pretending that background work is complete before the oracle reports evidence.
 
 This is also where the current branch can learn from `#36903` and `#54462`. Those efforts explicitly model fast/deep routing and background task lifecycle. Our advantage is the stricter reflex/interpreter/oracle authority model: witness text is context for Gemma, promoted evidence is required for durable/action work, and the oracle side becomes a real async task queue with progress, cancellation, and capacity management.
 
@@ -289,7 +289,7 @@ Positioning points:
 
 3. Make reflex/oracle scheduling truly async:
    - Keep the reflex session live while oracle tasks run.
-   - Add a bounded oracle work pool with a first target of four concurrent tasks for a DGX Spark / Nemotron-3 Super deployment.
+   - Add a bounded oracle work pool sized by the active `/model` runtime and safety policy, with four concurrent tasks as the first DGX Spark / Nemotron-3 Super benchmark target.
    - Give each oracle task explicit state: queued, running, waiting for approval, completed, failed, cancelled.
    - Let the reflex summarize, reprioritize, and cancel background tasks without blocking speech input.
    - Persist only durable task outcomes and user-visible spoken commitments, not every partial reflex hypothesis.

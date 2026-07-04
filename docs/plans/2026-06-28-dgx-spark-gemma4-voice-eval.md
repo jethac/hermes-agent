@@ -1,22 +1,27 @@
 ---
-title: "DGX Spark KAME realtime voice evaluation plan"
+title: "DGX Spark KAME realtime voice deployment-evidence plan"
 status: planned
 date: 2026-06-28
 type: plan
 target_repo: hermes-agent
 ---
 
-# DGX Spark KAME Realtime Voice Evaluation Plan
+# DGX Spark KAME Realtime Voice Deployment-Evidence Plan
 
 ## Summary
 
-Evaluate the best local DGX Spark stack for Hermes realtime voice while keeping
-the KAME architecture intact:
+Evaluate DGX Spark as the preferred local deployment target for Hermes realtime
+voice while keeping the KAME architecture hardware-independent:
 
 - Hermes's selected oracle model is the brain.
 - The realtime voice provider is only the low-latency interface layer.
 - The interface layer hears, segments turns, handles barge-in, speaks, and
   delegates reasoning/actions to Hermes.
+- The architectural contract is role-defined: fast reflex for floor control and
+  acknowledgement, Gemma-style direct-audio interpreter over raw audio plus
+  optional `witness_context`, and Hermes' active `/model` as oracle. DGX Spark
+  evidence proves one attractive local deployment; it is not itself the
+  contract.
 
 The preferred Spark-local large-model/oracle target is Nemotron 3 Super served
 locally on DGX Spark. The preferred KAME split is now: a very fast
@@ -147,8 +152,10 @@ uv run pytest \
 
 ## Track 0: Full KAME DGX Spark Launch Pack
 
-Goal: keep the actual one-DGX-Spark launch path generated and preflightable
-before evaluating individual oracle or speech components.
+Goal: keep the preferred one-DGX-Spark launch path generated and preflightable
+before evaluating individual oracle or speech components. This is
+hardware-specific deployment evidence for the KAME role contract, not a
+requirement that every KAME runtime be Spark-hosted.
 
 Runner behavior:
 

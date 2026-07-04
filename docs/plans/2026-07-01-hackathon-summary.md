@@ -365,9 +365,11 @@ closed by external evidence gates:
 - generate the Milestone 0 package headlessly
 - run `scripts/voiceops_plan_run.py --dry-audit --package-audit`
 - keep readiness blocked until live Discord voice evidence, spend/provisioning
-  preflight evidence, and Spark/PGX model evidence are attached
+  preflight evidence, and local deployment evidence for the selected
+  reflex/interpreter/oracle runtime are attached
 - use the package audit to reject false-ready claims, transcript-only action
-  payloads, missing promoted evidence, and missing provider-role disclosure
+  payloads, missing promoted evidence, missing `witness_context` hypothesis
+  markers, and missing provider-role disclosure
 
 ## Known Constraints
 

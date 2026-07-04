@@ -271,12 +271,14 @@ can prove the narrower producer. Narrower labels are useful for audit and
 quality scoring only; they do not change scheduling, authority, or packet
 merge behavior.
 
-Every hypothesis must carry `authority = "hypothesis"` and
-`tool_authority = false`; normalized packets should also carry
-`role = "witness_context"` or an equivalent context-only marker so downstream
-artifact checks can prove the field was not promoted by name. Source names such
-as `moshi`, `openclaw`, `voiceclaw`, `riva`, or `cartesia` are provenance, not
-authority labels.
+Every hypothesis must carry `role = "witness_context"`,
+`authority = "hypothesis"`,
+`promotion_required = "interpreter_promoted_or_oracle_promoted"`, and
+`tool_authority = false`. These exact fields are the normalized contract, not
+just explanatory labels. They let downstream artifact checks prove that Moshi,
+OpenClaw, VoiceClaw, reflex, or classic-ASR text was provided as interpreter
+context rather than promoted by name. Source names such as `moshi`, `openclaw`,
+`voiceclaw`, `riva`, or `cartesia` are provenance, not authority labels.
 Every hypothesis should also carry `arrival_phase` when the adapter can
 determine it: `before_raw_audio`, `with_raw_audio`, or
 `after_interpreter_start`. Arrival phase is merge evidence, not authority. It
@@ -361,6 +363,8 @@ should be stored in `transcript_hypotheses[]` with:
 - `kind = "frontend_witness_hypothesis"` unless the adapter can prove a more
   specific producer
 - `authority = "hypothesis"`
+- `role = "witness_context"`
+- `promotion_required = "interpreter_promoted_or_oracle_promoted"`
 - `tool_authority = false`
 - timing, confidence, partial/final state, speaker guess, and channel guess
   when available
