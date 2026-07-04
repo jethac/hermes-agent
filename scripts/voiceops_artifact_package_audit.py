@@ -2067,6 +2067,10 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "external_frontend_evidence_bundle_transcript_hypotheses_count": async_smoke.get(
                 "external_frontend_evidence_bundle_transcript_hypotheses_count"
             ),
+            "external_frontend_witness_kind": async_smoke.get("external_frontend_witness_kind"),
+            "external_frontend_witness_kind_frontend_hypothesis": bool(
+                async_smoke.get("external_frontend_witness_kind_frontend_hypothesis")
+            ),
             "external_frontend_witness_tool_authority_false": bool(
                 async_smoke.get("external_frontend_witness_tool_authority_false")
             ),

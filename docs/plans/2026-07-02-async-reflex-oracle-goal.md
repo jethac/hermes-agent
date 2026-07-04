@@ -230,6 +230,13 @@ it heard," and it is valid only as interpreter context beside the raw audio.
 It must not create transcript-only oracle scheduling, durable user history, or
 tool/payment/phone arguments.
 
+Headless evidence must prove this naming rule at the artifact level. The async
+oracle smoke, VoiceOps readiness report, plan-run projection, and package audit
+should expose and cross-check the observed external-frontend witness kind. A
+Moshi/OpenClaw/VoiceClaw bridge with ambiguous transcript-like text should fail
+the local package audit if that witness regresses from
+`frontend_witness_hypothesis` to the older `s2s_transcript_hypothesis` default.
+
 Witness-context rule: treat Moshi/OpenClaw/VoiceClaw transcript text as what the
 realtime frontend believed it heard. It should be preserved because Gemma can
 use it to compare against the waveform, recover clipped starts, catch

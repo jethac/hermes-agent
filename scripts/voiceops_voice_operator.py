@@ -1813,6 +1813,7 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("external_frontend_evidence_bundle_single_turn") is True
         and smoke.get("external_frontend_evidence_bundle_status") == "primary_audio"
         and int(smoke.get("external_frontend_evidence_bundle_transcript_hypotheses_count") or 0) >= 1
+        and smoke.get("external_frontend_witness_kind_frontend_hypothesis") is True
         and smoke.get("external_frontend_hypothesis_not_durable_oracle_text") is True
         and smoke.get("external_frontend_durable_user_messages_empty") is True
         and smoke.get("external_frontend_durable_oracle_text_absent") is True
@@ -2710,6 +2711,10 @@ def build_voice_operator_report(
             ),
             "external_frontend_auxiliary_transcript_hypotheses": list(
                 async_oracle_smoke.get("external_frontend_auxiliary_transcript_hypotheses") or []
+            ),
+            "external_frontend_witness_kind": async_oracle_smoke.get("external_frontend_witness_kind"),
+            "external_frontend_witness_kind_frontend_hypothesis": bool(
+                async_oracle_smoke.get("external_frontend_witness_kind_frontend_hypothesis")
             ),
             "external_frontend_witness_tool_authority_false": bool(
                 async_oracle_smoke.get("external_frontend_witness_tool_authority_false")

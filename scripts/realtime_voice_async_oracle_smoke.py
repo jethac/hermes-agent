@@ -1460,14 +1460,27 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
             "read_file",
         )
     )
+    auxiliary_hypotheses = (
+        tuple(getattr(request, "auxiliary_transcript_hypotheses", ()))
+        if request is not None
+        else ()
+    )
+    first_auxiliary_hypothesis = (
+        auxiliary_hypotheses[0]
+        if auxiliary_hypotheses and isinstance(auxiliary_hypotheses[0], Mapping)
+        else {}
+    )
+    witness_kind = str(first_auxiliary_hypothesis.get("kind") or "")
+    witness_kind_frontend_hypothesis = witness_kind == "frontend_witness_hypothesis"
     evidence_bundle_propagated = (
         request is not None
         and getattr(request, "audio_segment_ref", "") == "artifact://voiceclaw/turn-1.wav"
         and getattr(request, "audio_time_range_ms", ()) == (100, 2100)
-        and bool(getattr(request, "auxiliary_transcript_hypotheses", ()))
-        and getattr(request, "auxiliary_transcript_hypotheses", ())[0].get("source") == "moshi"
-        and getattr(request, "auxiliary_transcript_hypotheses", ())[0].get("authority") == "hypothesis"
-        and getattr(request, "auxiliary_transcript_hypotheses", ())[0].get("tool_authority") is False
+        and bool(auxiliary_hypotheses)
+        and first_auxiliary_hypothesis.get("source") == "moshi"
+        and first_auxiliary_hypothesis.get("authority") == "hypothesis"
+        and first_auxiliary_hypothesis.get("tool_authority") is False
+        and witness_kind_frontend_hypothesis
     )
     provisional_summary = (
         dict(getattr(request, "provisional_request_summary", {}) or {})
@@ -1594,13 +1607,15 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         if request is not None
         else [],
         "external_frontend_auxiliary_transcript_hypotheses": [
-            dict(item) for item in getattr(request, "auxiliary_transcript_hypotheses", ())
+            dict(item) for item in auxiliary_hypotheses
         ]
         if request is not None
         else [],
+        "external_frontend_witness_kind": witness_kind,
+        "external_frontend_witness_kind_frontend_hypothesis": witness_kind_frontend_hypothesis,
         "external_frontend_witness_tool_authority_false": all(
             item.get("tool_authority") is False
-            for item in getattr(request, "auxiliary_transcript_hypotheses", ())
+            for item in auxiliary_hypotheses
             if isinstance(item, Mapping)
         )
         if request is not None
@@ -4048,6 +4063,12 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "external_frontend_auxiliary_transcript_hypotheses": external_frontend_bridge_smoke[
             "external_frontend_auxiliary_transcript_hypotheses"
+        ],
+        "external_frontend_witness_kind": external_frontend_bridge_smoke[
+            "external_frontend_witness_kind"
+        ],
+        "external_frontend_witness_kind_frontend_hypothesis": external_frontend_bridge_smoke[
+            "external_frontend_witness_kind_frontend_hypothesis"
         ],
         "external_frontend_witness_tool_authority_false": external_frontend_bridge_smoke[
             "external_frontend_witness_tool_authority_false"

@@ -1825,6 +1825,12 @@ async def build_plan_run_async(
                     "external_frontend_hypothesis_not_durable_oracle_text": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_hypothesis_not_durable_oracle_text"],
+                    "external_frontend_witness_kind": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_witness_kind"
+                    ],
+                    "external_frontend_witness_kind_frontend_hypothesis": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_witness_kind_frontend_hypothesis"],
                     "external_frontend_witness_tool_authority_false": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_witness_tool_authority_false"],

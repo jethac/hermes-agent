@@ -192,6 +192,7 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
             "text": "three to the power of seventeen",
             "authority": "hypothesis",
             "tool_authority": False,
+            "kind": "frontend_witness_hypothesis",
             "confidence": 0.78,
         },
         {
@@ -199,6 +200,7 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
             "text": "what is three to the power of seventeen",
             "authority": "hypothesis",
             "tool_authority": False,
+            "kind": "classic_asr_hypothesis",
             "confidence": 0.92,
         },
     )

@@ -1485,9 +1485,10 @@ def _auxiliary_transcript_hypothesis(value: object) -> dict[str, Any]:
         "authority": "hypothesis",
         "tool_authority": False,
     }
-    kind = _optional_text(value.get("kind"))
-    if kind:
-        hypothesis["kind"] = kind
+    hypothesis["kind"] = _optional_text(value.get("kind")) or _transcript_hypothesis_kind(
+        source,
+        default="s2s_transcript_hypothesis",
+    )
     confidence = _confidence(value.get("confidence"))
     if confidence is not None:
         hypothesis["confidence"] = confidence

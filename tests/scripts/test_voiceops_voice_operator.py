@@ -274,6 +274,7 @@ def _async_oracle_smoke_payload() -> dict:
         "external_frontend_auxiliary_transcript_hypotheses": [
             {
                 "source": "moshi",
+                "kind": "frontend_witness_hypothesis",
                 "text": "prepare an external kame handoff",
                 "authority": "hypothesis",
                 "tool_authority": False,
@@ -281,6 +282,8 @@ def _async_oracle_smoke_payload() -> dict:
                 "latency_ms": 140,
             }
         ],
+        "external_frontend_witness_kind": "frontend_witness_hypothesis",
+        "external_frontend_witness_kind_frontend_hypothesis": True,
         "external_frontend_witness_tool_authority_false": True,
         "external_frontend_hypothesis_not_durable_oracle_text": True,
         "external_frontend_durable_user_messages_empty": True,
@@ -973,6 +976,17 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
             "authority"
         ]
         == "hypothesis"
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_auxiliary_transcript_hypotheses"][0][
+            "kind"
+        ]
+        == "frontend_witness_hypothesis"
+    )
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_witness_kind"] == "frontend_witness_hypothesis"
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_witness_kind_frontend_hypothesis"]
+        is True
     )
     assert (
         report["proofs"]["async_oracle_jobs"]["external_frontend_auxiliary_transcript_hypotheses"][0][

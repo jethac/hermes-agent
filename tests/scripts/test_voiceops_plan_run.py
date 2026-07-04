@@ -1322,6 +1322,16 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_tool_authority_false"]
         is True
     )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_kind"]
+        == "frontend_witness_hypothesis"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "external_frontend_witness_kind_frontend_hypothesis"
+        ]
+        is True
+    )
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_durable_user_messages_empty"] is True
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_durable_oracle_text_absent"] is True
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_durable_record_count"] >= 1
