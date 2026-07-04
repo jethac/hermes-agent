@@ -756,6 +756,62 @@ def test_realtime_voice_alpha_report_rejects_conflicting_kame_witness_lineage():
     )
 
 
+def test_realtime_voice_alpha_report_rejects_conflicting_kame_witness_speaker_channel():
+    manifest = _valid_manifest()
+    manifest["engine"] = "kame_interface_oracle"
+    manifest["frontend_provider"] = "gemma4"
+    manifest["frontend_model"] = "gemma-4-E2B-it"
+    manifest["interface_audio_input"] = "native_audio"
+    manifest["asr_mode"] = "on_escalation"
+    manifest["conversation_quality"] = {
+        "live_like": True,
+        "mode": "kame_reflex",
+        "reason": "audio_reflex_tts",
+        "sidecar_verified": True,
+    }
+    manifest["sidecar"]["health"]["frontend"] = {
+        "provider": "vllm",
+        "model": "gemma-4-E2B-it",
+    }
+    manifest["sidecar"]["health"]["capabilities"] = {
+        "utterance_stt": True,
+        "streaming_stt": False,
+        "tts": True,
+        "native_s2s": False,
+        "vllm_audio_frontend": True,
+        "output_languages": ["en", "ja"],
+    }
+    report = _add_kame_route_evidence([manifest, *_valid_alpha_report()[1:]])
+    for entry in report:
+        if entry.get("kind") in {"audio_session", "session_turn"}:
+            entry["speaker"] = {
+                "platform": "discord",
+                "channel_user_id": "jetha-redacted",
+            }
+            entry["channel"] = {
+                "transport": "discord_voice",
+                "channel_id": "general-redacted",
+            }
+            entry["transcript_hypotheses"][0]["speaker_guess"] = {
+                "platform": "discord",
+                "channel_user_id": "other-human",
+            }
+            entry["transcript_hypotheses"][0]["channel_guess"] = {
+                "transport": "discord_voice",
+                "channel_id": "other-channel",
+            }
+            break
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any(
+        "kame_witness_packet: conflicting speaker/channel witness binding" in issue.format()
+        and "transcript_hypothesis_0.speaker_mismatch" in issue.format()
+        and "transcript_hypothesis_0.channel_mismatch" in issue.format()
+        for issue in issues
+    )
+
+
 def test_realtime_voice_alpha_report_rejects_kame_voice_capability_denial_output():
     manifest = _valid_manifest()
     manifest["engine"] = "kame_interface_oracle"

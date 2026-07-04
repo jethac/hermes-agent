@@ -1304,6 +1304,60 @@ def _mapping_kame_lineage_conflict_issues(payload: Mapping[str, Any], *, issue_p
     return issues
 
 
+def _mapping_witness_binding_conflict_issues(payload: Mapping[str, Any], *, issue_prefix: str) -> list[str]:
+    accepted_speaker = _accepted_mapping(payload, "speaker")
+    accepted_channel = _accepted_mapping(payload, "channel")
+    issues: list[str] = []
+    hypotheses = payload.get("transcript_hypotheses")
+    if not isinstance(hypotheses, list):
+        return issues
+    for index, hypothesis in enumerate(hypotheses):
+        if not isinstance(hypothesis, Mapping):
+            continue
+        speaker_guess = _hypothesis_mapping(hypothesis, "speaker_guess", "speaker")
+        if accepted_speaker and speaker_guess and _mapping_conflicts(
+            accepted_speaker,
+            speaker_guess,
+            ("platform", "channel_user_id", "user_id"),
+        ):
+            issues.append(f"{issue_prefix}:transcript_hypothesis_{index}_speaker_mismatch")
+        channel_guess = _hypothesis_mapping(hypothesis, "channel_guess", "channel")
+        if accepted_channel and channel_guess and _mapping_conflicts(
+            accepted_channel,
+            channel_guess,
+            ("transport", "guild_id", "channel_id"),
+        ):
+            issues.append(f"{issue_prefix}:transcript_hypothesis_{index}_channel_mismatch")
+    return issues
+
+
+def _accepted_mapping(payload: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+    direct = payload.get(key)
+    if isinstance(direct, Mapping):
+        return direct
+    metadata = payload.get("metadata")
+    if isinstance(metadata, Mapping) and isinstance(metadata.get(key), Mapping):
+        return metadata[key]
+    return {}
+
+
+def _hypothesis_mapping(hypothesis: Mapping[str, Any], *keys: str) -> Mapping[str, Any]:
+    for key in keys:
+        value = hypothesis.get(key)
+        if isinstance(value, Mapping):
+            return value
+    return {}
+
+
+def _mapping_conflicts(left: Mapping[str, Any], right: Mapping[str, Any], keys: tuple[str, ...]) -> bool:
+    for key in keys:
+        left_value = str(left.get(key) or "").strip()
+        right_value = str(right.get(key) or "").strip()
+        if left_value and right_value and left_value != right_value:
+            return True
+    return False
+
+
 def _mapping_kame_lineage_values(payload: Mapping[str, Any], aliases: tuple[str, ...]) -> set[str]:
     values: set[str] = set()
     payloads: list[Mapping[str, Any]] = [payload]
@@ -1575,6 +1629,9 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
     kame_lineage_conflict_issues = _live_turn_kame_lineage_conflict_issues(live_turn)
     issues.extend(kame_lineage_conflict_issues)
     kame_lineage_consistent = not kame_lineage_conflict_issues
+    witness_binding_conflict_issues = _mapping_witness_binding_conflict_issues(live_turn, issue_prefix="live_turn")
+    issues.extend(witness_binding_conflict_issues)
+    witness_binding_consistent = not witness_binding_conflict_issues
     transcript_hypotheses_observed = (
         live_turn.get("transcript_hypotheses_labeled") is True
         or live_turn.get("transcript_observed") is True
@@ -1642,6 +1699,7 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
             "ok": all(live_turn.get(key) is True for key in LIVE_EVIDENCE_REQUIRED_TURN_BOOLS)
             and kame_lineage_ids_complete
             and kame_lineage_consistent
+            and witness_binding_consistent
             and not transcript_only_witness_rejected_for_full_kame
             and all(witness_packet_status.values())
             and first_audio_ms is not None
@@ -1650,6 +1708,7 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
             and barge_in_ms <= 150,
             "kame_lineage_ids_complete": kame_lineage_ids_complete,
             "kame_lineage_consistent": kame_lineage_consistent,
+            "witness_binding_consistent": witness_binding_consistent,
             "turn_id": live_turn_kame_ids["turn_id"],
             "audio_segment_ref": live_turn_kame_ids["audio_segment_ref"],
             "evidence_bundle_id": live_turn_kame_ids["evidence_bundle_id"],
@@ -4054,6 +4113,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         ):
             issues.append("interpreter_request_packet:hypothesis_authority_mismatch")
         issues.extend(_mapping_kame_lineage_conflict_issues(packet, issue_prefix="interpreter_request_packet"))
+        issues.extend(_mapping_witness_binding_conflict_issues(packet, issue_prefix="interpreter_request_packet"))
         promotion = packet.get("promotion") if isinstance(packet.get("promotion"), Mapping) else {}
         if promotion.get("interpreter_corrected_transcript") != async_proof.get(
             "witness_fusion_early_promoted_transcript"

@@ -698,6 +698,20 @@ def _validate_kame_witness_packet_evidence(
                 "; ".join(lineage_issue_details[:3]),
             )
         ]
+    binding_issue_details = []
+    for entry in routed_entries:
+        conflicts = _kame_witness_binding_conflict_fields(entry)
+        if conflicts:
+            label = str(entry.get("text") or entry.get("fixture") or entry.get("kind") or "entry")
+            binding_issue_details.append(f"{label}: {','.join(conflicts[:4])}")
+    if binding_issue_details:
+        return [
+            RealtimeVoiceSmokeReportIssue(
+                "kame_witness_packet",
+                "conflicting speaker/channel witness binding",
+                "; ".join(binding_issue_details[:3]),
+            )
+        ]
     valid_entries = [entry for entry in routed_entries if _entry_has_complete_kame_witness_packet(entry)]
     if valid_entries:
         return []
@@ -728,6 +742,7 @@ def _kame_witness_packet_missing_fields(entry: Mapping[str, Any]) -> list[str]:
         if not str(entry.get(key) or "").strip():
             missing.append(key)
     missing.extend(_kame_lineage_conflict_fields(entry))
+    missing.extend(_kame_witness_binding_conflict_fields(entry))
     for key in ("audio_segment_ref_observed", "interpreter_evidence_observed", "transcript_hypotheses_labeled"):
         if entry.get(key) is not True:
             missing.append(key)
@@ -787,6 +802,60 @@ def _kame_lineage_values(entry: Mapping[str, Any], aliases: tuple[str, ...]) -> 
             if str(value or "").strip():
                 values.add(str(value).strip())
     return values
+
+
+def _kame_witness_binding_conflict_fields(entry: Mapping[str, Any]) -> list[str]:
+    accepted_speaker = _accepted_mapping(entry, "speaker")
+    accepted_channel = _accepted_mapping(entry, "channel")
+    conflicts: list[str] = []
+    hypotheses = entry.get("transcript_hypotheses")
+    if not isinstance(hypotheses, Sequence) or isinstance(hypotheses, (str, bytes, bytearray)):
+        return conflicts
+    for index, hypothesis in enumerate(hypotheses):
+        if not isinstance(hypothesis, Mapping):
+            continue
+        speaker_guess = _hypothesis_mapping(hypothesis, "speaker_guess", "speaker")
+        if accepted_speaker and speaker_guess and _mapping_conflicts(
+            accepted_speaker,
+            speaker_guess,
+            ("platform", "channel_user_id", "user_id"),
+        ):
+            conflicts.append(f"transcript_hypothesis_{index}.speaker_mismatch")
+        channel_guess = _hypothesis_mapping(hypothesis, "channel_guess", "channel")
+        if accepted_channel and channel_guess and _mapping_conflicts(
+            accepted_channel,
+            channel_guess,
+            ("transport", "guild_id", "channel_id"),
+        ):
+            conflicts.append(f"transcript_hypothesis_{index}.channel_mismatch")
+    return conflicts
+
+
+def _accepted_mapping(payload: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+    direct = payload.get(key)
+    if isinstance(direct, Mapping):
+        return direct
+    metadata = payload.get("metadata")
+    if isinstance(metadata, Mapping) and isinstance(metadata.get(key), Mapping):
+        return metadata[key]
+    return {}
+
+
+def _hypothesis_mapping(hypothesis: Mapping[str, Any], *keys: str) -> Mapping[str, Any]:
+    for key in keys:
+        value = hypothesis.get(key)
+        if isinstance(value, Mapping):
+            return value
+    return {}
+
+
+def _mapping_conflicts(left: Mapping[str, Any], right: Mapping[str, Any], keys: tuple[str, ...]) -> bool:
+    for key in keys:
+        left_value = str(left.get(key) or "").strip()
+        right_value = str(right.get(key) or "").strip()
+        if left_value and right_value and left_value != right_value:
+            return True
+    return False
 
 
 def _sequence_field(value: Any) -> tuple[str, ...]:
