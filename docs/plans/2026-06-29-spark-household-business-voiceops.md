@@ -238,6 +238,21 @@ Target KAME layout:
   `interpreter_corrected_transcript`, `interpreter_normalized_intent`, and any
   entities such as `3^17`. The witness text remains hypothesis authority even
   when it helped; the promoted interpreter fields are the durable evidence.
+- Three-tier sensor fan-in rule: the long-term architecture remains reflex,
+  interpreter, oracle. A very fast Moshi/OpenClaw/VoiceClaw-style frontend is
+  the reflex candidate and may emit transcript-looking text, but that text is
+  witness context for Gemma, not a separate STT turn. Gemma receives the clipped
+  waveform plus the witness text in one interpreter packet. Classic ASR, when
+  enabled, uses the same hypothesis lane for fallback, diagnostics, captions,
+  or literal-evidence checks. Hermes' active `/model` receives only promoted
+  wording, intent, entities, and compact labeled evidence.
+- Accepted-cut evidence rule: headless and live artifacts must expose the
+  accepted speech cut's `audio_segment_ref`, time range, VAD decision, and
+  energy/noise-gate decision. The artifact must show that transcript hypotheses
+  attached after that raw-audio gate rather than serving as the gate. Silence,
+  room tone, harmonic artifacts, and low-energy non-speech packets must not
+  create barge-in, interpreter requests, oracle jobs, durable transcript
+  candidates, or high-risk action evidence.
 - Live-evidence gate rule: transcript-only witness evidence must not close the
   full KAME live voice gate. A Moshi/OpenClaw/VoiceClaw/STT string without raw
   audio segment evidence and interpreter evidence is useful for audit,

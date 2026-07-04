@@ -168,6 +168,21 @@ witness is preserved for audit but rejected before it can shape spend,
 provisioning, phone-call payloads, durable history, memory, files, or tool
 arguments.
 
+The hackathon demo should make the latency story explicit. The reflex is allowed
+to acknowledge and narrate the queued work before Moshi/STT text arrives. The
+interpreter bundle can then absorb transcript hypotheses early, inline, or late
+without creating another Hermes turn. This is how the demo can feel immediate
+while still showing a safety trail before Stripe, NemoClaw, phone, memory, file,
+or external-message actions execute.
+
+The evidence story should be equally explicit. A successful voice artifact
+should show the accepted speech cut's `audio_segment_ref`, VAD/energy gate
+decision, reflex acknowledgement, any Moshi/OpenClaw/VoiceClaw/classic-ASR
+witness hypotheses, Gemma's accepted/corrected/rejected witness outcome, and
+the promoted evidence that the active Hermes `/model` used for the business
+operation. That is the difference between a voice-message bot and an agent that
+can safely spend money or call a phone from spoken context.
+
 That means the demo should not present Moshi as "the ASR layer." It should
 present Moshi/open-S2S text as the reflex's hearing hypothesis. The stronger
 story is that Hermes can keep the voice loop fast, preserve what the realtime

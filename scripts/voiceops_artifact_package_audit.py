@@ -2125,6 +2125,14 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "witness_fusion_audio_segment_refs": async_smoke.get("witness_fusion_audio_segment_refs") or {},
             "witness_fusion_evidence_merge_keys": async_smoke.get("witness_fusion_evidence_merge_keys") or {},
             "witness_fusion_merge_key_observed": bool(async_smoke.get("witness_fusion_merge_key_observed")),
+            "witness_fusion_audio_metadata": async_smoke.get("witness_fusion_audio_metadata") or {},
+            "witness_fusion_bundle_audio_metadata": async_smoke.get(
+                "witness_fusion_bundle_audio_metadata"
+            )
+            or {},
+            "witness_fusion_accepted_audio_gate_observed": bool(
+                async_smoke.get("witness_fusion_accepted_audio_gate_observed")
+            ),
             "witness_fusion_early_initial_bundle_id": async_smoke.get(
                 "witness_fusion_early_initial_bundle_id"
             ),

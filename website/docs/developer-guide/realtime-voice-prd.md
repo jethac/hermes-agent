@@ -183,6 +183,28 @@ rejects a stale, hallucinated, wrong-speaker, or energy-inconsistent
 hypothesis. Text-only frontend bridges are compatibility mode and must be
 labeled degraded when raw audio is unavailable.
 
+The product requirement is three-tier sensor fan-in, not a parallel STT
+conversation. A fast reflex may provide immediate floor control and a
+transcript-looking witness. Gemma, or another direct-audio interpreter, receives
+that witness as context beside the clipped waveform. Hermes' active `/model`
+receives only promoted wording, intent, entities, and compact labeled audit
+context. The same rule applies to Moshi/OpenClaw/VoiceClaw text and to classic
+ASR: they are useful hypotheses for the interpreter, not durable user messages
+or action authority.
+
+Implementations must not wait for Moshi/STT text before acknowledging the user
+when the reflex route and raw-audio cut are available. If transcript hypotheses
+arrive late, they attach to the same interpreter bundle and oracle job as late
+evidence. If they arrive early, they wait on the pending bundle. In neither
+case may they schedule a duplicate Hermes turn.
+
+Acceptance evidence for this fan-in requirement must include compact
+audio-gate metadata for accepted speech cuts: `audio_segment_ref`, time range,
+VAD decision, energy/noise-gate decision, and the fact that witness text was
+attached after the raw-audio gate. Silence, room tone, harmonic artifacts, and
+low-energy non-speech packets must not create barge-in, interpreter requests,
+oracle jobs, durable transcript candidates, or high-risk action evidence.
+
 ### Language and Locale
 
 - English and Japanese are the initial production quality targets. Acceptance testing must cover English and Japanese speech input, one-session raw-audio -> reflex/interpreter evidence -> Hermes oracle -> TTS evidence, assistant captions, barge-in behavior, and spoken output before realtime voice is considered ready for general release. Fallback STT/TTS runs should be tested separately and labeled as fallback evidence.

@@ -251,6 +251,20 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["witness_fusion_early_initial_bundle_id"] == report["witness_fusion_early_final_bundle_id"]
     assert report["witness_fusion_early_single_bundle"] is True
     assert report["witness_fusion_early_positive_recovery"] is True
+    assert report["witness_fusion_accepted_audio_gate_observed"] is True
+    assert report["witness_fusion_bundle_audio_metadata"] == report["witness_fusion_audio_metadata"]
+    assert report["witness_fusion_audio_metadata"]["early"]["vad"] == {
+        "speech_start_ms": 100,
+        "speech_end_ms": 1400,
+        "vad_speech": True,
+    }
+    assert report["witness_fusion_audio_metadata"]["early"]["energy_gate"] == {
+        "accepted": True,
+        "rms": 620,
+        "duration_ms": 1300,
+        "min_rms": 350,
+        "min_speech_ms": 120,
+    }
     assert report["witness_fusion_interpreter_prompt_input_order"] == [
         "raw_audio",
         "metadata",

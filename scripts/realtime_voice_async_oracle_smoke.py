@@ -2252,6 +2252,24 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
 
     events: list[Any] = []
     releases: dict[str, asyncio.Event] = {}
+    accepted_audio_metadata = {
+        "codec": "pcm_s16le",
+        "sample_rate_hz": 16000,
+        "channels": 1,
+        "authority": "primary_audio",
+        "vad": {
+            "speech_start_ms": 100,
+            "speech_end_ms": 1400,
+            "vad_speech": True,
+        },
+        "energy_gate": {
+            "accepted": True,
+            "rms": 620,
+            "duration_ms": 1300,
+            "min_rms": 350,
+            "min_speech_ms": 120,
+        },
+    }
 
     async def runner(job: Any) -> str:
         key = str(getattr(job, "reflex_intent", "") or getattr(job, "intent", "") or job.oracle_text)
@@ -2302,6 +2320,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         early.job_id,
         audio_segment_ref="artifact://voice/witness-early.wav",
         audio_time_range_ms=(100, 1400),
+        audio_metadata=accepted_audio_metadata,
         speaker_metadata={
             "platform": "discord",
             "channel_user_id": "42",
@@ -2354,6 +2373,15 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
             transcript_source="reflex_audio",
             audio_segment_ref="artifact://voice/witness-with.wav",
             audio_time_range_ms=(200, 1500),
+            audio_metadata={
+                **accepted_audio_metadata,
+                "time_range_ms": (200, 1500),
+                "vad": {
+                    "speech_start_ms": 200,
+                    "speech_end_ms": 1500,
+                    "vad_speech": True,
+                },
+            },
             interface_input_source="ask_brain",
             interface_already_said="Preparing the with witness handoff.",
             auxiliary_transcript_hypotheses=(
@@ -2394,6 +2422,15 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         late.job_id,
         audio_segment_ref="artifact://voice/witness-late.wav",
         audio_time_range_ms=(300, 1600),
+        audio_metadata={
+            **accepted_audio_metadata,
+            "time_range_ms": (300, 1600),
+            "vad": {
+                "speech_start_ms": 300,
+                "speech_end_ms": 1600,
+                "vad_speech": True,
+            },
+        },
         speaker_metadata={
             "platform": "discord",
             "channel_user_id": "42",
@@ -2556,6 +2593,26 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "with": str(with_status_job.get("evidence_merge_key") or ""),
         "late": str(late_status_job.get("evidence_merge_key") or ""),
     }
+    audio_metadata_by_phase = {
+        "early": dict(early_status_job.get("audio") or {}),
+        "with": dict(with_status_job.get("audio") or {}),
+        "late": dict(late_status_job.get("audio") or {}),
+    }
+    bundle_audio_metadata_by_phase = {
+        "early": dict(early_status_job.get("evidence_bundle", {}).get("audio") or {}),
+        "with": dict(with_status_job.get("evidence_bundle", {}).get("audio") or {}),
+        "late": dict(late_status_job.get("evidence_bundle", {}).get("audio") or {}),
+    }
+    accepted_audio_gate_observed = all(
+        isinstance(audio_metadata_by_phase[label].get("vad"), Mapping)
+        and audio_metadata_by_phase[label]["vad"].get("vad_speech") is True
+        and isinstance(audio_metadata_by_phase[label].get("energy_gate"), Mapping)
+        and audio_metadata_by_phase[label]["energy_gate"].get("accepted") is True
+        and audio_metadata_by_phase[label]["energy_gate"].get("min_rms") == 350
+        and audio_metadata_by_phase[label]["energy_gate"].get("min_speech_ms") == 120
+        and bundle_audio_metadata_by_phase[label] == audio_metadata_by_phase[label]
+        for label in ("early", "with", "late")
+    )
     expected_merge_keys = {
         "early": kame_evidence_merge_key(
             session_id="voice-smoke-witness-fusion",
@@ -2667,6 +2724,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
             and late_single_bundle
             and no_duplicate_oracle_jobs
             and merge_key_observed
+            and accepted_audio_gate_observed
             and adjudication_outcomes_observed
             and partial_supersession_observed
         ),
@@ -2678,6 +2736,7 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         and late_single_bundle
         and no_duplicate_oracle_jobs
         and merge_key_observed
+        and accepted_audio_gate_observed
         and adjudication_outcomes_observed
         and partial_supersession_observed,
         "witness_fusion_arrival_phases": ["before_raw_audio", "with_raw_audio", "after_interpreter_start"],
@@ -2686,6 +2745,9 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         "witness_fusion_audio_segment_refs": audio_segment_refs,
         "witness_fusion_evidence_merge_keys": evidence_merge_keys,
         "witness_fusion_merge_key_observed": merge_key_observed,
+        "witness_fusion_audio_metadata": audio_metadata_by_phase,
+        "witness_fusion_bundle_audio_metadata": bundle_audio_metadata_by_phase,
+        "witness_fusion_accepted_audio_gate_observed": accepted_audio_gate_observed,
         "witness_fusion_early_initial_bundle_id": early_initial_bundle_id,
         "witness_fusion_early_final_bundle_id": early_final_bundle_id,
         "witness_fusion_early_single_bundle": early_single_bundle,
@@ -4418,6 +4480,15 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "witness_fusion_merge_key_observed": witness_fusion_timing_smoke[
             "witness_fusion_merge_key_observed"
+        ],
+        "witness_fusion_audio_metadata": witness_fusion_timing_smoke[
+            "witness_fusion_audio_metadata"
+        ],
+        "witness_fusion_bundle_audio_metadata": witness_fusion_timing_smoke[
+            "witness_fusion_bundle_audio_metadata"
+        ],
+        "witness_fusion_accepted_audio_gate_observed": witness_fusion_timing_smoke[
+            "witness_fusion_accepted_audio_gate_observed"
         ],
         "witness_fusion_early_initial_bundle_id": witness_fusion_timing_smoke[
             "witness_fusion_early_initial_bundle_id"

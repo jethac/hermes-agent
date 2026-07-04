@@ -106,6 +106,7 @@ class OracleJob:
     reflex_intent: str
     audio_segment_ref: str = ""
     audio_time_range_ms: tuple[int, int] | tuple[()] = field(default_factory=tuple)
+    audio_metadata: Mapping[str, Any] = field(default_factory=dict)
     speaker_metadata: Mapping[str, Any] = field(default_factory=dict)
     channel_metadata: Mapping[str, Any] = field(default_factory=dict)
     reflex_transcript_hypothesis: str = ""
@@ -175,6 +176,8 @@ class OracleJob:
             status["audio_segment_ref"] = self.audio_segment_ref
         if self.audio_time_range_ms:
             status["audio_time_range_ms"] = tuple(self.audio_time_range_ms)
+        if self.audio_metadata:
+            status["audio"] = dict(self.audio_metadata)
         if self.speaker_metadata:
             status["speaker"] = dict(self.speaker_metadata)
         if self.channel_metadata:
@@ -477,6 +480,7 @@ class OracleJobManager:
         normalized_intent: str = "",
         audio_segment_ref: str = "",
         audio_time_range_ms: Optional[Sequence[Any]] = None,
+        audio_metadata: Optional[Mapping[str, Any]] = None,
         reflex_transcript_hypothesis: Any = None,
         auxiliary_transcript_hypotheses: Optional[Sequence[Mapping[str, Any]]] = None,
         speaker_metadata: Optional[Mapping[str, Any]] = None,
@@ -498,6 +502,7 @@ class OracleJobManager:
                 normalized_intent=normalized_intent,
                 audio_segment_ref=audio_segment_ref,
                 audio_time_range_ms=audio_time_range_ms,
+                audio_metadata=audio_metadata,
                 reflex_transcript_hypothesis=reflex_transcript_hypothesis,
                 auxiliary_transcript_hypotheses=auxiliary_transcript_hypotheses,
                 speaker_metadata=speaker_metadata,
@@ -708,6 +713,7 @@ class OracleJobManager:
             parent_audit_id=_compact_evidence_text(request.parent_audit_id, limit=160),
             audio_segment_ref=_compact_evidence_text(request.audio_segment_ref, limit=240),
             audio_time_range_ms=_audio_time_range_ms(request.audio_time_range_ms),
+            audio_metadata=_compact_audio_metadata(request.audio_metadata),
             reflex_transcript_hypothesis=_compact_evidence_text(
                 request.reflex_transcript_hypothesis
                 or (request.transcript if request.transcript_source == "reflex_audio" else ""),
@@ -1091,6 +1097,8 @@ def _job_evidence_bundle(
     }
     if job.audio_segment_ref:
         bundle["audio_segment_ref"] = job.audio_segment_ref
+    if job.audio_metadata:
+        bundle["audio"] = dict(job.audio_metadata)
     if job.interpreter_corrected_transcript:
         bundle["promoted_transcript_source"] = job.interpreter_intent_source or "gemma_interpreter"
     return bundle
@@ -1307,6 +1315,7 @@ def _compact_interpreter_evidence(
     normalized_intent: object,
     audio_segment_ref: object,
     audio_time_range_ms: object,
+    audio_metadata: Optional[Mapping[str, Any]],
     reflex_transcript_hypothesis: object,
     auxiliary_transcript_hypotheses: Optional[Sequence[Mapping[str, Any]]],
     speaker_metadata: Optional[Mapping[str, Any]],
@@ -1327,6 +1336,7 @@ def _compact_interpreter_evidence(
     intent = _compact_evidence_text(normalized_intent, limit=300)
     compact_audio_ref = _compact_evidence_text(audio_segment_ref, limit=240)
     compact_audio_range = _audio_time_range_ms(audio_time_range_ms)
+    compact_audio_metadata = _compact_audio_metadata(audio_metadata or {})
     compact_reflex_hypothesis = _compact_reflex_transcript_hypothesis(reflex_transcript_hypothesis)
     compact_speaker = _compact_speaker_metadata(speaker_metadata or {})
     compact_channel = _compact_channel_metadata(channel_metadata or {})
@@ -1354,6 +1364,8 @@ def _compact_interpreter_evidence(
         evidence["audio_segment_ref"] = compact_audio_ref
     if compact_audio_range:
         evidence["audio_time_range_ms"] = compact_audio_range
+    if compact_audio_metadata:
+        evidence["audio"] = compact_audio_metadata
     if compact_reflex_hypothesis:
         evidence["reflex_transcript_hypothesis"] = compact_reflex_hypothesis
     if compact_auxiliary_hypotheses:
@@ -1400,6 +1412,8 @@ def _interpreter_evidence_authority(evidence: Mapping[str, Any]) -> dict[str, st
         authority["speaker_metadata"] = "diagnostic_only"
     if evidence.get("channel"):
         authority["channel_metadata"] = "diagnostic_only"
+    if evidence.get("audio"):
+        authority["audio_metadata"] = "diagnostic_only"
     if evidence.get("corrected_transcript"):
         authority["interpreter_corrected_transcript"] = "interpreter_promoted"
     if evidence.get("normalized_intent"):
@@ -1419,7 +1433,12 @@ def _interpreter_prompt_input_order(evidence: Mapping[str, Any]) -> tuple[str, .
     order: list[str] = []
     if evidence.get("audio_segment_ref"):
         order.append("raw_audio")
-    if evidence.get("audio_time_range_ms") or evidence.get("speaker") or evidence.get("channel"):
+    if (
+        evidence.get("audio_time_range_ms")
+        or evidence.get("audio")
+        or evidence.get("speaker")
+        or evidence.get("channel")
+    ):
         order.append("metadata")
     if evidence.get("reflex_transcript_hypothesis"):
         order.append("reflex")
@@ -1498,6 +1517,69 @@ def _audio_time_range_ms(value: object) -> tuple[int, int] | tuple[()]:
     if start < 0 or end < start:
         return ()
     return (start, end)
+
+
+def _compact_audio_metadata(value: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    metadata: dict[str, Any] = {}
+    for key in ("codec", "authority", "source", "sample_rate_hz", "channels"):
+        raw = value.get(key)
+        if isinstance(raw, bool):
+            metadata[key] = raw
+            continue
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+            metadata[key] = int(raw) if isinstance(raw, int) or float(raw).is_integer() else round(float(raw), 4)
+            continue
+        text = _compact_evidence_text(raw, limit=160)
+        if text:
+            metadata[key] = text
+    for key in ("time_range_ms", "audio_time_range_ms"):
+        audio_range = _audio_time_range_ms(value.get(key))
+        if audio_range:
+            metadata["time_range_ms"] = audio_range
+            break
+    for key in ("vad", "energy", "energy_gate", "noise_gate", "speech_gate", "endpointer"):
+        compact = _compact_audio_metadata_section(value.get(key))
+        if compact:
+            metadata[key] = compact
+    return metadata
+
+
+def _compact_audio_metadata_section(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    section: dict[str, Any] = {}
+    allowed = (
+        "accepted",
+        "decision",
+        "duration_ms",
+        "end_ms",
+        "max_rms",
+        "mean_rms",
+        "min_rms",
+        "min_speech_ms",
+        "rms",
+        "speech_confirmed",
+        "speech_end_ms",
+        "speech_start_ms",
+        "start_ms",
+        "vad_speech",
+    )
+    for key in allowed:
+        if key not in value:
+            continue
+        raw = value.get(key)
+        if isinstance(raw, bool):
+            section[key] = raw
+            continue
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+            section[key] = int(raw) if isinstance(raw, int) or float(raw).is_integer() else round(float(raw), 4)
+            continue
+        text = _compact_evidence_text(raw, limit=80)
+        if text:
+            section[key] = text
+    return section
 
 
 def _compact_auxiliary_transcript_hypotheses(
@@ -1828,6 +1910,11 @@ def _promote_interpreter_evidence(job: OracleJob, evidence: Mapping[str, Any]) -
     audio_time_range = _audio_time_range_ms(evidence.get("audio_time_range_ms"))
     if audio_time_range:
         job.audio_time_range_ms = audio_time_range
+    audio_metadata = evidence.get("audio")
+    if isinstance(audio_metadata, Mapping):
+        compact_audio_metadata = _compact_audio_metadata(audio_metadata)
+        if compact_audio_metadata:
+            job.audio_metadata = compact_audio_metadata
     reflex_hypothesis = evidence.get("reflex_transcript_hypothesis")
     if isinstance(reflex_hypothesis, Mapping):
         text = _compact_evidence_text(

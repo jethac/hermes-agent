@@ -1403,6 +1403,20 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     )
     assert len(set(voice_result["details"]["async_oracle_smoke"]["witness_fusion_evidence_merge_keys"].values())) == 3
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_merge_key_observed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_accepted_audio_gate_observed"] is True
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["witness_fusion_bundle_audio_metadata"]
+        == voice_result["details"]["async_oracle_smoke"]["witness_fusion_audio_metadata"]
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_audio_metadata"]["early"][
+        "energy_gate"
+    ] == {
+        "accepted": True,
+        "rms": 620,
+        "duration_ms": 1300,
+        "min_rms": 350,
+        "min_speech_ms": 120,
+    }
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_early_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_interpreter_prompt_input_order"] == [
         "raw_audio",

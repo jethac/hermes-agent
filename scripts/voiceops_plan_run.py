@@ -1919,6 +1919,17 @@ async def build_plan_run_async(
                     "witness_fusion_merge_key_observed": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_merge_key_observed"
                     ],
+                    "witness_fusion_audio_metadata": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"]["witness_fusion_audio_metadata"]
+                    ),
+                    "witness_fusion_bundle_audio_metadata": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "witness_fusion_bundle_audio_metadata"
+                        ]
+                    ),
+                    "witness_fusion_accepted_audio_gate_observed": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_fusion_accepted_audio_gate_observed"],
                     "witness_fusion_early_single_bundle": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_early_single_bundle"
                     ],

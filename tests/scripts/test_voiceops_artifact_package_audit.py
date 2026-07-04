@@ -243,6 +243,8 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_tool_authority_false"] = False
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_early_single_bundle"] = False
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_evidence_merge_keys"] = {"early": "kame-merge-wrong"}
+    readiness["proofs"]["async_oracle_jobs"]["witness_fusion_accepted_audio_gate_observed"] = False
+    readiness["proofs"]["async_oracle_jobs"]["witness_fusion_audio_metadata"] = {"early": {}}
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_partial_superseded_by_final"] = False
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_partial_active_hypothesis"][
         "tool_authority"
@@ -355,6 +357,14 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_evidence_merge_keys_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_accepted_audio_gate_observed_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.witness_fusion_audio_metadata_mismatch"
         in report["issues"]
     )
     assert (

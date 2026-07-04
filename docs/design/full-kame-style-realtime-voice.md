@@ -258,6 +258,54 @@ conversations. The user hears the reflex quickly. Gemma gets both the waveform
 and the Moshi/open-S2S witness text. The oracle receives compact, promoted
 business intent rather than raw partials or duplicate STT turns.
 
+## Three-Tier Sensor Fan-In Contract
+
+The latest design decision is to keep the architecture three-tier while
+avoiding a separate STT-first control path:
+
+1. **Reflex**: always warm, shortest-latency floor controller. It detects
+   speech, handles barge-in, acknowledges quickly, narrates what it is asking
+   Hermes to do, and may emit a rough transcript-looking witness.
+2. **Interpreter**: Gemma-style direct-audio model. It receives the clipped raw
+   waveform after the energy/VAD gate, then compares that audio with reflex,
+   Moshi/OpenClaw/VoiceClaw, and classic-ASR hypotheses attached to the same
+   cut.
+3. **Oracle**: Hermes' active `/model`. It receives promoted wording, intent,
+   entities, and compact labeled evidence; it owns tools, memory, files,
+   approvals, spending, phone calls, and durable outcomes.
+
+Moshi/open-S2S transcript text is therefore useful, but only as context for
+the interpreter. It should be stored as `frontend_witness_hypothesis` unless an
+adapter can prove a narrower label. The packet must preserve the source name
+such as `moshi`, timing, confidence when available, partial/final state, and
+speaker/channel guess when available. It must also keep
+`authority = "hypothesis"` and `tool_authority = false`.
+
+The presence of a Moshi transcript must never make Hermes skip the raw-audio
+interpreter. When raw audio is available, the transcript-looking text is sent
+beside the waveform in the same interpreter request. When raw audio is missing,
+the request is degraded compatibility mode and cannot prove full KAME behavior
+or satisfy high-risk VoiceOps action gates.
+
+Classic ASR remains valuable for captions, diagnostics, literal spelling,
+names, numbers, code-switching checks, and degraded fallback. It is not the
+normal scheduler and should not block acknowledgement, cut creation, or
+raw-audio interpretation. The first transcript to arrive is latency evidence,
+not authority.
+
+Acceptance artifacts for this contract must show:
+
+- the accepted cut's `audio_segment_ref`, time range, VAD decision, and
+  energy/noise-gate decision
+- raw audio, reflex route, acknowledgement, and witness hypotheses sharing one
+  `turn_id`, one `evidence_bundle_id`, and one `evidence_merge_key`
+- no duplicate oracle job when a witness arrives early, inline, or late
+- positive witness use, where Gemma accepts or corrects witness text after
+  comparing it to audio
+- adversarial witness rejection, where Gemma rejects stale, hallucinated,
+  wrong-speaker, wrong-channel, or energy-inconsistent text without allowing it
+  to become durable history or an action argument
+
 ## Purpose
 
 Hermes currently has KAME-compatible realtime voice plumbing: Discord voice transport, a realtime sidecar, streaming STT/TTS provider bridges, barge-in handling, mixer playback, and latency metrics. It is not yet a full KAME-style implementation because there is no lightweight, low-latency interface model acting as the human-facing conversational front end.

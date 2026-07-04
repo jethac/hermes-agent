@@ -475,6 +475,9 @@ Minimum fields:
 - `reflex_intent`
 - `reflex_transcript_hypothesis`
 - `auxiliary_transcript_hypotheses`
+- `transcript_hypotheses[]` with `kind`, `source`, timing, partial/final state,
+  confidence when available, `authority = "hypothesis"`, and
+  `tool_authority = false`
 - `interpreter_corrected_transcript`
 - `interpreter_confidence`
 - `interpreter_entities`
@@ -485,6 +488,14 @@ Minimum fields:
 - `result_summary`
 - `error`
 - `cancel_reason`
+
+The preferred populated shape is one `transcript_hypotheses[]` list rather than
+separate scheduler paths. Moshi/OpenClaw/VoiceClaw transcript-like text belongs
+in that list as `frontend_witness_hypothesis` when the adapter cannot prove a
+more precise kind. Classic ASR belongs in the same list as
+`classic_asr_hypothesis`. None of these entries may patch `oracle_text`,
+durable history, or action arguments unless a trusted interpreter or oracle
+promotion field explicitly consumes and promotes them.
 
 ### Job States
 

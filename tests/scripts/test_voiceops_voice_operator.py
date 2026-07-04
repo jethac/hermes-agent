@@ -370,6 +370,99 @@ def _async_oracle_smoke_payload() -> dict:
             "late": "kame-merge-witness-late",
         },
         "witness_fusion_merge_key_observed": True,
+        "witness_fusion_audio_metadata": {
+            "early": {
+                "codec": "pcm_s16le",
+                "sample_rate_hz": 16000,
+                "channels": 1,
+                "authority": "primary_audio",
+                "vad": {"speech_start_ms": 100, "speech_end_ms": 1400, "vad_speech": True},
+                "energy_gate": {
+                    "accepted": True,
+                    "rms": 620,
+                    "duration_ms": 1300,
+                    "min_rms": 350,
+                    "min_speech_ms": 120,
+                },
+            },
+            "with": {
+                "codec": "pcm_s16le",
+                "sample_rate_hz": 16000,
+                "channels": 1,
+                "authority": "primary_audio",
+                "time_range_ms": (200, 1500),
+                "vad": {"speech_start_ms": 200, "speech_end_ms": 1500, "vad_speech": True},
+                "energy_gate": {
+                    "accepted": True,
+                    "rms": 620,
+                    "duration_ms": 1300,
+                    "min_rms": 350,
+                    "min_speech_ms": 120,
+                },
+            },
+            "late": {
+                "codec": "pcm_s16le",
+                "sample_rate_hz": 16000,
+                "channels": 1,
+                "authority": "primary_audio",
+                "time_range_ms": (300, 1600),
+                "vad": {"speech_start_ms": 300, "speech_end_ms": 1600, "vad_speech": True},
+                "energy_gate": {
+                    "accepted": True,
+                    "rms": 620,
+                    "duration_ms": 1300,
+                    "min_rms": 350,
+                    "min_speech_ms": 120,
+                },
+            },
+        },
+        "witness_fusion_bundle_audio_metadata": {
+            "early": {
+                "codec": "pcm_s16le",
+                "sample_rate_hz": 16000,
+                "channels": 1,
+                "authority": "primary_audio",
+                "vad": {"speech_start_ms": 100, "speech_end_ms": 1400, "vad_speech": True},
+                "energy_gate": {
+                    "accepted": True,
+                    "rms": 620,
+                    "duration_ms": 1300,
+                    "min_rms": 350,
+                    "min_speech_ms": 120,
+                },
+            },
+            "with": {
+                "codec": "pcm_s16le",
+                "sample_rate_hz": 16000,
+                "channels": 1,
+                "authority": "primary_audio",
+                "time_range_ms": (200, 1500),
+                "vad": {"speech_start_ms": 200, "speech_end_ms": 1500, "vad_speech": True},
+                "energy_gate": {
+                    "accepted": True,
+                    "rms": 620,
+                    "duration_ms": 1300,
+                    "min_rms": 350,
+                    "min_speech_ms": 120,
+                },
+            },
+            "late": {
+                "codec": "pcm_s16le",
+                "sample_rate_hz": 16000,
+                "channels": 1,
+                "authority": "primary_audio",
+                "time_range_ms": (300, 1600),
+                "vad": {"speech_start_ms": 300, "speech_end_ms": 1600, "vad_speech": True},
+                "energy_gate": {
+                    "accepted": True,
+                    "rms": 620,
+                    "duration_ms": 1300,
+                    "min_rms": 350,
+                    "min_speech_ms": 120,
+                },
+            },
+        },
+        "witness_fusion_accepted_audio_gate_observed": True,
         "witness_fusion_early_initial_bundle_id": "kame-evidence-witness-early",
         "witness_fusion_early_final_bundle_id": "kame-evidence-witness-early",
         "witness_fusion_early_single_bundle": True,
@@ -1104,6 +1197,30 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     )
     assert len(set(report["proofs"]["async_oracle_jobs"]["witness_fusion_evidence_merge_keys"].values())) == 3
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_merge_key_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_accepted_audio_gate_observed"] is True
+    assert (
+        report["proofs"]["async_oracle_jobs"]["witness_fusion_bundle_audio_metadata"]
+        == report["proofs"]["async_oracle_jobs"]["witness_fusion_audio_metadata"]
+    )
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_audio_metadata"]["early"]["vad"] == {
+        "speech_start_ms": 100,
+        "speech_end_ms": 1400,
+        "vad_speech": True,
+    }
+    assert report["proofs"]["async_oracle_jobs"]["witness_fusion_audio_metadata"]["early"][
+        "energy_gate"
+    ] == {
+        "accepted": True,
+        "rms": 620,
+        "duration_ms": 1300,
+        "min_rms": 350,
+        "min_speech_ms": 120,
+    }
+    assert report["requirements"]["async_oracle_witness_fusion_accepted_audio_gate_visible"] is True
+    assert report["async_oracle_coverage"]["witness_fusion_accepted_audio_gate_visible"] is True
+    accepted_gate = report["async_oracle_acceptance"]["witness_fusion_exposes_accepted_audio_gate"]
+    assert accepted_gate["ok"] is True
+    assert accepted_gate["evidence"] == "async_oracle_smoke_plus_accepted_audio_gate_tests"
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_early_initial_bundle_id"] == (
         report["proofs"]["async_oracle_jobs"]["witness_fusion_early_final_bundle_id"]
     )
@@ -1588,6 +1705,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_coverage:job_control_updates_reach_oracle" in issues
     assert "missing_async_oracle_coverage:transcript_hypotheses_remain_unpromoted" in issues
     assert "missing_async_oracle_coverage:witness_fusion_timing_preserves_single_bundle" in issues
+    assert "missing_async_oracle_coverage:witness_fusion_accepted_audio_gate_visible" in issues
     assert "missing_async_oracle_coverage:witness_fusion_partial_superseded_by_final" in issues
     assert "missing_async_oracle_coverage:energy_gate_ignores_non_speech_without_work" in issues
     assert "missing_async_oracle_coverage:runtime_kame_action_gate_enforced" in issues
@@ -1601,6 +1719,7 @@ def test_voice_operator_validation_rejects_missing_async_oracle_smoke():
     assert "missing_async_oracle_acceptance:job_control_updates_reach_oracle" in issues
     assert "missing_async_oracle_acceptance:transcript_hypotheses_stay_non_authoritative" in issues
     assert "missing_async_oracle_acceptance:witness_fusion_timing_preserves_single_bundle" in issues
+    assert "missing_async_oracle_acceptance:witness_fusion_exposes_accepted_audio_gate" in issues
     assert "missing_async_oracle_acceptance:witness_fusion_supersedes_partial_witness" in issues
     assert "missing_async_oracle_acceptance:energy_gate_ignores_non_speech_without_work" in issues
     assert "missing_async_oracle_acceptance:runtime_kame_action_gate_enforces_promoted_evidence" in issues
@@ -1686,6 +1805,18 @@ def test_voice_operator_validation_rejects_energy_gate_work_from_noise():
     assert "missing_async_oracle_coverage:energy_gate_ignores_non_speech_without_work" in issues
     assert "stale_async_oracle_coverage:energy_gate_ignores_non_speech_without_work" in issues
     assert "missing_async_oracle_acceptance:energy_gate_ignores_non_speech_without_work" in issues
+
+
+def test_voice_operator_validation_rejects_missing_accepted_audio_gate_metadata():
+    report = _voice_operator_report()
+    report["async_oracle_smoke"]["witness_fusion_accepted_audio_gate_observed"] = False
+    report["async_oracle_smoke"]["witness_fusion_bundle_audio_metadata"] = {}
+
+    issues = validate_voice_operator_report(report)
+
+    assert "missing_async_oracle_coverage:witness_fusion_accepted_audio_gate_visible" in issues
+    assert "stale_async_oracle_coverage:witness_fusion_accepted_audio_gate_visible" in issues
+    assert "missing_async_oracle_acceptance:witness_fusion_exposes_accepted_audio_gate" in issues
 
 
 def test_voice_operator_validation_rejects_stale_barge_in_energy_gate_proof():
