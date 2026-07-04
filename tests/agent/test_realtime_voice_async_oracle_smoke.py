@@ -510,7 +510,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["witness_fusion_started_counts"] == {"early": 1, "with": 1, "late": 1}
     assert report["witness_fusion_completed_counts"] == {"early": 1, "with": 1, "late": 1}
     assert report["runtime_kame_action_gate_smoke_ok"] is True
-    assert report["runtime_kame_action_gate_waiting_events"] == 5
+    assert report["runtime_kame_action_gate_waiting_events"] == 6
     assert report["runtime_kame_action_gate_hypothesis_only_ok"] is False
     assert "missing_promoted_evidence" in report["runtime_kame_action_gate_hypothesis_only_issues"]
     assert "interpreter_evidence_not_consumed_before_irreversible_action" in (
@@ -530,6 +530,26 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
         report["runtime_kame_action_gate_degraded_text_only_issues"]
     )
     assert set(report["runtime_kame_action_gate_degraded_text_only_rejected_authorities"]) >= {
+        "reflex_hypothesis",
+        "hypothesis",
+    }
+    assert report["runtime_kame_action_gate_degraded_oracle_promoted_ok"] is False
+    assert report["runtime_kame_action_gate_degraded_oracle_promoted_status"] == "degraded_text_only"
+    assert report["runtime_kame_action_gate_degraded_oracle_promoted_raw_audio_available"] is False
+    assert report["runtime_kame_action_gate_degraded_oracle_promoted_authorities"] == [
+        "oracle_promoted"
+    ]
+    assert report["runtime_kame_action_gate_degraded_oracle_promoted_consumed_before_action"] is True
+    assert "missing_promoted_evidence" not in report[
+        "runtime_kame_action_gate_degraded_oracle_promoted_issues"
+    ]
+    assert "interpreter_evidence_not_consumed_before_irreversible_action" not in report[
+        "runtime_kame_action_gate_degraded_oracle_promoted_issues"
+    ]
+    assert "degraded_text_only_cannot_authorize_high_risk_action" in report[
+        "runtime_kame_action_gate_degraded_oracle_promoted_issues"
+    ]
+    assert set(report["runtime_kame_action_gate_degraded_oracle_promoted_rejected_authorities"]) >= {
         "reflex_hypothesis",
         "hypothesis",
     }
@@ -559,6 +579,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     ]
     assert report["runtime_kame_action_gate_tool_disclosure_ref_observed"] is True
     assert report["runtime_kame_action_gate_schema_versions"] == [
+        "voiceops.runtime_kame_action_gate.v1",
         "voiceops.runtime_kame_action_gate.v1",
         "voiceops.runtime_kame_action_gate.v1",
         "voiceops.runtime_kame_action_gate.v1",

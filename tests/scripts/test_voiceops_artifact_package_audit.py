@@ -435,6 +435,9 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_degraded_text_only_status"] = (
         "primary_audio"
     )
+    readiness["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_degraded_oracle_promoted_ok"] = (
+        True
+    )
     readiness["proofs"]["async_oracle_jobs"]["transcript_only_witness_rejected_for_full_kame"] = False
     readiness["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_promoted_ok"] = False
     readiness["proofs"]["async_oracle_jobs"]["runtime_kame_action_gate_self_attested_ok"] = True
@@ -750,6 +753,10 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.runtime_kame_action_gate_degraded_text_only_status_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.runtime_kame_action_gate_degraded_oracle_promoted_ok_mismatch"
         in report["issues"]
     )
     assert (

@@ -6827,6 +6827,59 @@ def test_oracle_job_approval_rejects_request_source_self_attested_promotion():
     asyncio.run(run())
 
 
+def test_oracle_job_approval_rejects_degraded_oracle_promoted_text_only_action():
+    async def run():
+        release = asyncio.Event()
+
+        async def runner(_job):
+            await release.wait()
+            return "done"
+
+        manager = OracleJobManager(max_concurrent=1, runner=runner)
+        request = KameOracleRequest(
+            session_id="voice-123",
+            turn_id="voice-123:1",
+            source="voiceclaw",
+            user_id="42",
+            intent="Spend text-only money.",
+            interface_input_source="ask_brain",
+            reflex_transcript_hypothesis="spend money",
+            reflex_transcript_source="voiceclaw",
+            auxiliary_transcript_hypotheses=[
+                {"source": "moshi", "text": "spend money", "authority": "hypothesis"},
+            ],
+        )
+        job = await manager.submit(request)
+        job.result_summary = "Oracle accepted text-only spend request."
+        job.result_text = "Oracle accepted text-only spend request."
+
+        waiting = await manager.mark_waiting_for_approval(
+            job.job_id,
+            reason="Spend approval required",
+            approval={
+                "approval_id": "approval-123",
+                "tool_name": "stripe_link_purchase",
+                "tool_call_id": "call-1",
+                "tool_disclosure_ref": "tool_disclosure",
+                "interpreter_evidence_consumed_before_irreversible_action": True,
+            },
+        )
+        gate = waiting.approval["kame_action_gate"]
+
+        assert gate["ok"] is False
+        assert gate["present_authorities"] == ["oracle_promoted"]
+        assert "missing_promoted_evidence" not in gate["issues"]
+        assert "interpreter_evidence_not_consumed_before_irreversible_action" not in gate["issues"]
+        assert "degraded_text_only_cannot_authorize_high_risk_action" in gate["issues"]
+        assert gate["interpreter_evidence_consumed_before_irreversible_action"] is True
+        assert gate["tool_disclosure_ref"] == "tool_disclosure"
+
+        release.set()
+        await manager.shutdown(reason="test complete")
+
+    asyncio.run(run())
+
+
 def test_oracle_job_approval_accepts_consumed_promoted_interpreter_evidence():
     async def run():
         release = asyncio.Event()

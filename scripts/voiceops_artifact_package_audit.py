@@ -2615,6 +2615,27 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
                 is False
                 and bool(async_smoke.get("runtime_kame_action_gate_degraded_text_only_preserves_hypothesis"))
             ),
+            "runtime_kame_action_gate_degraded_oracle_promoted_ok": async_smoke.get(
+                "runtime_kame_action_gate_degraded_oracle_promoted_ok"
+            ),
+            "runtime_kame_action_gate_degraded_oracle_promoted_issues": async_smoke.get(
+                "runtime_kame_action_gate_degraded_oracle_promoted_issues"
+            ),
+            "runtime_kame_action_gate_degraded_oracle_promoted_authorities": async_smoke.get(
+                "runtime_kame_action_gate_degraded_oracle_promoted_authorities"
+            ),
+            "runtime_kame_action_gate_degraded_oracle_promoted_rejected_authorities": async_smoke.get(
+                "runtime_kame_action_gate_degraded_oracle_promoted_rejected_authorities"
+            ),
+            "runtime_kame_action_gate_degraded_oracle_promoted_status": async_smoke.get(
+                "runtime_kame_action_gate_degraded_oracle_promoted_status"
+            ),
+            "runtime_kame_action_gate_degraded_oracle_promoted_raw_audio_available": async_smoke.get(
+                "runtime_kame_action_gate_degraded_oracle_promoted_raw_audio_available"
+            ),
+            "runtime_kame_action_gate_degraded_oracle_promoted_consumed_before_action": bool(
+                async_smoke.get("runtime_kame_action_gate_degraded_oracle_promoted_consumed_before_action")
+            ),
             "runtime_kame_action_gate_promoted_ok": async_smoke.get("runtime_kame_action_gate_promoted_ok"),
             "runtime_kame_action_gate_promoted_issues": async_smoke.get(
                 "runtime_kame_action_gate_promoted_issues"

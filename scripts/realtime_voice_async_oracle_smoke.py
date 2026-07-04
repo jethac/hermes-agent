@@ -3529,6 +3529,44 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
     degraded_gate = dict(degraded_waiting.approval.get("kame_action_gate") or {})
     degraded_bundle = dict(degraded_status.get("evidence_bundle") or {})
 
+    degraded_oracle_promoted = await manager.submit(
+        KameOracleRequest(
+            session_id="voice-smoke-runtime-action-gate",
+            turn_id="runtime-action-gate:degraded-oracle-promoted",
+            source="voiceclaw",
+            user_id="42",
+            intent="Spend oracle-promoted text-only money.",
+            route=KameRoute.DEFER,
+            interface_input_source="ask_brain",
+            reflex_transcript_hypothesis="spend oracle promoted money from text only bridge",
+            reflex_transcript_source="voiceclaw",
+            auxiliary_transcript_hypotheses=(
+                {
+                    "source": "moshi",
+                    "text": "spend oracle promoted money from text only bridge",
+                    "authority": "hypothesis",
+                },
+            ),
+        )
+    )
+    degraded_oracle_promoted.result_summary = "Oracle accepted text-only spend request."
+    degraded_oracle_promoted.result_text = "Oracle accepted text-only spend request."
+    degraded_oracle_promoted_waiting = await manager.mark_waiting_for_approval(
+        degraded_oracle_promoted.job_id,
+        reason="Spend approval required",
+        approval={
+            "approval_id": "approval-degraded-oracle-promoted",
+            "tool_name": "stripe_link_purchase",
+            "tool_call_id": "call-degraded-oracle-promoted",
+            "tool_disclosure_ref": "tool_disclosure",
+            "interpreter_evidence_consumed_before_irreversible_action": True,
+        },
+    )
+    degraded_oracle_promoted_status = degraded_oracle_promoted_waiting.to_status()
+    degraded_oracle_promoted_gate = dict(
+        degraded_oracle_promoted_waiting.approval.get("kame_action_gate") or {}
+    )
+
     self_attested = await manager.submit(
         KameOracleRequest(
             session_id="voice-smoke-runtime-action-gate",
@@ -3595,6 +3633,7 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
         "Spend hypothesis-only money.",
         "Buy phone credits.",
         "Spend degraded text-only money.",
+        "Spend oracle-promoted text-only money.",
         "Spend self-attested money.",
         "Buy credits without disclosure ref.",
     ):
@@ -3607,9 +3646,14 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
     unsafe_issues = list(unsafe_gate.get("issues") or [])
     safe_issues = list(safe_gate.get("issues") or [])
     degraded_issues = list(degraded_gate.get("issues") or [])
+    degraded_oracle_promoted_issues = list(degraded_oracle_promoted_gate.get("issues") or [])
     unsafe_rejected = list(unsafe_gate.get("rejected_present_authorities") or [])
     degraded_rejected = list(degraded_gate.get("rejected_present_authorities") or [])
+    degraded_oracle_promoted_rejected = list(
+        degraded_oracle_promoted_gate.get("rejected_present_authorities") or []
+    )
     safe_present = list(safe_gate.get("present_authorities") or [])
+    degraded_oracle_promoted_present = list(degraded_oracle_promoted_gate.get("present_authorities") or [])
     self_attested_issues = list(self_attested_gate.get("issues") or [])
     self_attested_present = list(self_attested_gate.get("present_authorities") or [])
     missing_tool_disclosure_issues = list(missing_tool_disclosure_gate.get("issues") or [])
@@ -3644,6 +3688,20 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
         and set(degraded_rejected) >= {"reflex_hypothesis", "hypothesis"}
         and degraded_gate.get("tool_disclosure_ref") == "tool_disclosure"
     )
+    degraded_oracle_promoted_ok = (
+        degraded_oracle_promoted_gate.get("schema_version") == "voiceops.runtime_kame_action_gate.v1"
+        and degraded_oracle_promoted_gate.get("ok") is False
+        and degraded_oracle_promoted_status.get("raw_audio_available") is False
+        and degraded_oracle_promoted_status.get("evidence_bundle_status") == "degraded_text_only"
+        and degraded_oracle_promoted_present == ["oracle_promoted"]
+        and "missing_promoted_evidence" not in degraded_oracle_promoted_issues
+        and "interpreter_evidence_not_consumed_before_irreversible_action"
+        not in degraded_oracle_promoted_issues
+        and "degraded_text_only_cannot_authorize_high_risk_action"
+        in degraded_oracle_promoted_issues
+        and set(degraded_oracle_promoted_rejected) >= {"reflex_hypothesis", "hypothesis"}
+        and degraded_oracle_promoted_gate.get("tool_disclosure_ref") == "tool_disclosure"
+    )
     self_attested_ok = (
         self_attested_gate.get("schema_version") == "voiceops.runtime_kame_action_gate.v1"
         and self_attested_gate.get("ok") is False
@@ -3666,9 +3724,10 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
         unsafe_ok
         and safe_ok
         and degraded_ok
+        and degraded_oracle_promoted_ok
         and self_attested_ok
         and missing_tool_disclosure_ok
-        and len(waiting_events) == 5
+        and len(waiting_events) == 6
     )
     return {
         "ok": smoke_ok,
@@ -3689,6 +3748,23 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
             degraded_bundle.get("transcript_hypotheses_count") or 0
         )
         >= 1,
+        "runtime_kame_action_gate_degraded_oracle_promoted_ok": degraded_oracle_promoted_gate.get(
+            "ok"
+        ),
+        "runtime_kame_action_gate_degraded_oracle_promoted_issues": degraded_oracle_promoted_issues,
+        "runtime_kame_action_gate_degraded_oracle_promoted_authorities": degraded_oracle_promoted_present,
+        "runtime_kame_action_gate_degraded_oracle_promoted_rejected_authorities": (
+            degraded_oracle_promoted_rejected
+        ),
+        "runtime_kame_action_gate_degraded_oracle_promoted_status": degraded_oracle_promoted_status.get(
+            "evidence_bundle_status"
+        ),
+        "runtime_kame_action_gate_degraded_oracle_promoted_raw_audio_available": (
+            degraded_oracle_promoted_status.get("raw_audio_available")
+        ),
+        "runtime_kame_action_gate_degraded_oracle_promoted_consumed_before_action": bool(
+            degraded_oracle_promoted_gate.get("interpreter_evidence_consumed_before_irreversible_action")
+        ),
         "runtime_kame_action_gate_promoted_ok": safe_gate.get("ok"),
         "runtime_kame_action_gate_promoted_issues": safe_issues,
         "runtime_kame_action_gate_promoted_authorities": safe_present,
@@ -3708,12 +3784,14 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
             unsafe_gate.get("tool_disclosure_ref") == "tool_disclosure"
             and safe_gate.get("tool_disclosure_ref") == "tool_disclosure"
             and degraded_gate.get("tool_disclosure_ref") == "tool_disclosure"
+            and degraded_oracle_promoted_gate.get("tool_disclosure_ref") == "tool_disclosure"
             and self_attested_gate.get("tool_disclosure_ref") == "tool_disclosure"
             and missing_tool_disclosure_gate.get("tool_disclosure_ref") == ""
         ),
         "runtime_kame_action_gate_schema_versions": [
             unsafe_gate.get("schema_version"),
             degraded_gate.get("schema_version"),
+            degraded_oracle_promoted_gate.get("schema_version"),
             safe_gate.get("schema_version"),
             self_attested_gate.get("schema_version"),
             missing_tool_disclosure_gate.get("schema_version"),
@@ -5435,6 +5513,33 @@ async def run_smoke() -> dict[str, Any]:
         "runtime_kame_action_gate_degraded_text_only_preserves_hypothesis": runtime_kame_action_gate_smoke[
             "runtime_kame_action_gate_degraded_text_only_preserves_hypothesis"
         ],
+        "runtime_kame_action_gate_degraded_oracle_promoted_ok": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_degraded_oracle_promoted_ok"
+        ],
+        "runtime_kame_action_gate_degraded_oracle_promoted_issues": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_degraded_oracle_promoted_issues"
+        ],
+        "runtime_kame_action_gate_degraded_oracle_promoted_authorities": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_degraded_oracle_promoted_authorities"
+        ],
+        "runtime_kame_action_gate_degraded_oracle_promoted_rejected_authorities": (
+            runtime_kame_action_gate_smoke[
+                "runtime_kame_action_gate_degraded_oracle_promoted_rejected_authorities"
+            ]
+        ),
+        "runtime_kame_action_gate_degraded_oracle_promoted_status": runtime_kame_action_gate_smoke[
+            "runtime_kame_action_gate_degraded_oracle_promoted_status"
+        ],
+        "runtime_kame_action_gate_degraded_oracle_promoted_raw_audio_available": (
+            runtime_kame_action_gate_smoke[
+                "runtime_kame_action_gate_degraded_oracle_promoted_raw_audio_available"
+            ]
+        ),
+        "runtime_kame_action_gate_degraded_oracle_promoted_consumed_before_action": (
+            runtime_kame_action_gate_smoke[
+                "runtime_kame_action_gate_degraded_oracle_promoted_consumed_before_action"
+            ]
+        ),
         "runtime_kame_action_gate_promoted_ok": runtime_kame_action_gate_smoke[
             "runtime_kame_action_gate_promoted_ok"
         ],

@@ -2504,6 +2504,36 @@ async def build_plan_run_async(
                     ]["async_oracle_jobs"][
                         "runtime_kame_action_gate_degraded_text_only_preserves_hypothesis"
                     ],
+                    "runtime_kame_action_gate_degraded_oracle_promoted_ok": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["runtime_kame_action_gate_degraded_oracle_promoted_ok"],
+                    "runtime_kame_action_gate_degraded_oracle_promoted_issues": list(
+                        voice_operator["proofs"]["async_oracle_jobs"].get(
+                            "runtime_kame_action_gate_degraded_oracle_promoted_issues"
+                        )
+                        or []
+                    ),
+                    "runtime_kame_action_gate_degraded_oracle_promoted_authorities": list(
+                        voice_operator["proofs"]["async_oracle_jobs"].get(
+                            "runtime_kame_action_gate_degraded_oracle_promoted_authorities"
+                        )
+                        or []
+                    ),
+                    "runtime_kame_action_gate_degraded_oracle_promoted_status": voice_operator[
+                        "proofs"
+                    ]["async_oracle_jobs"][
+                        "runtime_kame_action_gate_degraded_oracle_promoted_status"
+                    ],
+                    "runtime_kame_action_gate_degraded_oracle_promoted_raw_audio_available": voice_operator[
+                        "proofs"
+                    ]["async_oracle_jobs"][
+                        "runtime_kame_action_gate_degraded_oracle_promoted_raw_audio_available"
+                    ],
+                    "runtime_kame_action_gate_degraded_oracle_promoted_consumed_before_action": voice_operator[
+                        "proofs"
+                    ]["async_oracle_jobs"][
+                        "runtime_kame_action_gate_degraded_oracle_promoted_consumed_before_action"
+                    ],
                     "runtime_kame_action_gate_promoted_ok": voice_operator["proofs"]["async_oracle_jobs"][
                         "runtime_kame_action_gate_promoted_ok"
                     ],

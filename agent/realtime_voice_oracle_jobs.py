@@ -2296,6 +2296,8 @@ def _approval_kame_action_gate(approval: Mapping[str, Any], job: OracleJob) -> d
         issues.append("missing_promoted_evidence")
     if not consumed_before_action:
         issues.append("interpreter_evidence_not_consumed_before_irreversible_action")
+    if not job.audio_segment_ref:
+        issues.append("degraded_text_only_cannot_authorize_high_risk_action")
     if not _approval_has_tool_disclosure_ref(approval):
         issues.append("missing_tool_disclosure_ref")
     return {

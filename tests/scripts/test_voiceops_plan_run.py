@@ -1843,6 +1843,36 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "missing_promoted_evidence" in voice_result["details"]["async_oracle_smoke"][
         "runtime_kame_action_gate_degraded_text_only_issues"
     ]
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "runtime_kame_action_gate_degraded_oracle_promoted_ok"
+        ]
+        is False
+    )
+    assert voice_result["details"]["async_oracle_smoke"][
+        "runtime_kame_action_gate_degraded_oracle_promoted_authorities"
+    ] == ["oracle_promoted"]
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "runtime_kame_action_gate_degraded_oracle_promoted_status"
+        ]
+        == "degraded_text_only"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "runtime_kame_action_gate_degraded_oracle_promoted_raw_audio_available"
+        ]
+        is False
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "runtime_kame_action_gate_degraded_oracle_promoted_consumed_before_action"
+        ]
+        is True
+    )
+    assert "degraded_text_only_cannot_authorize_high_risk_action" in voice_result["details"][
+        "async_oracle_smoke"
+    ]["runtime_kame_action_gate_degraded_oracle_promoted_issues"]
     assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_promoted_ok"] is True
     assert voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_promoted_authorities"] == [
         "interpreter_promoted"

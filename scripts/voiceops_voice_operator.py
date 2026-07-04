@@ -2142,6 +2142,23 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         in (smoke.get("runtime_kame_action_gate_degraded_text_only_issues") or [])
         and set(smoke.get("runtime_kame_action_gate_degraded_text_only_rejected_authorities") or [])
         >= {"reflex_hypothesis", "hypothesis"},
+        "runtime_kame_action_gate_degraded_oracle_promoted_fails_closed": smoke.get(
+            "runtime_kame_action_gate_degraded_oracle_promoted_ok"
+        )
+        is False
+        and smoke.get("runtime_kame_action_gate_degraded_oracle_promoted_status") == "degraded_text_only"
+        and smoke.get("runtime_kame_action_gate_degraded_oracle_promoted_raw_audio_available") is False
+        and smoke.get("runtime_kame_action_gate_degraded_oracle_promoted_authorities")
+        == ["oracle_promoted"]
+        and smoke.get("runtime_kame_action_gate_degraded_oracle_promoted_consumed_before_action") is True
+        and "missing_promoted_evidence"
+        not in (smoke.get("runtime_kame_action_gate_degraded_oracle_promoted_issues") or [])
+        and "interpreter_evidence_not_consumed_before_irreversible_action"
+        not in (smoke.get("runtime_kame_action_gate_degraded_oracle_promoted_issues") or [])
+        and "degraded_text_only_cannot_authorize_high_risk_action"
+        in (smoke.get("runtime_kame_action_gate_degraded_oracle_promoted_issues") or [])
+        and set(smoke.get("runtime_kame_action_gate_degraded_oracle_promoted_rejected_authorities") or [])
+        >= {"reflex_hypothesis", "hypothesis"},
         "runtime_kame_action_gate_enforced": smoke.get("runtime_kame_action_gate_smoke_ok") is True
         and smoke.get("runtime_kame_action_gate_hypothesis_only_ok") is False
         and "missing_promoted_evidence"
@@ -2154,6 +2171,11 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("runtime_kame_action_gate_degraded_text_only_status") == "degraded_text_only"
         and smoke.get("runtime_kame_action_gate_degraded_text_only_raw_audio_available") is False
         and smoke.get("runtime_kame_action_gate_degraded_text_only_preserves_hypothesis") is True
+        and smoke.get("runtime_kame_action_gate_degraded_oracle_promoted_ok") is False
+        and smoke.get("runtime_kame_action_gate_degraded_oracle_promoted_authorities")
+        == ["oracle_promoted"]
+        and "degraded_text_only_cannot_authorize_high_risk_action"
+        in (smoke.get("runtime_kame_action_gate_degraded_oracle_promoted_issues") or [])
         and smoke.get("runtime_kame_action_gate_promoted_ok") is True
         and (smoke.get("runtime_kame_action_gate_promoted_issues") or []) == []
         and smoke.get("runtime_kame_action_gate_promoted_authorities") == ["interpreter_promoted"]
@@ -3925,6 +3947,30 @@ def build_voice_operator_report(
                 and async_oracle_smoke.get("runtime_kame_action_gate_degraded_text_only_raw_audio_available")
                 is False
                 and bool(async_oracle_smoke.get("runtime_kame_action_gate_degraded_text_only_preserves_hypothesis"))
+            ),
+            "runtime_kame_action_gate_degraded_oracle_promoted_ok": async_oracle_smoke.get(
+                "runtime_kame_action_gate_degraded_oracle_promoted_ok"
+            ),
+            "runtime_kame_action_gate_degraded_oracle_promoted_issues": list(
+                async_oracle_smoke.get("runtime_kame_action_gate_degraded_oracle_promoted_issues") or []
+            ),
+            "runtime_kame_action_gate_degraded_oracle_promoted_authorities": list(
+                async_oracle_smoke.get("runtime_kame_action_gate_degraded_oracle_promoted_authorities") or []
+            ),
+            "runtime_kame_action_gate_degraded_oracle_promoted_rejected_authorities": list(
+                async_oracle_smoke.get("runtime_kame_action_gate_degraded_oracle_promoted_rejected_authorities")
+                or []
+            ),
+            "runtime_kame_action_gate_degraded_oracle_promoted_status": async_oracle_smoke.get(
+                "runtime_kame_action_gate_degraded_oracle_promoted_status"
+            ),
+            "runtime_kame_action_gate_degraded_oracle_promoted_raw_audio_available": async_oracle_smoke.get(
+                "runtime_kame_action_gate_degraded_oracle_promoted_raw_audio_available"
+            ),
+            "runtime_kame_action_gate_degraded_oracle_promoted_consumed_before_action": bool(
+                async_oracle_smoke.get(
+                    "runtime_kame_action_gate_degraded_oracle_promoted_consumed_before_action"
+                )
             ),
             "runtime_kame_action_gate_promoted_ok": async_oracle_smoke.get(
                 "runtime_kame_action_gate_promoted_ok"
