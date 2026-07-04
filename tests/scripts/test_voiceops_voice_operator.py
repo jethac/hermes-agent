@@ -1991,14 +1991,19 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
 
 
 def test_voice_operator_validation_rejects_conflicting_interpreter_packet_hypothesis_lineage():
-    report = _voice_operator_report()
-    report["interpreter_request_packet"]["transcript_hypotheses"][0][
-        "audio_segment_ref"
-    ] = "artifact://redacted/stale-or-wrong-speaker-cut.wav"
+    conflicts = {
+        "turn_id": "stale-turn-id",
+        "audio_segment_ref": "artifact://redacted/stale-or-wrong-speaker-cut.wav",
+        "evidence_bundle_id": "stale-evidence-bundle",
+        "evidence_merge_key": "stale-evidence-merge-key",
+    }
+    for field, value in conflicts.items():
+        report = _voice_operator_report()
+        report["interpreter_request_packet"]["transcript_hypotheses"][0][field] = value
 
-    issues = validate_voice_operator_report(report)
+        issues = validate_voice_operator_report(report)
 
-    assert "interpreter_request_packet:kame_lineage_conflict_audio_segment_ref" in issues
+        assert f"interpreter_request_packet:kame_lineage_conflict_{field}" in issues
 
 
 def test_voice_operator_validation_rejects_conflicting_interpreter_packet_witness_binding():
