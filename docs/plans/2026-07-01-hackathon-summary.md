@@ -16,6 +16,15 @@ durable prompt. This lets the video show fast acknowledgement without implying
 that the first transcript-like string gets to spend money, provision services,
 place calls, or write memory.
 
+The latest demo framing should be: "Hermes gives Gemma the raw voice plus what
+the realtime frontend thought it heard." That is the key distinction from a
+voice-message bot. Moshi/Open-S2S text is visible because it helps the
+interpreter, especially for clipped starts, names, numbers, and code-switched
+terms. It is also visibly non-authoritative until Gemma or the Hermes oracle
+promotes it. The demo should avoid saying "Moshi is the ASR layer" or "Gemma is
+running ASR in parallel"; the stronger claim is witness-assisted direct-audio
+interpretation.
+
 The simplest demo phrasing is: "Hermes sends raw voice plus what the realtime
 frontend thought it heard to Gemma; only Gemma's promoted interpretation reaches
 the active Hermes model." That is the safety story. It keeps Moshi/Open-S2S text

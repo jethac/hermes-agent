@@ -199,6 +199,7 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
         {
             "source": "moshi",
             "text": "three to the power of seventeen",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "kind": "frontend_witness_hypothesis",
@@ -208,6 +209,7 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
         {
             "source": "asr",
             "text": "what is three to the power of seventeen",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "kind": "classic_asr_hypothesis",
@@ -274,6 +276,7 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
             "kind": "frontend_witness_hypothesis",
             "source": "moshi",
             "text": "three to the power of seventeen",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.78,
@@ -283,6 +286,7 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
             "kind": "classic_asr_hypothesis",
             "source": "asr",
             "text": "what is three to the power of seventeen",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.92,
@@ -891,6 +895,7 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
         {
             "source": "classic_asr_fallback_optional",
             "text": "what is three to the power of seventeen",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.88,
@@ -1018,6 +1023,7 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
             "kind": "frontend_witness_hypothesis",
             "source": "moshi",
             "text": "three to the power of seventeen",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.71,
@@ -1027,6 +1033,7 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
             "kind": "classic_asr_hypothesis",
             "source": "classic_asr_fallback_optional",
             "text": "what is three to the power of seventeen",
+            **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
             "confidence": 0.88,
@@ -1372,12 +1379,14 @@ async def test_interpreter_evidence_late_for_running_job_is_status_visible():
 
 
 @pytest.mark.asyncio
-async def test_hypothesis_only_interpreter_evidence_does_not_promote_oracle_text():
+async def test_raw_audio_job_waits_for_interpreter_promotion_before_runner():
     events = []
-    release = asyncio.Event()
+    started = asyncio.Event()
+    seen_jobs = []
 
     async def runner(job):
-        await release.wait()
+        seen_jobs.append(job)
+        started.set()
         return "done"
 
     manager = OracleJobManager(
@@ -1386,7 +1395,87 @@ async def test_hypothesis_only_interpreter_evidence_does_not_promote_oracle_text
         event_callback=lambda event: events.append(event.to_status()),
     )
 
-    running = await manager.submit(
+    waiting = await manager.submit(
+        KameOracleRequest(
+            session_id="voice-session-1",
+            turn_id="turn:promoted-handoff",
+            source="discord_voice",
+            user_id="42",
+            intent="prepare phone handoff",
+            route=KameRoute.DEFER,
+            transcript="prepare phone handoff",
+            transcript_source="reflex_audio",
+            intent_source="reflex_audio",
+            audio_segment_ref="artifact://redacted/handoff.wav",
+            auxiliary_transcript_hypotheses=[
+                {
+                    "source": "moshi",
+                    "text": "spend two hundred dollars and call my phone now",
+                    "confidence": 0.62,
+                }
+            ],
+            interface_already_said="I am preparing the handoff and will ask before spend.",
+        )
+    )
+    await asyncio.sleep(0)
+
+    assert (await manager.get(waiting.job_id)).state == OracleJobState.WAITING_FOR_INTERPRETER
+    assert not started.is_set()
+
+    updated = await manager.add_interpreter_evidence(
+        waiting.job_id,
+        corrected_transcript="prepare the phone handoff",
+        normalized_intent="prepare verified phone handoff",
+        audio_segment_ref="artifact://redacted/handoff.wav",
+        reflex_transcript_hypothesis={
+            "source": "moshi",
+            "text": "spend two hundred dollars and call my phone now",
+            "confidence": 0.62,
+        },
+        auxiliary_transcript_hypotheses=[
+            {
+                "source": "classic_asr_fallback_optional",
+                "text": "spend two hundred dollars and call my phone now",
+                "confidence": 0.71,
+            }
+        ],
+        source="gemma_interpreter",
+    )
+    await asyncio.wait_for(started.wait(), timeout=1)
+    await manager.wait_for_idle()
+
+    assert updated.interpreter_corrected_transcript == "prepare the phone handoff"
+    assert updated.interpreter_normalized_intent == "prepare verified phone handoff"
+    assert seen_jobs[0].oracle_text == "prepare verified phone handoff"
+    assert any(
+        event["type"] == "oracle.job.progress"
+        and event["payload"].get("operation") == "waiting_for_interpreter"
+        and event["job_id"] == waiting.job_id
+        for event in events
+    )
+    assert any(
+        event["type"] == "oracle.job.started"
+        and event["job_id"] == waiting.job_id
+        for event in events
+    )
+
+
+@pytest.mark.asyncio
+async def test_hypothesis_only_interpreter_evidence_keeps_raw_audio_job_waiting():
+    events = []
+    started = asyncio.Event()
+
+    async def runner(job):
+        started.set()
+        return "done"
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
+
+    waiting = await manager.submit(
         KameOracleRequest(
             session_id="voice-session-1",
             turn_id="turn:handoff",
@@ -1411,7 +1500,7 @@ async def test_hypothesis_only_interpreter_evidence_does_not_promote_oracle_text
     await asyncio.sleep(0)
 
     updated = await manager.add_interpreter_evidence(
-        running.job_id,
+        waiting.job_id,
         audio_segment_ref="artifact://redacted/handoff.wav",
         reflex_transcript_hypothesis={
             "source": "moshi",
@@ -1431,16 +1520,18 @@ async def test_hypothesis_only_interpreter_evidence_does_not_promote_oracle_text
         source="gemma_interpreter",
     )
     status = await manager.status_view()
-    running_status = next(job for job in status["jobs"] if job["job_id"] == running.job_id)
-    reflex_status = next(job for job in status["reflex"]["jobs"] if job["job_id"] == running.job_id)
-    late = next(
+    waiting_status = next(job for job in status["jobs"] if job["job_id"] == waiting.job_id)
+    reflex_status = next(job for job in status["reflex"]["jobs"] if job["job_id"] == waiting.job_id)
+    attached = next(
         event
         for event in events
-        if event["type"] == "oracle.job.interpreter_evidence_late"
-        and event["job_id"] == running.job_id
+        if event["type"] == "oracle.job.interpreter_evidence_attached"
+        and event["job_id"] == waiting.job_id
     )
     oracle_request = _oracle_request_for_job(updated, updated.request)
 
+    assert not started.is_set()
+    assert updated.state == OracleJobState.WAITING_FOR_INTERPRETER
     assert updated.oracle_text == "prepare phone handoff"
     assert updated.interpreter_corrected_transcript == ""
     assert updated.interpreter_normalized_intent == ""
@@ -1452,19 +1543,21 @@ async def test_hypothesis_only_interpreter_evidence_does_not_promote_oracle_text
         "channel_metadata": "diagnostic_only",
         "interpreter_disagreements": "diagnostic_only",
     }
-    assert running_status["evidence_authority"]["reflex_transcript_hypothesis"] == "hypothesis"
-    assert running_status["evidence_authority"]["auxiliary_transcript_hypotheses"] == "hypothesis"
-    assert "interpreter_corrected_transcript" not in running_status["evidence_authority"]
-    assert "interpreter_normalized_intent" not in running_status["evidence_authority"]
-    assert running_status["evidence_bundle"]["status"] == "primary_audio"
-    assert running_status["evidence_bundle"]["raw_audio_available"] is True
-    assert running_status["evidence_bundle"]["transcript_hypotheses_count"] == 3
-    assert running_status["evidence_bundle"]["interpreter_evidence_count"] == 1
-    assert reflex_status["evidence_bundle_id"] == running_status["evidence_bundle_id"]
-    assert reflex_status["evidence_merge_key"] == running_status["evidence_merge_key"]
+    assert waiting_status["state"] == "waiting_for_interpreter"
+    assert waiting_status["evidence_authority"]["reflex_transcript_hypothesis"] == "hypothesis"
+    assert waiting_status["evidence_authority"]["auxiliary_transcript_hypotheses"] == "hypothesis"
+    assert "interpreter_corrected_transcript" not in waiting_status["evidence_authority"]
+    assert "interpreter_normalized_intent" not in waiting_status["evidence_authority"]
+    assert waiting_status["evidence_bundle"]["status"] == "primary_audio"
+    assert waiting_status["evidence_bundle"]["raw_audio_available"] is True
+    assert waiting_status["evidence_bundle"]["transcript_hypotheses_count"] == 3
+    assert waiting_status["evidence_bundle"]["interpreter_evidence_count"] == 1
+    assert reflex_status["evidence_bundle_id"] == waiting_status["evidence_bundle_id"]
+    assert reflex_status["evidence_merge_key"] == waiting_status["evidence_merge_key"]
     assert "transcript_hypotheses" not in reflex_status
     assert "evidence_bundle" not in reflex_status
-    assert late["payload"]["latest_interpreter_evidence_authority"] == updated.interpreter_evidence[0]["evidence_authority"]
+    assert attached["payload"]["latest_interpreter_evidence_authority"] == updated.interpreter_evidence[0]["evidence_authority"]
+    assert attached["payload"]["interpreter_evidence_late"] is False
     assert oracle_request.oracle_text == "prepare phone handoff"
     assert oracle_request.oracle_text_source == "reflex_audio"
     assert oracle_request.transcript == "prepare phone handoff"
@@ -1481,11 +1574,8 @@ async def test_hypothesis_only_interpreter_evidence_does_not_promote_oracle_text
         hypothesis["text"] == "spend two hundred dollars and call my phone now"
         and hypothesis["authority"] == "hypothesis"
         and hypothesis["tool_authority"] is False
-        for hypothesis in oracle_request.auxiliary_transcript_hypotheses
+            for hypothesis in oracle_request.auxiliary_transcript_hypotheses
     )
-
-    release.set()
-    await manager.wait_for_idle()
 
 
 @pytest.mark.asyncio
@@ -1876,6 +1966,7 @@ async def test_cancel_requested_job_keeps_capacity_until_worker_stops():
         "max_concurrent": 1,
         "queued": 1,
         "queue_limit": 16,
+        "waiting_for_interpreter": 0,
         "waiting_for_approval": 0,
         "cancel_requested": 1,
     }
@@ -1919,6 +2010,7 @@ async def test_shutdown_forces_cancelled_state_when_worker_ignores_cancel():
         "max_concurrent": 1,
         "queued": 0,
         "queue_limit": 16,
+        "waiting_for_interpreter": 0,
         "waiting_for_approval": 0,
         "cancel_requested": 0,
     }
@@ -2017,6 +2109,7 @@ async def test_status_view_reports_capacity_and_redacts_raw_metadata():
         "max_concurrent": 1,
         "queued": 1,
         "queue_limit": 16,
+        "waiting_for_interpreter": 0,
         "waiting_for_approval": 0,
         "cancel_requested": 0,
     }
@@ -2269,6 +2362,7 @@ async def test_waiting_for_approval_holds_capacity_and_emits_redacted_event():
         "max_concurrent": 1,
         "queued": 1,
         "queue_limit": 16,
+        "waiting_for_interpreter": 0,
         "waiting_for_approval": 1,
         "cancel_requested": 0,
     }
@@ -2282,6 +2376,7 @@ async def test_waiting_for_approval_holds_capacity_and_emits_redacted_event():
     assert gate["issues"] == (
         "missing_promoted_evidence",
         "interpreter_evidence_not_consumed_before_irreversible_action",
+        "degraded_text_only_cannot_authorize_high_risk_action",
         "missing_tool_disclosure_ref",
     )
     assert approval == {
@@ -2369,6 +2464,7 @@ async def test_cancelling_waiting_for_approval_keeps_capacity_until_worker_stops
         "max_concurrent": 1,
         "queued": 1,
         "queue_limit": 16,
+        "waiting_for_interpreter": 0,
         "waiting_for_approval": 0,
         "cancel_requested": 1,
     }
@@ -2404,6 +2500,7 @@ async def test_cancelling_waiting_for_approval_keeps_capacity_until_worker_stops
             "max_concurrent",
             "queued",
             "queue_limit",
+            "waiting_for_interpreter",
             "waiting_for_approval",
             "cancel_requested",
         }
@@ -2416,6 +2513,7 @@ async def test_cancelling_waiting_for_approval_keeps_capacity_until_worker_stops
         "max_concurrent": 1,
         "queued": 1,
         "queue_limit": 16,
+        "waiting_for_interpreter": 0,
         "waiting_for_approval": 1,
         "cancel_requested": 0,
     }
@@ -2426,6 +2524,7 @@ async def test_cancelling_waiting_for_approval_keeps_capacity_until_worker_stops
         "max_concurrent": 1,
         "queued": 1,
         "queue_limit": 16,
+        "waiting_for_interpreter": 0,
         "waiting_for_approval": 0,
         "cancel_requested": 1,
     }
@@ -2511,6 +2610,7 @@ async def test_audit_ledger_path_records_redacted_lifecycle_events(tmp_path):
     assert gate["issues"] == [
         "missing_promoted_evidence",
         "interpreter_evidence_not_consumed_before_irreversible_action",
+        "degraded_text_only_cannot_authorize_high_risk_action",
         "missing_tool_disclosure_ref",
     ]
     assert approval == {

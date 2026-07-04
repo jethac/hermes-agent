@@ -10,6 +10,40 @@ Preferred local reflex: fastest stable floor-control model, such as Moshi/Person
 Preferred local interpreter: Gemma 4 E2B/E4B/12B audio-multimodal, consuming bounded raw-audio cuts plus witness hypotheses
 Preferred local oracle target: Hermes active `/model`, with Nemotron 3 Super as the first Spark-local NVIDIA target to measure before readiness claims
 
+## Latest Design Lock
+
+2026-07-05: the intended KAME shape is a three-tier hearing stack with
+witness fan-in, not a parallel STT architecture.
+
+```text
+live audio
+  -> reflex: lowest-latency floor control, barge-in, ack, provisional route
+  -> interpreter: Gemma direct-audio review of the accepted speech cut
+  -> oracle: Hermes active /model, selected through the normal Hermes model UI
+```
+
+Moshi/Open-S2S, VoiceClaw/OpenClaw, reflex captions, and classic ASR may still
+produce transcript-looking text. That text is useful, and should be supplied to
+Gemma when it belongs to the same accepted speech cut as the waveform. It is
+not a second Hermes turn, not `oracle_text`, not the transcript of record, and
+not action authority. It belongs in `transcript_hypotheses[]` as
+`role = "witness_context"`, `authority = "hypothesis"`, and
+`tool_authority = false`.
+
+The interpreter packet should therefore contain raw audio first, then timing,
+energy, speaker, channel, and transport metadata, then reflex state, then
+Moshi/Open-S2S/reflex/classic-ASR witness text. Gemma can use that witness to
+repair clipped starts, names, numbers, code-switched speech, or rough intent,
+but durable wording starts only at `interpreter_promoted` or
+`oracle_promoted`. Stripe, NemoClaw, phone, memory, file, message, and tool
+payloads must never be populated from unpromoted witness text.
+
+This means "Moshi STT" is adapter-edge shorthand only. Inside Hermes the
+supported operation is "attach the Moshi witness to the raw-audio interpreter
+bundle." If the frontend provides text without raw audio, that is degraded
+compatibility mode, useful for captions or clarification, but insufficient for
+full KAME evidence or high-risk action gates.
+
 ## Source Of Truth
 
 The current architecture is **reflex -> interpreter -> oracle**.

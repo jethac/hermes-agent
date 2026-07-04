@@ -84,6 +84,15 @@ Moshi/reflex/classic-ASR hypotheses in one packet, and Hermes' active `/model`
 only sees promoted wording, intent, entities, and compact audit evidence before
 doing Stripe, NemoClaw, phone, memory, file, message, or tool work.
 
+Latest clarification: we are not adding a separate Gemma-ASR lane beside the
+reflex. We are feeding a bounded speech cut to a Gemma direct-audio interpreter
+and attaching every same-cut transcript-looking signal as witness evidence.
+Moshi/Open-S2S text, reflex captions, and classic ASR can all improve
+interpretation, but they remain hypotheses until promoted. For household and
+business operations, this is the authority boundary that keeps a fast or
+hallucinated transcript from becoming a bill payment, provider account, phone
+script, memory entry, file write, external message, or tool argument.
+
 ## Spark Model Strategy
 
 There are two related but distinct model strategies.

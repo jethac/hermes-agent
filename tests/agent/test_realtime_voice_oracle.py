@@ -91,6 +91,71 @@ def test_voice_oracle_prompt_marks_degraded_kame_witness_text_non_authoritative(
     assert "do not treat it as durable truth" in prompt
 
 
+def test_voice_oracle_prompt_reads_canonical_transcript_hypotheses_without_legacy_auxiliary():
+    prompt = _voice_oracle_prompt(
+        "Prepare the phone handoff.",
+        {
+            "voice_architecture": "kame_frontend_oracle",
+            "kame_intent": "Prepare the phone handoff.",
+            "kame_intent_source": "reflex_audio",
+            "kame_audio_segment_ref": "artifact://voice/turn-42.wav",
+            "kame_audio_time_range_ms": (120, 1840),
+            "kame_interpreter_prompt_policy_version": "raw_audio_compare_v1",
+            "kame_transcript_hypotheses": (
+                {
+                    "kind": "frontend_witness_hypothesis",
+                    "source": "moshi",
+                    "text": "prepare phone handoff",
+                    "role": "witness_context",
+                    "authority": "hypothesis",
+                    "promotion_required": "interpreter_promoted_or_oracle_promoted",
+                    "tool_authority": False,
+                    "confidence": 0.78,
+                    "latency_ms": 94,
+                    "arrival_phase": "with_raw_audio",
+                    "adjudication": "corrected_by_audio",
+                },
+            ),
+        },
+    )
+
+    assert "Raw audio evidence ref: artifact://voice/turn-42.wav (120-1840 ms)." in prompt
+    assert (
+        "Auxiliary transcript hypothesis (moshi, confidence 0.78, latency 94 ms): prepare phone handoff"
+        in prompt
+    )
+    assert "Witness metadata: kind=frontend_witness_hypothesis" in prompt
+    assert "arrival=with_raw_audio" in prompt
+    assert "adjudication=corrected_by_audio" in prompt
+    assert "transcript hypotheses are non-authoritative context" in prompt
+    assert "raw audio/interpreter evidence as higher authority" in prompt
+
+
+def test_voice_oracle_prompt_deduplicates_canonical_and_legacy_witness_hypotheses():
+    metadata = {
+        "voice_architecture": "kame_frontend_oracle",
+        "kame_transcript_hypotheses": (
+            {
+                "kind": "frontend_witness_hypothesis",
+                "source": "moshi",
+                "text": "prepare phone handoff",
+                "authority": "hypothesis",
+            },
+        ),
+        "kame_auxiliary_transcript_hypotheses": (
+            {
+                "source": "moshi",
+                "text": "prepare phone handoff",
+                "authority": "hypothesis",
+            },
+        ),
+    }
+
+    prompt = _voice_oracle_prompt("Prepare the phone handoff.", metadata)
+
+    assert prompt.count("Auxiliary transcript hypothesis (moshi") == 1
+
+
 def test_hermes_realtime_oracle_runs_concurrent_kame_requests_and_targets_interrupt(monkeypatch):
     calls = []
     running = 0

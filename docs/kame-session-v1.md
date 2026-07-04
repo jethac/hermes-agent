@@ -9,6 +9,32 @@ VoiceClaw/OpenClaw-style frontends, phone/SIP, WhatsApp voice, desktop mic, and
 future clients. It lets a fast frontend act as the reflex without inheriting
 Hermes' tools or durable transcript authority.
 
+## Current Role Assignment
+
+`kame_session_v1` treats transcript-looking provider text as witness context,
+not as the control path. A fast frontend may be Moshi/Open-S2S-like, may speak
+an immediate acknowledgement, and may emit a string that looks like STT. If the
+same packet family also carries raw audio, Hermes must bind the string to that
+raw-audio cut as a hypothesis for the Gemma interpreter.
+
+The normal path is:
+
+```text
+reflex floor control -> Gemma direct-audio interpreter -> Hermes active /model
+```
+
+It is not:
+
+```text
+STT transcript -> Hermes prompt
+```
+
+and it is not a separate "Gemma ASR" lane running beside the reflex. Gemma's
+role is interpreter/adjudicator: compare the waveform, timing metadata,
+speaker/channel evidence, reflex route, and witness text, then emit promoted
+wording or reject the witness. The active Hermes `/model` should receive only
+promoted transcript/intent/entity fields plus compact audit metadata.
+
 ## Canonical Packet Invariant
 
 One accepted speech cut produces one evidence bundle and one oracle job

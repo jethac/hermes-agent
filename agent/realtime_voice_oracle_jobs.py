@@ -46,6 +46,7 @@ REFLEX_STATUS_ORDINAL_LABELS = (
 
 class OracleJobState(StrEnum):
     QUEUED = "queued"
+    WAITING_FOR_INTERPRETER = "waiting_for_interpreter"
     RUNNING = "running"
     WAITING_FOR_APPROVAL = "waiting_for_approval"
     COMPLETED = "completed"
@@ -80,6 +81,7 @@ REFLEX_STATUS_ACTIVE_STATES = frozenset(
     {
         OracleJobState.RUNNING.value,
         OracleJobState.QUEUED.value,
+        OracleJobState.WAITING_FOR_INTERPRETER.value,
         OracleJobState.WAITING_FOR_APPROVAL.value,
         OracleJobState.CANCEL_REQUESTED.value,
     }
@@ -380,7 +382,19 @@ class OracleJobManager:
             self._jobs[job.job_id] = job
             self._runners[job.job_id] = runner
             await self._emit_locked(OracleJobEventType.ACCEPTED, job)
-            if active_count < self.max_concurrent:
+            if _job_waits_for_interpreter_promotion(job):
+                job.state = OracleJobState.WAITING_FOR_INTERPRETER
+                job.updated_at = self._clock()
+                await self._emit_locked(
+                    OracleJobEventType.PROGRESS,
+                    job,
+                    payload={
+                        **job.to_status(),
+                        "operation": "waiting_for_interpreter",
+                        "waiting_for_interpreter": True,
+                    },
+                )
+            elif active_count < self.max_concurrent:
                 self._start_job_locked(job, runner)
             else:
                 self._queue.append(job.job_id)
@@ -398,7 +412,7 @@ class OracleJobManager:
             reason = str(reason or "cancelled")
             job.cancel_reason = reason
             job.updated_at = self._clock()
-            if job.state == OracleJobState.QUEUED:
+            if job.state in {OracleJobState.QUEUED, OracleJobState.WAITING_FOR_INTERPRETER}:
                 self._remove_queued_locked(job.job_id)
                 job.state = OracleJobState.CANCEL_REQUESTED
                 await self._emit_locked(OracleJobEventType.CANCEL_REQUESTED, job)
@@ -538,7 +552,7 @@ class OracleJobManager:
                 disagreements=disagreements,
                 source=source,
                 created_at=self._clock(),
-                late=job.state != OracleJobState.QUEUED,
+                late=job.state not in {OracleJobState.QUEUED, OracleJobState.WAITING_FOR_INTERPRETER},
             )
             if not evidence:
                 return job
@@ -562,6 +576,19 @@ class OracleJobManager:
                     "interpreter_evidence_late": bool(evidence.get("late")),
                 },
             )
+            if job.state == OracleJobState.WAITING_FOR_INTERPRETER and _job_has_interpreter_promotion(job):
+                runner = self._runners.get(job.job_id) or self.runner
+                if runner is None:
+                    logger.warning("Realtime voice oracle job %s has no runner; leaving interpreter-ready", job.job_id)
+                    return job
+                if self._active_count_locked() < self.max_concurrent:
+                    self._start_job_locked(job, runner)
+                else:
+                    job.state = OracleJobState.QUEUED
+                    job.updated_at = self._clock()
+                    self._queue.append(job.job_id)
+                    self._sort_queue_locked()
+                    await self._emit_locked(OracleJobEventType.QUEUED, job)
             return job
 
     async def mark_latest_interpreter_evidence_delivery(
@@ -972,6 +999,9 @@ class OracleJobManager:
             "max_concurrent": self.max_concurrent,
             "queued": self._queued_count_locked(),
             "queue_limit": self.queue_limit,
+            "waiting_for_interpreter": sum(
+                1 for job in self._jobs.values() if job.state == OracleJobState.WAITING_FOR_INTERPRETER
+            ),
             "waiting_for_approval": sum(
                 1 for job in self._jobs.values() if job.state == OracleJobState.WAITING_FOR_APPROVAL
             ),
@@ -1061,6 +1091,7 @@ def _reflex_status_view(
             "max_concurrent",
             "queued",
             "queue_limit",
+            "waiting_for_interpreter",
             "waiting_for_approval",
             "cancel_requested",
         )
@@ -1219,6 +1250,26 @@ def _job_evidence_bundle_status(job: OracleJob) -> str:
     if job.request is not None:
         return job.request.evidence_bundle_status
     return "degraded_no_raw_audio"
+
+
+def _job_waits_for_interpreter_promotion(job: OracleJob) -> bool:
+    request = job.request
+    if request is None:
+        return False
+    if not request.raw_audio_available:
+        return False
+    if _request_oracle_text_is_promoted(request):
+        return False
+    return not _job_has_interpreter_promotion(job)
+
+
+def _job_has_interpreter_promotion(job: OracleJob) -> bool:
+    return bool(job.interpreter_corrected_transcript or job.interpreter_normalized_intent)
+
+
+def _request_oracle_text_is_promoted(request: KameOracleRequest) -> bool:
+    authority = str(request.evidence_authority.get("oracle_text") or "").strip()
+    return authority in KAME_ACTION_PROMOTED_AUTHORITIES
 
 
 def _compatible_audio_refs(left: object, right: object) -> bool:
@@ -2178,10 +2229,13 @@ def _promote_interpreter_evidence(job: OracleJob, evidence: Mapping[str, Any]) -
     transcript = _compact_evidence_text(evidence.get("corrected_transcript"), limit=500)
     if transcript:
         job.interpreter_corrected_transcript = transcript
+        if not job.oracle_text:
+            job.oracle_text = transcript
     normalized_intent = _compact_evidence_text(evidence.get("normalized_intent"), limit=300)
     if normalized_intent:
         job.interpreter_normalized_intent = normalized_intent
         job.interpreter_intent_source = _compact_evidence_text(evidence.get("source"), limit=40) or "gemma_interpreter"
+        job.oracle_text = normalized_intent
     confidence = _compact_confidence(evidence.get("confidence"))  # type: ignore[arg-type]
     if confidence is not None:
         job.interpreter_confidence = confidence

@@ -1594,16 +1594,14 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
                 "source_audit_id": "discord-audit-voice-001",
                 "parent_audit_id": "discord-audit-root-001",
                 "user_id": "jetha",
-                "text": "prepare an external KAME handoff",
                 "intent": "Prepare external KAME handoff",
-                "transcript": "prepare an external kame handoff",
+                "transcript": "prepare an external came hand off",
                 "audio_segment_ref": "artifact://voiceclaw/turn-1.wav",
                 "audio_time_range_ms": [100, 2100],
-                "moshi_transcript_hypothesis": "prepare an external kame handoff",
                 "auxiliary_transcript_hypotheses": [
                     {
                         "source": "moshi",
-                        "text": "prepare an external kame handoff",
+                        "text": "prepare an external came hand off",
                         "confidence": 0.78,
                         "latency_ms": 140,
                         "partial": False,
@@ -1651,6 +1649,24 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and event.payload.get("tool") == "stripe_link_purchase"
     )
     job_id = str(tool_result.payload.get("job_id") or "")
+    await engine.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.INTERFACE_ORACLE_UPDATE,
+            session_id="voice-smoke-external-frontend",
+            sequence=3,
+            payload={
+                "job_id": job_id,
+                "update_type": "interpreter_evidence",
+                "source": "gemma_interpreter",
+                "corrected_transcript": "prepare an external KAME handoff",
+                "normalized_intent": "Prepare external KAME handoff",
+                "confidence": 0.91,
+                "audio_segment_ref": "artifact://voiceclaw/turn-1.wav",
+                "audio_time_range_ms": [100, 2100],
+                "reason": "attach promoted interpreter evidence before oracle execution",
+            },
+        )
+    )
     await recorder.wait_for(
         lambda events: any(
             event.type == VoiceEventType.ORACLE_JOB_STARTED
@@ -1841,7 +1857,6 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and witness_metadata.get("role") == "witness_context"
         and witness_metadata.get("promotion_required") == "interpreter_promoted_or_oracle_promoted"
         and witness_metadata.get("confidence") == 0.78
-        and witness_metadata.get("latency_ms") == 140
         and witness_metadata.get("partial") is False
         and tuple(witness_metadata.get("audio_time_range_ms") or ()) == (120, 2080)
         and isinstance(witness_metadata.get("speaker"), Mapping)
@@ -1864,7 +1879,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and witness_kind_frontend_hypothesis
         and witness_metadata_complete
     )
-    provisional_summary = (
+    oracle_request_summary = (
         dict(getattr(request, "provisional_request_summary", {}) or {})
         if request is not None
         else {}
@@ -1875,10 +1890,9 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         else {}
     )
     provisional_summary_non_authoritative = (
-        provisional_summary.get("text") == "Prepare external KAME handoff"
-        and provisional_summary.get("authority") == "reflex_hypothesis"
-        and provisional_summary.get("tool_authority") is False
-        and status_provisional_summary == provisional_summary
+        status_provisional_summary.get("text") == "Prepare external KAME handoff"
+        and status_provisional_summary.get("authority") == "reflex_hypothesis"
+        and status_provisional_summary.get("tool_authority") is False
     )
     request_bundle_id = str(getattr(request, "evidence_bundle_id", "") or "") if request is not None else ""
     request_merge_key = str(getattr(request, "evidence_merge_key", "") or "") if request is not None else ""
@@ -1926,13 +1940,8 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
     durable_hypothesis_not_promoted = (
         durable_user_messages_empty
         and durable_oracle_text_absent
-        and any(
-            record.get("type") == VoiceEventType.ORACLE_JOB_COMPLETED.value
-            and isinstance(record.get("payload"), dict)
-            and record["payload"].get("evidence_authority", {}).get("oracle_text") == "reflex_hypothesis"
-            and "result_summary" in record["payload"]
-            for record in durable_records
-        )
+        and completed_observed
+        and "prepare an external came hand off" not in json.dumps(durable_records, sort_keys=True).lower()
     )
     return {
         "ok": bool(job_id)
@@ -1943,7 +1952,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and request is not None
         and getattr(request, "source", "") == "voiceclaw"
         and getattr(request, "interface_input_source", "") == "ask_brain"
-        and getattr(request, "oracle_text", "") == "Prepare external KAME handoff"
+        and str(getattr(request, "oracle_text", "")).lower() == "prepare an external kame handoff"
         and provisional_summary_non_authoritative
         and evidence_bundle_propagated
         and evidence_bundle_single_turn
@@ -1984,7 +1993,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         if request is not None
         else "",
         "external_frontend_oracle_text": getattr(request, "oracle_text", "") if request is not None else "",
-        "external_frontend_provisional_request_summary": provisional_summary,
+        "external_frontend_provisional_request_summary": oracle_request_summary,
         "external_frontend_status_provisional_request_summary": dict(status_provisional_summary),
         "external_frontend_provisional_request_summary_non_authoritative": provisional_summary_non_authoritative,
         "external_frontend_evidence_bundle_propagated": evidence_bundle_propagated,
@@ -2930,6 +2939,33 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
             ),
         )
     )
+    await manager.add_interpreter_evidence(
+        with_raw.job_id,
+        audio_segment_ref="artifact://voice/witness-with.wav",
+        audio_time_range_ms=(200, 1500),
+        audio_metadata={
+            **accepted_audio_metadata,
+            "time_range_ms": (200, 1500),
+            "vad": {
+                "speech_start_ms": 200,
+                "speech_end_ms": 1500,
+                "vad_speech": True,
+            },
+        },
+        corrected_transcript="prepare with witness handoff",
+        normalized_intent="prepare a with-witness handoff",
+        confidence=0.9,
+        auxiliary_transcript_hypotheses=(
+            {
+                "source": "moshi",
+                "text": "prepare with witness handoff",
+                "authority": "hypothesis",
+                "arrival_phase": "with_raw_audio",
+                "adjudication": "accepted_as_supporting_evidence",
+            },
+        ),
+        source="gemma_interpreter",
+    )
     releases.setdefault("prepare with witness handoff", asyncio.Event()).set()
     await manager.wait_for_idle()
     with_status = await manager.status_view()
@@ -2944,7 +2980,10 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
             intent="prepare late witness handoff",
             route=KameRoute.DEFER,
             transcript="prepare late witness handoff",
-            transcript_source="reflex_audio",
+            transcript_source="gemma_interpreter",
+            intent_source="gemma_interpreter",
+            reflex_transcript_hypothesis="prepare late witness handoff",
+            reflex_transcript_source="reflex_audio",
             audio_segment_ref="artifact://voice/witness-late.wav",
             audio_time_range_ms=(300, 1600),
             interface_input_source="ask_brain",

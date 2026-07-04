@@ -518,8 +518,9 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
     asr_transcript_source = _metadata_text(metadata.get("kame_asr_transcript_source"))
     audio_segment_ref = _metadata_text(metadata.get("kame_audio_segment_ref"))
     audio_time_range_ms = _metadata_time_range(metadata.get("kame_audio_time_range_ms"))
-    auxiliary_transcript_hypotheses = _metadata_transcript_hypotheses(
-        metadata.get("kame_auxiliary_transcript_hypotheses")
+    transcript_hypotheses = _metadata_all_transcript_hypotheses(
+        metadata.get("kame_transcript_hypotheses"),
+        metadata.get("kame_auxiliary_transcript_hypotheses"),
     )
     intent_source = _metadata_text(metadata.get("kame_intent_source"))
     route = _metadata_text(metadata.get("kame_route"))
@@ -599,16 +600,28 @@ def _voice_kame_request_context(metadata: Mapping[str, object]) -> str:
                 f"Raw audio evidence ref: {audio_segment_ref}. "
                 "Treat the raw audio/interpreter evidence as higher authority than transcript hypotheses."
             )
-    for hypothesis in auxiliary_transcript_hypotheses:
+    for hypothesis in transcript_hypotheses:
         source = hypothesis.get("source") or "unknown"
         text = hypothesis.get("text") or ""
         confidence = hypothesis.get("confidence")
         confidence_text = f", confidence {confidence:.2f}" if isinstance(confidence, float) else ""
         latency = hypothesis.get("latency_ms")
         latency_text = f", latency {latency} ms" if isinstance(latency, int) else ""
+        witness_details = []
+        if hypothesis.get("kind"):
+            witness_details.append(f"kind={hypothesis['kind']}")
+        if hypothesis.get("arrival_phase"):
+            witness_details.append(f"arrival={hypothesis['arrival_phase']}")
+        if hypothesis.get("adjudication"):
+            witness_details.append(f"adjudication={hypothesis['adjudication']}")
+        if hypothesis.get("rejection_reasons"):
+            reasons = ", ".join(str(reason) for reason in hypothesis["rejection_reasons"])
+            witness_details.append(f"rejection_reasons={reasons}")
+        detail_text = f" Witness metadata: {'; '.join(witness_details)}." if witness_details else ""
         parts.append(
             f"Auxiliary transcript hypothesis ({source}{confidence_text}{latency_text}): {text}. "
             "Use it only as labeled evidence; do not treat it as durable truth unless it agrees with interpreter/oracle judgment."
+            f"{detail_text}"
         )
     if interpreter_prompt_policy_version:
         parts.append(
@@ -738,6 +751,27 @@ def _metadata_time_range(value: object) -> tuple[int, int] | tuple[()]:
     return (start, end)
 
 
+def _metadata_all_transcript_hypotheses(*values: object) -> list[dict[str, object]]:
+    hypotheses: list[dict[str, object]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for value in values:
+        for hypothesis in _metadata_transcript_hypotheses(value):
+            key = (
+                str(hypothesis.get("kind") or ""),
+                str(hypothesis.get("source") or ""),
+                str(hypothesis.get("text") or ""),
+            )
+            fallback_key = ("", key[1], key[2])
+            if key in seen or fallback_key in seen:
+                continue
+            seen.add(key)
+            seen.add(fallback_key)
+            hypotheses.append(hypothesis)
+            if len(hypotheses) >= 5:
+                return hypotheses
+    return hypotheses
+
+
 def _metadata_transcript_hypotheses(value: object) -> list[dict[str, object]]:
     if not isinstance(value, (list, tuple)):
         return []
@@ -752,12 +786,21 @@ def _metadata_transcript_hypotheses(value: object) -> list[dict[str, object]]:
             "source": _metadata_text(item.get("source")) or "unknown",
             "text": text,
         }
+        for key in ("kind", "role", "authority", "promotion_required", "arrival_phase", "adjudication"):
+            field = _metadata_text(item.get(key))
+            if field:
+                hypothesis[key] = field
+        if item.get("tool_authority") is not None:
+            hypothesis["tool_authority"] = item.get("tool_authority") is True
         confidence = _metadata_float(item.get("confidence"))
         if confidence is not None:
             hypothesis["confidence"] = confidence
         latency = _metadata_positive_int(item.get("latency_ms"))
         if latency is not None:
             hypothesis["latency_ms"] = latency
+        rejection_reasons = _metadata_text_sequence(item.get("rejection_reasons"))
+        if rejection_reasons:
+            hypothesis["rejection_reasons"] = rejection_reasons
         hypotheses.append(hypothesis)
         if len(hypotheses) >= 5:
             break

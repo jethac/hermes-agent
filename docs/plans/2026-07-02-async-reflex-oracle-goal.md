@@ -65,6 +65,22 @@ waiting for the string. The acceptance proof is one `turn_id`, one
 `audio_segment_ref`, one `evidence_bundle_id`, one `evidence_merge_key`, and
 one oracle job lifecycle.
 
+2026-07-05 clarification: the Moshi/Open-S2S transcript can and should be
+provided to Gemma with the raw voice when the two signals describe the same
+speech cut. That is not "keeping STT in parallel." It is witness fan-in inside
+the interpreter bundle. The reflex remains the low-latency floor controller,
+Gemma remains the direct-audio interpreter, and Hermes' active `/model` remains
+the oracle. A transcript hypothesis may help Gemma recover a clipped prefix,
+name, number, code-switched phrase, or rough intent, but it cannot itself
+become durable user text, `oracle_text`, a tool argument, a spend reason, a
+phone payload, memory/file content, or an external message.
+
+Implementation consequence: raw-audio jobs may be accepted and visible to the
+reflex immediately, but the Hermes `/model` runner must wait for
+`interpreter_promoted` or `oracle_promoted` wording before durable oracle work
+starts. Hypothesis-only evidence keeps the job in a waiting/interpreter-pending
+state; promoted Gemma evidence patches the job into executable oracle text.
+
 Implementation pivot: the runtime should stop treating provider STT as the
 primary voice path. The normal path is raw audio plus optional witness context
 into Gemma. Moshi/open-S2S text, reflex captions, and classic ASR output are

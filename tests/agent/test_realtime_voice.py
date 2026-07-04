@@ -15754,32 +15754,44 @@ def test_session_client_interface_oracle_request_preserves_nested_evidence_bundl
         seen = []
         expected_initial_events = {
             VoiceEventType.INTERFACE_ORACLE_REQUEST,
-            VoiceEventType.ORACLE_JOB_STARTED,
+            VoiceEventType.ORACLE_JOB_PROGRESS,
             VoiceEventType.TOOL_RESULT,
         }
         async for event in session.events():
             seen.append(event)
             if expected_initial_events.issubset({item.type for item in seen}):
                 break
-        await asyncio.wait_for(oracle.started.wait(), timeout=1)
 
-        request = oracle.requests[0]
-        assert request.source == "voiceclaw"
-        assert request.turn_id == "voice-123:voiceclaw:7"
-        assert request.interface_input_source == "ask_brain"
-        assert request.interface_tool_call_id == "voiceclaw-call-1"
-        assert request.audit_id == "voiceclaw-audit-007"
-        assert request.source_audit_id == "discord-audit-042"
-        assert request.parent_audit_id == "discord-audit-041"
-        assert request.oracle_text == "prepare the phone handoff"
-        assert request.transcript == ""
-        assert request.audio_segment_ref == "artifact://voice/turn-7.wav"
-        assert request.raw_audio_available is True
-        assert request.evidence_bundle_status == "primary_audio"
-        assert request.audio_time_range_ms == (120, 1840)
-        assert request.reflex_transcript_hypothesis == "prepare the phone handoff"
-        assert request.interface_already_said == "I'm preparing the handoff."
-        assert request.auxiliary_transcript_hypotheses == (
+        assert oracle.requests == []
+        assert oracle.started.is_set() is False
+
+        progress = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_PROGRESS)
+        assert progress.payload["operation"] == "waiting_for_interpreter"
+        assert progress.payload["state"] == "waiting_for_interpreter"
+        assert progress.payload["waiting_for_interpreter"] is True
+
+        oracle_request = next(
+            event
+            for event in seen
+            if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST
+            and event.payload.get("job_id") == "voice-oracle-001"
+        )
+        assert oracle_request.payload["job_id"] == "voice-oracle-001"
+        assert oracle_request.payload["source"] == "voiceclaw"
+        assert oracle_request.payload["turn_id"] == "voice-123:voiceclaw:7"
+        assert oracle_request.payload["interface_input_source"] == "ask_brain"
+        assert oracle_request.payload["interface_tool_call_id"] == "voiceclaw-call-1"
+        assert oracle_request.payload["audit_id"] == "voiceclaw-audit-007"
+        assert oracle_request.payload["source_audit_id"] == "discord-audit-042"
+        assert oracle_request.payload["parent_audit_id"] == "discord-audit-041"
+        assert oracle_request.payload["raw_audio_available"] is True
+        assert oracle_request.payload["evidence_bundle_status"] == "primary_audio"
+        assert oracle_request.payload["audio_segment_ref"] == "artifact://voice/turn-7.wav"
+        assert oracle_request.payload["audio_time_range_ms"] == [120, 1840]
+        assert "transcript" not in oracle_request.payload
+        assert oracle_request.payload["text"] == "prepare the phone handoff"
+        assert oracle_request.payload["oracle_text_source"] == "reflex_audio"
+        assert oracle_request.payload["auxiliary_transcript_hypotheses"] == [
             {
                 "source": "moshi",
                 "kind": "frontend_witness_hypothesis",
@@ -15800,49 +15812,17 @@ def test_session_client_interface_oracle_request_preserves_nested_evidence_bundl
                 "tool_authority": False,
                 "confidence": 0.57,
             },
-        )
-        metadata = request.to_metadata()
-        assert "tool_name" not in metadata
-        assert "arguments" not in metadata
-        assert metadata["kame_audit_id"] == "voiceclaw-audit-007"
-        assert metadata["kame_source_audit_id"] == "discord-audit-042"
-        assert metadata["kame_parent_audit_id"] == "discord-audit-041"
-
-        oracle_request = next(
-            event
-            for event in seen
-            if event.type == VoiceEventType.INTERFACE_ORACLE_REQUEST
-            and event.payload.get("job_id") == "voice-oracle-001"
-        )
-        assert oracle_request.payload["job_id"] == "voice-oracle-001"
-        assert oracle_request.payload["source"] == "voiceclaw"
-        assert oracle_request.payload["turn_id"] == "voice-123:voiceclaw:7"
-        assert oracle_request.payload["interface_input_source"] == "ask_brain"
-        assert oracle_request.payload["interface_tool_call_id"] == "voiceclaw-call-1"
-        assert oracle_request.payload["audit_id"] == "voiceclaw-audit-007"
-        assert oracle_request.payload["source_audit_id"] == "discord-audit-042"
-        assert oracle_request.payload["parent_audit_id"] == "discord-audit-041"
-        assert oracle_request.payload["raw_audio_available"] is True
-        assert oracle_request.payload["evidence_bundle_status"] == "primary_audio"
-        assert oracle_request.payload["audio_segment_ref"] == "artifact://voice/turn-7.wav"
+        ]
 
         tool_result = next(event for event in seen if event.type == VoiceEventType.TOOL_RESULT)
         assert tool_result.payload["tool_call_id"] == "voiceclaw-call-1"
         assert tool_result.payload["accepted"] is True
+        assert tool_result.payload["reflex_status"]["jobs"][0]["state"] == "waiting_for_interpreter"
         assert tool_result.payload["reflex_status"]["jobs"][0]["audit_id"] == "voiceclaw-audit-007"
         assert tool_result.payload["reflex_status"]["jobs"][0]["source_audit_id"] == "discord-audit-042"
         assert tool_result.payload["reflex_status"]["jobs"][0]["parent_audit_id"] == "discord-audit-041"
 
-        oracle.release.set()
-        async for event in session.events():
-            seen.append(event)
-            if event.type == VoiceEventType.ORACLE_JOB_COMPLETED:
-                break
         await session.close()
-        completed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_COMPLETED)
-        assert completed.payload["audit_id"] == "voiceclaw-audit-007"
-        assert completed.payload["source_audit_id"] == "discord-audit-042"
-        assert completed.payload["parent_audit_id"] == "discord-audit-041"
         durable_records = session.durable_oracle_records()
         serialized = json.dumps(durable_records, sort_keys=True)
         assert any(
