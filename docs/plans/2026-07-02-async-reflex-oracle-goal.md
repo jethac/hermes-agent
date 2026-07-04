@@ -45,6 +45,17 @@ not a competing ASR result and not a prerequisite for acknowledgement. The
 interpreter owns the accept/correct/reject decision and emits the first wording
 that can become durable user text.
 
+2026-07-04 acceptance refinement: implementation evidence should prove the
+packet order and the promotion boundary. The interpreter input order is
+`raw_audio`, `metadata`, `reflex`, then `transcript_hypotheses`. Moshi/Open-S2S
+or classic ASR text may arrive before, with, or after the raw-audio cut, but it
+must be recorded as a hypothesis and adjudicated separately from promoted
+wording. A passing artifact should show witness outcomes
+`accepted_as_supporting_evidence`, `corrected_by_audio`, or
+`rejected_or_diagnostic_only`, and should show that only
+`interpreter_promoted` or `oracle_promoted` fields reached durable history,
+tools, Stripe, NemoClaw, phone, memory, files, or external messages.
+
 Protocol decision: use `docs/kame-session-v1.md` as the packet contract for
 external and internal realtime frontends. The adapter may receive Moshi/open-S2S
 or classic-ASR witness text before the accepted audio cut, with the cut, or
@@ -213,6 +224,13 @@ path. Moshi/open-S2S transcript text and classic ASR text are allowed to enrich
 the interpreter request, but neither should delay acknowledgement, create a
 second oracle request, or be treated as the user's durable message before
 raw-audio-grounded interpreter promotion.
+
+Implementation corollary 2: do not implement this as "Gemma ASR in parallel."
+Gemma is the direct-audio interpreter over a bounded speech cut. It can behave
+like multilingual transcript adjudication after the cut, but it is not the
+live endpointer, not a competing STT provider, and not a separate conversation.
+The live endpointer remains VAD/energy/noise gating plus the reflex floor
+controller.
 
 Moshi-context corollary: if the live S2S/frontend emits a transcript-looking
 field, Hermes should preserve it because it is useful evidence about what the

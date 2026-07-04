@@ -428,10 +428,15 @@ Still remaining before this goal can be marked complete:
 7. Realtime path emits audio/reflex events first; transcript-looking partial
    or final events are optional witness hypotheses attached to the same
    raw-audio interpreter bundle when enabled.
-8. Hermes emits a fast acknowledgement for work that will take more than a
+8. The Gemma-style direct-audio interpreter receives raw audio first, then
+   metadata/reflex state, then optional Moshi/STT hypotheses; those hypotheses
+   are non-authoritative until interpreter promotion.
+9. Hermes' active `/model` remains the oracle; voice config does not select a
+   separate oracle model.
+10. Hermes emits a fast acknowledgement for work that will take more than a
    short moment.
-9. TTS/audio output is played through the mixer.
-10. User speech during playback triggers barge-in and stops speech promptly.
+11. TTS/audio output is played through the mixer.
+12. User speech during playback triggers barge-in and stops speech promptly.
 
 ### Degraded Legacy Session
 
@@ -439,7 +444,9 @@ Still remaining before this goal can be marked complete:
 2. Hermes joins and starts the receiver.
 3. Mixer or sidecar setup fails.
 4. Hermes explicitly reports degraded mode and reason.
-5. User speech is processed through legacy utterance buffering plus local STT.
+5. User speech may be processed through legacy utterance buffering plus local
+   STT or another text-only fallback, but that path is labeled degraded and
+   does not satisfy full-KAME/raw-audio readiness.
 6. TTS may use file playback.
 7. Barge-in still stops one-shot playback as best effort.
 8. `/voice status` shows degraded state and the active fallback reason.
@@ -632,6 +639,9 @@ TTS delay.
 - Preflight lazy voice dependencies during `/voice join` or `hermes doctor`.
 - Use a short acknowledgement for any request that will run tools or exceed a
   small latency threshold.
+- Do not wait for Moshi, classic ASR, or other transcript-hypothesis evidence
+  before the reflex acknowledgement or raw-audio interpreter request when a
+  speech cut is available.
 - Chunk spoken output by phrase/sentence instead of waiting for a whole final
   response.
 - Prefer streaming sidecar TTS when available.
@@ -640,6 +650,8 @@ TTS delay.
 **Acceptance criteria:**
 
 - First spoken acknowledgement can be emitted independently of final response.
+- First spoken acknowledgement is independent of optional Moshi/STT/ASR witness
+  evidence.
 - Chunked TTS starts before full oracle answer completion in realtime mode.
 - Logs include time to reflex acknowledgement, first assistant text/audio, and
   optional transcript-hypothesis latency when enabled.
@@ -697,6 +709,11 @@ TTS delay.
   - first input frame timestamp
   - optional transcript-hypothesis partial/final latency, labeled as
     non-authoritative evidence
+  - accepted audio segment id, VAD/noise-gate decision, and direct-audio
+    interpreter evidence status
+  - interpreter input order and prompt policy proving raw audio precedes
+    transcript hypotheses
+  - witness adjudication outcome and promoted-field authority when present
   - first audio output latency
   - TTS provider and duration
   - barge-in ack latency
@@ -801,3 +818,10 @@ uv run --extra dev --extra voice python -m pytest \
   acknowledgement, accepted audio cut, VAD/noise-gate decision, interpreter
   evidence, transcript-hypothesis attachment, oracle job timing, TTS/playback,
   barge-in, and shutdown timing.
+- The normal realtime path has no ASR evidence requirement before
+  acknowledgement or direct-audio interpretation.
+- Hermes oracle selection remains the existing active `/model`; there is no
+  Discord voice `oracle_model` override.
+- Transcript-looking output from Moshi, OpenClaw, VoiceClaw, classic ASR, or a
+  hosted realtime frontend remains hypothesis authority until interpreter or
+  oracle promotion.

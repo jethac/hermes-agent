@@ -178,6 +178,18 @@ the witness to recover clipped starts, names, numbers, or code-switched terms,
 but only its promoted fields may reach durable history or the active Hermes
 oracle as user wording.
 
+2026-07-04 implementation clarification: this does not mean "run Gemma ASR in
+parallel with Moshi." It means run one accepted speech cut through one
+direct-audio interpreter packet. The packet carries the waveform first, then
+metadata, then the reflex route/acknowledgement, then optional transcript
+hypotheses. Moshi, VoiceClaw/OpenClaw, classic ASR, or hosted realtime text can
+all be helpful witnesses, but they are never the prompt head, scheduler,
+durable transcript, or action authority. The interpreter output must keep two
+things separate: witness adjudication (`accepted_as_supporting_evidence`,
+`corrected_by_audio`, or `rejected_or_diagnostic_only`) and promoted fields
+(`interpreter_corrected_transcript`, normalized intent, entities, confidence)
+that may be handed to Hermes' active `/model`.
+
 | Tier | Primary input | Immediate output | Authority boundary |
 | --- | --- | --- | --- |
 | Reflex | live audio, VAD/energy, current session state | acknowledgement, barge-in, route, rough intent, optional witness transcript | floor control only; provisional `reflex_hypothesis` |
@@ -192,6 +204,13 @@ speaker identity, VAD/energy timing, or conversation state." This instruction
 belongs in the interpreter prompt. The oracle prompt should receive promoted
 wording and labeled evidence, not raw witness text masquerading as verified
 user speech.
+
+The normalized interpreter request should also make this trust order explicit
+with `interpreter_input_order = ["raw_audio", "metadata", "reflex", "transcript_hypotheses"]`.
+If raw audio is missing, the order and mode must say so and the turn is
+degraded compatibility. That degraded path is useful for bring-up and captions,
+but it must not satisfy full KAME, Stripe, NemoClaw, phone, memory, file,
+external-message, or durable-history gates.
 
 2026-07-04 confirmed packet contract: when a Moshi/OpenClaw/VoiceClaw-style
 frontend can provide both waveform and transcript-looking text, Hermes should
@@ -443,7 +462,14 @@ Acceptance artifacts for this contract must show:
 
 ## Purpose
 
-Hermes currently has KAME-compatible realtime voice plumbing: Discord voice transport, a realtime sidecar, streaming STT/TTS provider bridges, barge-in handling, mixer playback, and latency metrics. It is not yet a full KAME-style implementation because there is no lightweight, low-latency interface model acting as the human-facing conversational front end.
+Hermes currently has KAME-compatible realtime voice plumbing: Discord voice
+transport, a realtime sidecar, streaming speech provider bridges, barge-in
+handling, mixer playback, latency metrics, and the early interface/oracle
+session boundary. Full KAME production readiness still requires proving the
+live runtime shape end to end: a fast reflex in the user-facing loop, a
+Gemma-style direct-audio interpreter over accepted speech cuts, Hermes' active
+`/model` as the oracle, and evidence that transcript-looking side channels stay
+non-authoritative until promoted.
 
 Full KAME-style means:
 
@@ -1405,11 +1431,13 @@ Auxiliary transcript/fallback evidence events:
 - `transcript.final`
 - `reflex.transcript.hypothesis`
 
-Those names are legacy-compatible event names. In KAME mode each transcript event
-must carry explicit provenance: source, authority, turn id, audio segment id when
+Those names are legacy-compatible event names. In KAME mode they normalize into
+`transcript_hypotheses[]`, not verified transcript events. Each event must carry
+explicit provenance: source, authority, turn id, audio segment id when
 available, timing, confidence when available, and whether the evidence arrived
-before or after the interpreter/oracle job. `transcript.final` means final for
-that provider stream only; it does not mean verified user text.
+before the raw-audio cut, with the raw-audio cut, or after interpreter start.
+`transcript.final` means final for that provider stream only; it does not mean
+verified user text and must not directly patch `oracle_text`.
 
 Interpreter evidence events:
 
@@ -2144,7 +2172,7 @@ Already present:
 
 - Discord voice join/leave path
 - realtime sidecar path
-- streaming STT/TTS provider bridge path for fallback and bring-up
+- streaming speech provider bridge path for fallback and bring-up
 - Cartesia and ElevenLabs-style provider configuration for fallback,
   comparison, and outbound speech experiments
 - mixer playback path
@@ -2158,10 +2186,10 @@ Already present:
 - auxiliary transcript-hypothesis lane for escalated turns
 - ephemeral versus durable transcript policy at the session boundary
 - oracle hint streaming back to live interface providers
-- explicit KAME provenance for realtime-reflex, interpreter, and degraded
-  STT-fed fallback turns
-- visible degraded frontend fallback state when local STT is used because the
-  realtime reflex path is unavailable
+- explicit KAME provenance for realtime-reflex, interpreter, hypothesis
+  witnesses, and degraded text-only fallback turns
+- visible degraded frontend fallback state when raw audio or the realtime
+  reflex/interpreter path is unavailable
 - DGX Spark launch/profile generation for reflex, interpreter, oracle,
   auxiliary transcript, and TTS targets
 - benchmark matrix templates for local reflex, interpreter, and speech candidates
@@ -2175,6 +2203,8 @@ Remaining for full KAME production readiness:
 - Moshi/PersonaPlex-class or equivalent local reflex launch evidence from the
   actual target runtime
 - Gemma 4 interpreter launch evidence from the actual DGX Spark runtime
+- direct-audio interpreter evidence showing raw audio first, metadata/reflex
+  second, and Moshi/STT text only as optional `transcript_hypotheses[]`
 - DGX Spark / Nemotron 3 Super `max_concurrent=4` capacity evidence
 - benchmark evidence comparing reflex-only, Gemma interpreter, and
   Gemma-plus-optional-auxiliary-transcript oracle outcomes

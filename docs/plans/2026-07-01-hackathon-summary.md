@@ -95,6 +95,16 @@ route, the acknowledgement already spoken, and any Moshi/open-S2S or classic ASR
 hypotheses. It promotes only the evidence that is safe to hand to Hermes'
 active `/model`.
 
+In the video and operator docs, avoid presenting this as an ASR race. The
+stronger claim is that Hermes can hear through multiple sensors while trusting
+only the promoted result. The packet order is raw voice, metadata, reflex
+state, then transcript hypotheses. The visible result is a witness decision
+beside the promoted wording: Moshi/Open-S2S text may be accepted as supporting
+evidence, corrected by audio, or rejected as diagnostic only. Only the promoted
+interpreter/oracle fields can become the spend reason, provider choice, phone
+script, durable transcript, memory write, file write, external message, or tool
+argument.
+
 The demo should describe this as witness-assisted interpretation. If Moshi,
 VoiceClaw, OpenClaw, or another open-S2S frontend emits an STT-like transcript,
 Hermes should send that text to Gemma with the same raw voice clip, not around
@@ -166,6 +176,13 @@ Discord/phone audio
   -> Gemma interpreter: accept, correct, or reject witness hypotheses
   -> Hermes active /model oracle: business action, Stripe, NemoClaw, phone
 ```
+
+The demo artifact should show the interpreter input order explicitly:
+`raw_audio -> metadata -> reflex -> transcript_hypotheses`. If raw audio is not
+present, that turn is a degraded compatibility path. It may still be useful for
+fallback narration or captions, but it is not the proof path for full KAME,
+Stripe spending, NemoClaw execution, phone calls, memory, files, external
+messages, or Spark-local readiness.
 
 Moshi, VoiceClaw, OpenClaw, and classic ASR are not competing "hearing layers"
 in the story. They are witness producers. If they emit text, that text helps

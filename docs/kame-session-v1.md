@@ -165,6 +165,13 @@ This ordering is part of the trust model. It tells the interpreter that
 transcript-looking text is context for comparing against the waveform, not the
 user message of record.
 
+Normalized packets should carry that ordering explicitly as
+`interpreter_input_order = ["raw_audio", "metadata", "reflex", "transcript_hypotheses"]`.
+This is intentionally boring metadata, but it prevents later adapters from
+turning Moshi text, classic ASR, or a reflex caption into the first prompt item
+Gemma sees. If raw audio is absent, the packet must omit `raw_audio` from the
+order, set degraded compatibility mode, and fail full-KAME/action-gate proofs.
+
 ## Transcript Hypothesis Semantics
 
 Adapters should prefer these `kind` values:
@@ -215,6 +222,38 @@ fields, and only after the interpreter emits those promoted fields. Rejected or
 diagnostic hypotheses remain visible in audit records but cannot become durable
 history, tool arguments, spend reasons, provider selections, phone payloads,
 memory writes, file writes, or external messages.
+
+The interpreter result should preserve the witness decision separately from the
+promoted wording. The minimum result shape is:
+
+```json
+{
+  "authority": "interpreter_promoted",
+  "interpreter_input_order": ["raw_audio", "metadata", "reflex", "transcript_hypotheses"],
+  "interpreter_corrected_transcript": "prepare the phone handoff",
+  "interpreter_normalized_intent": "Prepare a phone handoff.",
+  "promoted_fields_authority": {
+    "interpreter_corrected_transcript": "interpreter_promoted",
+    "interpreter_normalized_intent": "interpreter_promoted"
+  },
+  "witness_adjudications": [
+    {
+      "source": "moshi",
+      "kind": "frontend_witness_hypothesis",
+      "arrival_phase": "with_raw_audio",
+      "outcome": "corrected_by_audio",
+      "authority": "hypothesis",
+      "tool_authority": false
+    }
+  ]
+}
+```
+
+This separation is what lets Hermes include a Moshi/Open-S2S transcript beside
+raw voice without making that text the user's message. A useful witness can
+shape promoted wording only through `interpreter_promoted` fields. A bad
+witness remains visible for debugging and safety review, but does not reach the
+oracle as durable user text.
 
 ### Moshi Witness Attachment
 
