@@ -2095,6 +2095,36 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
         async_unpromoted_sink_values = {}
     elif async_unpromoted_sink_values:
         issues.append("voice_operator_readiness:async_oracle_smoke.unpromoted_hypothesis_action_sink_values_not_empty")
+    external_frontend_transcript_hypotheses = async_smoke.get(
+        "external_frontend_transcript_hypotheses"
+    )
+    if (
+        not isinstance(external_frontend_transcript_hypotheses, list)
+        or not external_frontend_transcript_hypotheses
+    ):
+        if external_frontend_transcript_hypotheses is None:
+            issues.append(
+                "voice_operator_readiness:async_oracle_smoke.external_frontend_transcript_hypotheses_missing"
+            )
+        elif not isinstance(external_frontend_transcript_hypotheses, list):
+            issues.append(
+                "voice_operator_readiness:async_oracle_smoke.external_frontend_transcript_hypotheses_not_list"
+            )
+        else:
+            issues.append(
+                "voice_operator_readiness:async_oracle_smoke.external_frontend_transcript_hypotheses_empty"
+            )
+    legacy_external_frontend_hypotheses = async_smoke.get(
+        "external_frontend_auxiliary_transcript_hypotheses"
+    )
+    if (
+        isinstance(legacy_external_frontend_hypotheses, list)
+        and legacy_external_frontend_hypotheses
+        and external_frontend_transcript_hypotheses != legacy_external_frontend_hypotheses
+    ):
+        issues.append(
+            "voice_operator_readiness:async_oracle_smoke.external_frontend_transcript_hypotheses_auxiliary_mismatch"
+        )
     cleanup_smoke = (
         readiness.get("discord_session_cleanup_smoke")
         if isinstance(readiness.get("discord_session_cleanup_smoke"), Mapping)
@@ -2158,6 +2188,10 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
         issues=issues,
     )
     async_proof = proofs.get("async_oracle_jobs") if isinstance(proofs.get("async_oracle_jobs"), Mapping) else {}
+    if "external_frontend_transcript_hypotheses" not in async_proof:
+        issues.append(
+            "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_transcript_hypotheses_missing"
+        )
     _compare_proof_fields(
         label="async_oracle_jobs",
         proof=async_proof,
@@ -2491,6 +2525,14 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "external_frontend_evidence_bundle_transcript_hypotheses_count": async_smoke.get(
                 "external_frontend_evidence_bundle_transcript_hypotheses_count"
             ),
+            "external_frontend_transcript_hypotheses": async_smoke.get(
+                "external_frontend_transcript_hypotheses"
+            )
+            or [],
+            "external_frontend_auxiliary_transcript_hypotheses": async_smoke.get(
+                "external_frontend_auxiliary_transcript_hypotheses"
+            )
+            or [],
             "external_frontend_witness_kind": async_smoke.get("external_frontend_witness_kind"),
             "external_frontend_witness_kind_frontend_hypothesis": bool(
                 async_smoke.get("external_frontend_witness_kind_frontend_hypothesis")

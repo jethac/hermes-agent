@@ -340,6 +340,49 @@ def test_package_audit_rejects_async_oracle_plan_projection_drift(tmp_path):
     )
 
 
+def test_package_audit_rejects_missing_async_oracle_canonical_external_frontend_transcript_hypotheses(
+    tmp_path,
+):
+    artifact_root = _generate_package(tmp_path)
+    voice_dir = artifact_root / "voiceops-voice-operator" / "current"
+
+    smoke_path = voice_dir / "async-oracle-smoke.json"
+    smoke = json.loads(smoke_path.read_text(encoding="utf-8"))
+    smoke.pop("external_frontend_transcript_hypotheses")
+    _write_json(smoke_path, smoke)
+
+    readiness_path = voice_dir / "voice-operator-readiness.json"
+    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    readiness["async_oracle_smoke"].pop("external_frontend_transcript_hypotheses")
+    _write_json(readiness_path, readiness)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "voice_operator_readiness:async_oracle_smoke.external_frontend_transcript_hypotheses_missing"
+        in report["issues"]
+    )
+
+
+def test_package_audit_rejects_missing_async_oracle_proof_external_frontend_transcript_hypotheses(
+    tmp_path,
+):
+    artifact_root = _generate_package(tmp_path)
+    readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
+    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    readiness["proofs"]["async_oracle_jobs"].pop("external_frontend_transcript_hypotheses")
+    _write_json(readiness_path, readiness)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_transcript_hypotheses_missing"
+        in report["issues"]
+    )
+
+
 def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     artifact_root = _generate_package(tmp_path)
     readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
@@ -366,6 +409,7 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_evidence_merge_key"] = "kame-merge-wrong"
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_evidence_merge_key_propagated"] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_evidence_bundle_single_turn"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_transcript_hypotheses"] = []
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_protocol"] = "legacy_voiceclaw"
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_protocol_contract"] = "docs/old.md"
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_status_audit_id"] = "wrong-status-audit"
@@ -570,6 +614,10 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_evidence_bundle_single_turn_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_transcript_hypotheses_mismatch"
         in report["issues"]
     )
     assert (

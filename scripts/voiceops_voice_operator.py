@@ -3568,8 +3568,15 @@ def build_voice_operator_report(
             "external_frontend_audio_time_range_ms": async_oracle_smoke.get(
                 "external_frontend_audio_time_range_ms"
             ),
+            "external_frontend_transcript_hypotheses": list(
+                async_oracle_smoke.get("external_frontend_transcript_hypotheses")
+                or async_oracle_smoke.get("external_frontend_auxiliary_transcript_hypotheses")
+                or []
+            ),
             "external_frontend_auxiliary_transcript_hypotheses": list(
-                async_oracle_smoke.get("external_frontend_auxiliary_transcript_hypotheses") or []
+                async_oracle_smoke.get("external_frontend_transcript_hypotheses")
+                or async_oracle_smoke.get("external_frontend_auxiliary_transcript_hypotheses")
+                or []
             ),
             "external_frontend_witness_kind": async_oracle_smoke.get("external_frontend_witness_kind"),
             "external_frontend_witness_kind_frontend_hypothesis": bool(

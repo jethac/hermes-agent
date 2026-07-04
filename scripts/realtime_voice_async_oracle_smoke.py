@@ -1815,6 +1815,9 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         if request is not None
         else ()
     )
+    external_frontend_transcript_hypotheses = [
+        dict(item) for item in auxiliary_hypotheses if isinstance(item, Mapping)
+    ]
     first_auxiliary_hypothesis = (
         auxiliary_hypotheses[0]
         if auxiliary_hypotheses and isinstance(auxiliary_hypotheses[0], Mapping)
@@ -1998,11 +2001,8 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         "external_frontend_audio_time_range_ms": list(getattr(request, "audio_time_range_ms", ()))
         if request is not None
         else [],
-        "external_frontend_auxiliary_transcript_hypotheses": [
-            dict(item) for item in auxiliary_hypotheses
-        ]
-        if request is not None
-        else [],
+        "external_frontend_transcript_hypotheses": external_frontend_transcript_hypotheses,
+        "external_frontend_auxiliary_transcript_hypotheses": external_frontend_transcript_hypotheses,
         "external_frontend_witness_kind": witness_kind,
         "external_frontend_witness_kind_frontend_hypothesis": witness_kind_frontend_hypothesis,
         "external_frontend_witness_metadata": witness_metadata,
@@ -5200,6 +5200,9 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "external_frontend_audio_time_range_ms": external_frontend_bridge_smoke[
             "external_frontend_audio_time_range_ms"
+        ],
+        "external_frontend_transcript_hypotheses": external_frontend_bridge_smoke[
+            "external_frontend_transcript_hypotheses"
         ],
         "external_frontend_auxiliary_transcript_hypotheses": external_frontend_bridge_smoke[
             "external_frontend_auxiliary_transcript_hypotheses"

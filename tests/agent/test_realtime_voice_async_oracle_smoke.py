@@ -231,6 +231,18 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_evidence_bundle_transcript_hypotheses_count"] == 2
     assert report["external_frontend_audio_segment_ref"] == "artifact://voiceclaw/turn-1.wav"
     assert report["external_frontend_audio_time_range_ms"] == [100, 2100]
+    assert report["external_frontend_transcript_hypotheses"][0]["source"] == "moshi"
+    assert report["external_frontend_transcript_hypotheses"][0]["role"] == "witness_context"
+    assert report["external_frontend_transcript_hypotheses"][0]["authority"] == "hypothesis"
+    assert (
+        report["external_frontend_transcript_hypotheses"][0]["promotion_required"]
+        == "interpreter_promoted_or_oracle_promoted"
+    )
+    assert report["external_frontend_transcript_hypotheses"][0]["tool_authority"] is False
+    assert (
+        report["external_frontend_auxiliary_transcript_hypotheses"]
+        == report["external_frontend_transcript_hypotheses"]
+    )
     assert report["external_frontend_auxiliary_transcript_hypotheses"][0]["source"] == "moshi"
     assert report["external_frontend_auxiliary_transcript_hypotheses"][0]["role"] == "witness_context"
     assert report["external_frontend_auxiliary_transcript_hypotheses"][0]["authority"] == "hypothesis"

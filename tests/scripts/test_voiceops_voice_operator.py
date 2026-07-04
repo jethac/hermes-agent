@@ -359,6 +359,33 @@ def _async_oracle_smoke_payload() -> dict:
         "external_frontend_evidence_bundle_transcript_hypotheses_count": 1,
         "external_frontend_audio_segment_ref": "artifact://voiceclaw/turn-1.wav",
         "external_frontend_audio_time_range_ms": [100, 2100],
+        "external_frontend_transcript_hypotheses": [
+            {
+                "source": "moshi",
+                "kind": "frontend_witness_hypothesis",
+                "text": "prepare an external kame handoff",
+                "role": "witness_context",
+                "authority": "hypothesis",
+                "promotion_required": "interpreter_promoted_or_oracle_promoted",
+                "tool_authority": False,
+                "confidence": 0.78,
+                "latency_ms": 140,
+                "partial": False,
+                "audio_time_range_ms": [120, 2080],
+                "speaker": {
+                    "platform": "discord",
+                    "channel_user_id": "jetha-redacted",
+                    "display_name": "jetha",
+                    "is_bot": False,
+                },
+                "channel": {
+                    "transport": "discord_voice",
+                    "guild_id": "guild-redacted",
+                    "channel_id": "general-redacted",
+                    "surface": "desk_voice",
+                },
+            }
+        ],
         "external_frontend_auxiliary_transcript_hypotheses": [
             {
                 "source": "moshi",
@@ -1495,28 +1522,32 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     )
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_audio_time_range_ms"] == [100, 2100]
     assert (
-        report["proofs"]["async_oracle_jobs"]["external_frontend_auxiliary_transcript_hypotheses"][0][
+        report["proofs"]["async_oracle_jobs"]["external_frontend_transcript_hypotheses"][0][
             "authority"
         ]
         == "hypothesis"
     )
     assert (
-        report["proofs"]["async_oracle_jobs"]["external_frontend_auxiliary_transcript_hypotheses"][0][
+        report["proofs"]["async_oracle_jobs"]["external_frontend_transcript_hypotheses"][0][
             "role"
         ]
         == "witness_context"
     )
     assert (
-        report["proofs"]["async_oracle_jobs"]["external_frontend_auxiliary_transcript_hypotheses"][0][
+        report["proofs"]["async_oracle_jobs"]["external_frontend_transcript_hypotheses"][0][
             "promotion_required"
         ]
         == "interpreter_promoted_or_oracle_promoted"
     )
     assert (
-        report["proofs"]["async_oracle_jobs"]["external_frontend_auxiliary_transcript_hypotheses"][0][
+        report["proofs"]["async_oracle_jobs"]["external_frontend_transcript_hypotheses"][0][
             "kind"
         ]
         == "frontend_witness_hypothesis"
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_auxiliary_transcript_hypotheses"]
+        == report["proofs"]["async_oracle_jobs"]["external_frontend_transcript_hypotheses"]
     )
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_witness_kind"] == "frontend_witness_hypothesis"
     assert (
