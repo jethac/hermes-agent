@@ -2360,11 +2360,19 @@ def build_voice_operator_report(
             "mixer_frame_bytes": smoke.get("mixer_frame_bytes"),
         },
         "barge_in_energy": {
-            "ok": coverage["barge_in_stops_playback"],
+            "ok": coverage["barge_in_stops_playback"]
+            and async_oracle_coverage["energy_gate_ignores_non_speech_without_work"],
             "reaction_proven": bool(smoke.get("barge_in_sent")),
             "speech_energy_event_forwarded": bool(smoke.get("speech_energy_sent")),
-            "energy_gate_proven_by_smoke": False,
+            "energy_gate_proven_by_smoke": async_oracle_coverage[
+                "energy_gate_ignores_non_speech_without_work"
+            ],
             "energy_gate_covered_by_tests": True,
+            "energy_gate_ignored_non_speech_packets": async_oracle_smoke.get(
+                "energy_gate_ignored_non_speech_packets"
+            ),
+            "energy_gate_barge_in_events": async_oracle_smoke.get("energy_gate_barge_in_events"),
+            "energy_gate_oracle_work_events": async_oracle_smoke.get("energy_gate_oracle_work_events"),
             "stop_called": int(smoke.get("mixer_stop_calls") or 0) >= 1,
             "external_test_refs": BARGE_IN_ENERGY_TEST_REFS,
         },
@@ -3419,6 +3427,13 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
             issues.append(f"missing_async_oracle_coverage:{key}")
         if async_oracle_coverage.get(key) is not recomputed_async_oracle_coverage.get(key):
             issues.append(f"stale_async_oracle_coverage:{key}")
+    barge_proof = report.get("proofs", {}).get("barge_in_energy", {})
+    if not isinstance(barge_proof, Mapping):
+        issues.append("missing_proof:barge_in_energy")
+    elif barge_proof.get("energy_gate_proven_by_smoke") is not recomputed_async_oracle_coverage.get(
+        "energy_gate_ignores_non_speech_without_work"
+    ):
+        issues.append("stale_proof:barge_in_energy.energy_gate_proven_by_smoke")
     tool_disclosure_smoke = report.get("tool_disclosure_smoke", {})
     tool_disclosure = report.get("proofs", {}).get("tool_disclosure", {})
     if not isinstance(tool_disclosure_smoke, Mapping) or tool_disclosure_smoke.get("ok") is not True:

@@ -820,9 +820,13 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["lifecycle"]["sidecar_closed"] is True
     assert report["proofs"]["callback_wiring"]["loopback_bypasses_live_discord_receiver"] is True
     assert report["proofs"]["pcm_conversion"]["sidecar_pcm16_first_sample"] == 450
+    assert report["proofs"]["barge_in_energy"]["ok"] is True
     assert report["proofs"]["barge_in_energy"]["speech_energy_event_forwarded"] is True
-    assert report["proofs"]["barge_in_energy"]["energy_gate_proven_by_smoke"] is False
+    assert report["proofs"]["barge_in_energy"]["energy_gate_proven_by_smoke"] is True
     assert report["proofs"]["barge_in_energy"]["energy_gate_covered_by_tests"] is True
+    assert report["proofs"]["barge_in_energy"]["energy_gate_ignored_non_speech_packets"] >= 2
+    assert report["proofs"]["barge_in_energy"]["energy_gate_barge_in_events"] == 0
+    assert report["proofs"]["barge_in_energy"]["energy_gate_oracle_work_events"] == 0
     assert report["proofs"]["shutdown"]["close_timeout_bounded"] is True
     assert report["proofs"]["async_oracle_jobs"]["ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["kind"] == "async_oracle_smoke"
@@ -1682,6 +1686,15 @@ def test_voice_operator_validation_rejects_energy_gate_work_from_noise():
     assert "missing_async_oracle_coverage:energy_gate_ignores_non_speech_without_work" in issues
     assert "stale_async_oracle_coverage:energy_gate_ignores_non_speech_without_work" in issues
     assert "missing_async_oracle_acceptance:energy_gate_ignores_non_speech_without_work" in issues
+
+
+def test_voice_operator_validation_rejects_stale_barge_in_energy_gate_proof():
+    report = _voice_operator_report()
+    report["proofs"]["barge_in_energy"]["energy_gate_proven_by_smoke"] = False
+
+    issues = validate_voice_operator_report(report)
+
+    assert "stale_proof:barge_in_energy.energy_gate_proven_by_smoke" in issues
 
 
 def test_voice_operator_validation_rejects_async_approval_secret_leak():

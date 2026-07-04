@@ -1818,6 +1818,23 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
         },
         issues=issues,
     )
+    barge_in_proof = proofs.get("barge_in_energy") if isinstance(proofs.get("barge_in_energy"), Mapping) else {}
+    _compare_proof_fields(
+        label="barge_in_energy",
+        proof=barge_in_proof,
+        expected={
+            "reaction_proven": bool(smoke.get("barge_in_sent")),
+            "speech_energy_event_forwarded": bool(smoke.get("speech_energy_sent")),
+            "energy_gate_proven_by_smoke": bool(async_smoke.get("energy_gate_smoke_ok")),
+            "energy_gate_ignored_non_speech_packets": async_smoke.get(
+                "energy_gate_ignored_non_speech_packets"
+            ),
+            "energy_gate_barge_in_events": async_smoke.get("energy_gate_barge_in_events"),
+            "energy_gate_oracle_work_events": async_smoke.get("energy_gate_oracle_work_events"),
+            "stop_called": int(smoke.get("mixer_stop_calls") or 0) >= 1,
+        },
+        issues=issues,
+    )
     async_proof = proofs.get("async_oracle_jobs") if isinstance(proofs.get("async_oracle_jobs"), Mapping) else {}
     _compare_proof_fields(
         label="async_oracle_jobs",

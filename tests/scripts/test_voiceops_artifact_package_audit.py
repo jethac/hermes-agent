@@ -188,6 +188,27 @@ def test_package_audit_rejects_pcm_conversion_proof_drift(tmp_path):
     assert "voice_operator_readiness:proofs.pcm_conversion.sidecar_pcm16_checksum_mismatch" in report["issues"]
 
 
+def test_package_audit_rejects_barge_in_energy_proof_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
+    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    readiness["proofs"]["barge_in_energy"]["energy_gate_proven_by_smoke"] = False
+    readiness["proofs"]["barge_in_energy"]["energy_gate_barge_in_events"] = 1
+    _write_json(readiness_path, readiness)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "voice_operator_readiness:proofs.barge_in_energy.energy_gate_proven_by_smoke_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.barge_in_energy.energy_gate_barge_in_events_mismatch"
+        in report["issues"]
+    )
+
+
 def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     artifact_root = _generate_package(tmp_path)
     readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
