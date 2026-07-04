@@ -1012,7 +1012,8 @@ Make the same operator reachable beyond Discord:
 - phone/SMS path designed around Twilio or equivalent provisioning
 - VoiceClaw/OpenClaw-compatible KAME bridge shape documented so external
   realtime clients can submit user turns, receive reflex speech/status, and
-  track oracle jobs without bypassing Hermes authority
+  track oracle jobs without bypassing Hermes authority; the current wire
+  contract is `docs/kame-session-v1.md`
 - channel-specific authorization rules
 - escalation policy for urgent household/business events
 - consistent audit IDs across Discord, WhatsApp, and phone/SMS

@@ -1783,6 +1783,12 @@ async def build_plan_run_async(
                     "external_frontend_tool_result_observed": voice_operator["proofs"]["async_oracle_jobs"][
                         "external_frontend_tool_result_observed"
                     ],
+                    "external_frontend_protocol": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_protocol"
+                    ],
+                    "external_frontend_protocol_contract": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_protocol_contract"
+                    ],
                     "external_frontend_job_id": voice_operator["proofs"]["async_oracle_jobs"][
                         "external_frontend_job_id"
                     ],
@@ -1811,6 +1817,12 @@ async def build_plan_run_async(
                     "external_frontend_parent_audit_id": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_parent_audit_id"],
+                    "external_frontend_status_audit_id": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_status_audit_id"],
+                    "external_frontend_completion_audit_id": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_completion_audit_id"],
                     "external_frontend_audit_id_continuity_observed": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_audit_id_continuity_observed"],
@@ -1863,6 +1875,38 @@ async def build_plan_run_async(
                     "external_frontend_witness_kind_frontend_hypothesis": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_witness_kind_frontend_hypothesis"],
+                    "external_frontend_witness_metadata": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "external_frontend_witness_metadata"
+                        ]
+                    ),
+                    "external_frontend_witness_metadata_complete": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_witness_metadata_complete"],
+                    "external_frontend_witness_confidence": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_witness_confidence"],
+                    "external_frontend_witness_latency_ms": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_witness_latency_ms"],
+                    "external_frontend_witness_partial": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_witness_partial"],
+                    "external_frontend_witness_audio_time_range_ms": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "external_frontend_witness_audio_time_range_ms"
+                        ]
+                    ),
+                    "external_frontend_witness_speaker": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "external_frontend_witness_speaker"
+                        ]
+                    ),
+                    "external_frontend_witness_channel": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "external_frontend_witness_channel"
+                        ]
+                    ),
                     "external_frontend_witness_tool_authority_false": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_witness_tool_authority_false"],

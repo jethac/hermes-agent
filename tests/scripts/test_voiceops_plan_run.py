@@ -1353,6 +1353,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_tool_authority_false"]
         is True
     )
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_protocol"] == "kame_session_v1"
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["external_frontend_protocol_contract"]
+        == "docs/kame-session-v1.md"
+    )
     assert (
         voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_kind"]
         == "frontend_witness_hypothesis"
@@ -1362,6 +1367,37 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
             "external_frontend_witness_kind_frontend_hypothesis"
         ]
         is True
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["external_frontend_status_audit_id"]
+        == "voiceclaw-audit-001"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["external_frontend_completion_audit_id"]
+        == "voiceclaw-audit-001"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_metadata_complete"]
+        is True
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_confidence"] == 0.78
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_latency_ms"] == 140
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_partial"] is False
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_audio_time_range_ms"] == [
+        120,
+        2080,
+    ]
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_speaker"][
+            "channel_user_id"
+        ]
+        == "jetha-redacted"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_channel"][
+            "channel_id"
+        ]
+        == "general-redacted"
     )
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_durable_user_messages_empty"] is True
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_durable_oracle_text_absent"] is True

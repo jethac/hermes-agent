@@ -1734,6 +1734,11 @@ When enabled, this API accepts normalized session events and emits the same
 reflex/oracle/job stream used by Discord. It is not a second agent loop and it
 does not expose Hermes tools directly.
 
+The wire contract is `kame_session_v1`, documented in
+`docs/kame-session-v1.md`. Headless smoke artifacts must expose both the
+protocol id and the contract path so package audit can detect frontend bridge
+drift.
+
 The GUI environment page should expose provider/model/base URL settings for:
 
 - reflex model
@@ -1902,7 +1907,7 @@ Deliverables:
 
 - KAME session API specification for audio/text input, playback control,
   reflex replies, oracle job submission, status, cancellation, and terminal
-  results
+  results; current draft: `docs/kame-session-v1.md`
 - compatibility map from `ask_brain`/`openclaw_agent_consult` to Hermes oracle
   jobs
 - auth and scope rules for external realtime clients

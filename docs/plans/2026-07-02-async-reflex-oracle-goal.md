@@ -354,6 +354,8 @@ speaker/channel guess, and partial/final state when present. The waveform and
 witness text should share one `turn_id`, one stable `evidence_bundle_id`, and
 one audio-aware `evidence_merge_key`; they should not create separate Hermes
 messages or separate oracle jobs.
+The transport-neutral wire contract for that packet is `kame_session_v1` in
+`docs/kame-session-v1.md`.
 When the interpreter rejects witness text because its speaker, channel, or
 timing metadata conflicts with the canonical speech cut, the evidence bundle
 should preserve typed `rejection_reasons` such as `wrong_speaker`,

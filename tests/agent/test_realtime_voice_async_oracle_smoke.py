@@ -146,6 +146,8 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_bridge_smoke_ok"] is True
     assert report["external_frontend_request_accepted"] is True
     assert report["external_frontend_tool_result_observed"] is True
+    assert report["external_frontend_protocol"] == "kame_session_v1"
+    assert report["external_frontend_protocol_contract"] == "docs/kame-session-v1.md"
     assert report["external_frontend_job_id"] == "voice-oracle-001"
     assert report["external_frontend_provider"] == "voiceclaw"
     assert report["external_frontend_tool"] == "ask_brain"
@@ -184,6 +186,13 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_auxiliary_transcript_hypotheses"][0]["source"] == "moshi"
     assert report["external_frontend_auxiliary_transcript_hypotheses"][0]["authority"] == "hypothesis"
     assert report["external_frontend_auxiliary_transcript_hypotheses"][0]["tool_authority"] is False
+    assert report["external_frontend_witness_metadata_complete"] is True
+    assert report["external_frontend_witness_confidence"] == 0.78
+    assert report["external_frontend_witness_latency_ms"] == 140
+    assert report["external_frontend_witness_partial"] is False
+    assert report["external_frontend_witness_audio_time_range_ms"] == [120, 2080]
+    assert report["external_frontend_witness_speaker"]["channel_user_id"] == "jetha-redacted"
+    assert report["external_frontend_witness_channel"]["channel_id"] == "general-redacted"
     assert report["external_frontend_witness_tool_authority_false"] is True
     assert report["external_frontend_hypothesis_not_durable_oracle_text"] is True
     assert report["external_frontend_durable_user_messages_empty"] is True

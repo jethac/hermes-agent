@@ -1467,6 +1467,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
             session_id="voice-smoke-external-frontend",
             sequence=1,
             payload={
+                "protocol": "kame_session_v1",
                 "tool": "ask_brain",
                 "tool_call_id": "voiceclaw-call-1",
                 "provider": "voiceclaw",
@@ -1487,6 +1488,20 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
                         "text": "prepare an external kame handoff",
                         "confidence": 0.78,
                         "latency_ms": 140,
+                        "partial": False,
+                        "audio_time_range_ms": [120, 2080],
+                        "speaker": {
+                            "platform": "discord",
+                            "channel_user_id": "jetha-redacted",
+                            "display_name": "jetha",
+                            "is_bot": False,
+                        },
+                        "channel": {
+                            "transport": "discord_voice",
+                            "guild_id": "guild-redacted",
+                            "channel_id": "general-redacted",
+                            "surface": "desk_voice",
+                        },
                     }
                 ],
                 "interface_already_said": "I'm preparing the handoff.",
@@ -1614,6 +1629,20 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
     )
     witness_kind = str(first_auxiliary_hypothesis.get("kind") or "")
     witness_kind_frontend_hypothesis = witness_kind == "frontend_witness_hypothesis"
+    witness_metadata = dict(first_auxiliary_hypothesis)
+    witness_metadata_complete = (
+        witness_metadata.get("source") == "moshi"
+        and witness_metadata.get("confidence") == 0.78
+        and witness_metadata.get("latency_ms") == 140
+        and witness_metadata.get("partial") is False
+        and tuple(witness_metadata.get("audio_time_range_ms") or ()) == (120, 2080)
+        and isinstance(witness_metadata.get("speaker"), Mapping)
+        and witness_metadata["speaker"].get("channel_user_id") == "jetha-redacted"
+        and witness_metadata["speaker"].get("is_bot") is False
+        and isinstance(witness_metadata.get("channel"), Mapping)
+        and witness_metadata["channel"].get("transport") == "discord_voice"
+        and witness_metadata["channel"].get("channel_id") == "general-redacted"
+    )
     evidence_bundle_propagated = (
         request is not None
         and getattr(request, "audio_segment_ref", "") == "artifact://voiceclaw/turn-1.wav"
@@ -1623,6 +1652,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and first_auxiliary_hypothesis.get("authority") == "hypothesis"
         and first_auxiliary_hypothesis.get("tool_authority") is False
         and witness_kind_frontend_hypothesis
+        and witness_metadata_complete
     )
     provisional_summary = (
         dict(getattr(request, "provisional_request_summary", {}) or {})
@@ -1712,6 +1742,8 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and audit_id_continuity_observed
         and not direct_tool_authority_exposed
         and status_job.get("state") == "completed",
+        "external_frontend_protocol": "kame_session_v1",
+        "external_frontend_protocol_contract": "docs/kame-session-v1.md",
         "external_frontend_request_accepted": tool_result.payload.get("accepted") is True,
         "external_frontend_tool_result_observed": True,
         "external_frontend_job_id": job_id,
@@ -1762,6 +1794,16 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         else [],
         "external_frontend_witness_kind": witness_kind,
         "external_frontend_witness_kind_frontend_hypothesis": witness_kind_frontend_hypothesis,
+        "external_frontend_witness_metadata": witness_metadata,
+        "external_frontend_witness_metadata_complete": witness_metadata_complete,
+        "external_frontend_witness_confidence": witness_metadata.get("confidence"),
+        "external_frontend_witness_latency_ms": witness_metadata.get("latency_ms"),
+        "external_frontend_witness_partial": witness_metadata.get("partial"),
+        "external_frontend_witness_audio_time_range_ms": list(
+            witness_metadata.get("audio_time_range_ms") or []
+        ),
+        "external_frontend_witness_speaker": dict(witness_metadata.get("speaker") or {}),
+        "external_frontend_witness_channel": dict(witness_metadata.get("channel") or {}),
         "external_frontend_witness_tool_authority_false": all(
             item.get("tool_authority") is False
             for item in auxiliary_hypotheses
@@ -4262,6 +4304,12 @@ async def run_smoke() -> dict[str, Any]:
             "sidecar_control_feedback_cancel_sent"
         ],
         "external_frontend_bridge_smoke_ok": external_frontend_bridge_smoke["ok"],
+        "external_frontend_protocol": external_frontend_bridge_smoke[
+            "external_frontend_protocol"
+        ],
+        "external_frontend_protocol_contract": external_frontend_bridge_smoke[
+            "external_frontend_protocol_contract"
+        ],
         "external_frontend_request_accepted": external_frontend_bridge_smoke[
             "external_frontend_request_accepted"
         ],
@@ -4367,6 +4415,30 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "external_frontend_witness_kind_frontend_hypothesis": external_frontend_bridge_smoke[
             "external_frontend_witness_kind_frontend_hypothesis"
+        ],
+        "external_frontend_witness_metadata": external_frontend_bridge_smoke[
+            "external_frontend_witness_metadata"
+        ],
+        "external_frontend_witness_metadata_complete": external_frontend_bridge_smoke[
+            "external_frontend_witness_metadata_complete"
+        ],
+        "external_frontend_witness_confidence": external_frontend_bridge_smoke[
+            "external_frontend_witness_confidence"
+        ],
+        "external_frontend_witness_latency_ms": external_frontend_bridge_smoke[
+            "external_frontend_witness_latency_ms"
+        ],
+        "external_frontend_witness_partial": external_frontend_bridge_smoke[
+            "external_frontend_witness_partial"
+        ],
+        "external_frontend_witness_audio_time_range_ms": external_frontend_bridge_smoke[
+            "external_frontend_witness_audio_time_range_ms"
+        ],
+        "external_frontend_witness_speaker": external_frontend_bridge_smoke[
+            "external_frontend_witness_speaker"
+        ],
+        "external_frontend_witness_channel": external_frontend_bridge_smoke[
+            "external_frontend_witness_channel"
         ],
         "external_frontend_witness_tool_authority_false": external_frontend_bridge_smoke[
             "external_frontend_witness_tool_authority_false"

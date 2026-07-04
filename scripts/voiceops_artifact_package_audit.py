@@ -2048,6 +2048,10 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "external_frontend_tool_result_observed": bool(
                 async_smoke.get("external_frontend_tool_result_observed")
             ),
+            "external_frontend_protocol": async_smoke.get("external_frontend_protocol"),
+            "external_frontend_protocol_contract": async_smoke.get(
+                "external_frontend_protocol_contract"
+            ),
             "external_frontend_job_id": async_smoke.get("external_frontend_job_id"),
             "external_frontend_provider": async_smoke.get("external_frontend_provider"),
             "external_frontend_tool": async_smoke.get("external_frontend_tool"),
@@ -2062,6 +2066,10 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "external_frontend_audit_id": async_smoke.get("external_frontend_audit_id"),
             "external_frontend_source_audit_id": async_smoke.get("external_frontend_source_audit_id"),
             "external_frontend_parent_audit_id": async_smoke.get("external_frontend_parent_audit_id"),
+            "external_frontend_status_audit_id": async_smoke.get("external_frontend_status_audit_id"),
+            "external_frontend_completion_audit_id": async_smoke.get(
+                "external_frontend_completion_audit_id"
+            ),
             "external_frontend_audit_id_continuity_observed": bool(
                 async_smoke.get("external_frontend_audit_id_continuity_observed")
             ),
@@ -2111,6 +2119,29 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "external_frontend_witness_kind": async_smoke.get("external_frontend_witness_kind"),
             "external_frontend_witness_kind_frontend_hypothesis": bool(
                 async_smoke.get("external_frontend_witness_kind_frontend_hypothesis")
+            ),
+            "external_frontend_witness_metadata": dict(
+                async_smoke.get("external_frontend_witness_metadata") or {}
+            ),
+            "external_frontend_witness_metadata_complete": bool(
+                async_smoke.get("external_frontend_witness_metadata_complete")
+            ),
+            "external_frontend_witness_confidence": async_smoke.get(
+                "external_frontend_witness_confidence"
+            ),
+            "external_frontend_witness_latency_ms": async_smoke.get(
+                "external_frontend_witness_latency_ms"
+            ),
+            "external_frontend_witness_partial": async_smoke.get("external_frontend_witness_partial"),
+            "external_frontend_witness_audio_time_range_ms": async_smoke.get(
+                "external_frontend_witness_audio_time_range_ms"
+            )
+            or [],
+            "external_frontend_witness_speaker": dict(
+                async_smoke.get("external_frontend_witness_speaker") or {}
+            ),
+            "external_frontend_witness_channel": dict(
+                async_smoke.get("external_frontend_witness_channel") or {}
             ),
             "external_frontend_witness_tool_authority_false": bool(
                 async_smoke.get("external_frontend_witness_tool_authority_false")

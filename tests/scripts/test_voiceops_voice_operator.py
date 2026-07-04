@@ -245,6 +245,8 @@ def _async_oracle_smoke_payload() -> dict:
         "external_frontend_bridge_smoke_ok": True,
         "external_frontend_request_accepted": True,
         "external_frontend_tool_result_observed": True,
+        "external_frontend_protocol": "kame_session_v1",
+        "external_frontend_protocol_contract": "docs/kame-session-v1.md",
         "external_frontend_job_id": "voice-oracle-001",
         "external_frontend_provider": "voiceclaw",
         "external_frontend_tool": "ask_brain",
@@ -297,10 +299,64 @@ def _async_oracle_smoke_payload() -> dict:
                 "tool_authority": False,
                 "confidence": 0.78,
                 "latency_ms": 140,
+                "partial": False,
+                "audio_time_range_ms": (120, 2080),
+                "speaker": {
+                    "platform": "discord",
+                    "channel_user_id": "jetha-redacted",
+                    "display_name": "jetha",
+                    "is_bot": False,
+                },
+                "channel": {
+                    "transport": "discord_voice",
+                    "guild_id": "guild-redacted",
+                    "channel_id": "general-redacted",
+                    "surface": "desk_voice",
+                },
             }
         ],
         "external_frontend_witness_kind": "frontend_witness_hypothesis",
         "external_frontend_witness_kind_frontend_hypothesis": True,
+        "external_frontend_witness_metadata": {
+            "source": "moshi",
+            "kind": "frontend_witness_hypothesis",
+            "text": "prepare an external kame handoff",
+            "authority": "hypothesis",
+            "tool_authority": False,
+            "confidence": 0.78,
+            "latency_ms": 140,
+            "partial": False,
+            "audio_time_range_ms": (120, 2080),
+            "speaker": {
+                "platform": "discord",
+                "channel_user_id": "jetha-redacted",
+                "display_name": "jetha",
+                "is_bot": False,
+            },
+            "channel": {
+                "transport": "discord_voice",
+                "guild_id": "guild-redacted",
+                "channel_id": "general-redacted",
+                "surface": "desk_voice",
+            },
+        },
+        "external_frontend_witness_metadata_complete": True,
+        "external_frontend_witness_confidence": 0.78,
+        "external_frontend_witness_latency_ms": 140,
+        "external_frontend_witness_partial": False,
+        "external_frontend_witness_audio_time_range_ms": [120, 2080],
+        "external_frontend_witness_speaker": {
+            "platform": "discord",
+            "channel_user_id": "jetha-redacted",
+            "display_name": "jetha",
+            "is_bot": False,
+        },
+        "external_frontend_witness_channel": {
+            "transport": "discord_voice",
+            "guild_id": "guild-redacted",
+            "channel_id": "general-redacted",
+            "surface": "desk_voice",
+        },
         "external_frontend_witness_tool_authority_false": True,
         "external_frontend_hypothesis_not_durable_oracle_text": True,
         "external_frontend_durable_user_messages_empty": True,
@@ -1088,6 +1144,11 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_bridge_smoke_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_request_accepted"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_tool_result_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_protocol"] == "kame_session_v1"
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_protocol_contract"]
+        == "docs/kame-session-v1.md"
+    )
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_provider"] == "voiceclaw"
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_tool"] == "ask_brain"
     assert (
@@ -1160,6 +1221,24 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert (
         report["proofs"]["async_oracle_jobs"]["external_frontend_witness_kind_frontend_hypothesis"]
         is True
+    )
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_witness_metadata_complete"] is True
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_witness_confidence"] == 0.78
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_witness_latency_ms"] == 140
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_witness_partial"] is False
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_witness_audio_time_range_ms"] == [
+        120,
+        2080,
+    ]
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_witness_speaker"][
+            "channel_user_id"
+        ]
+        == "jetha-redacted"
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_witness_channel"]["channel_id"]
+        == "general-redacted"
     )
     assert (
         report["proofs"]["async_oracle_jobs"]["external_frontend_auxiliary_transcript_hypotheses"][0][

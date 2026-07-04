@@ -1621,6 +1621,9 @@ def _compact_auxiliary_transcript_hypotheses(
         confidence = _compact_confidence(value.get("confidence"))  # type: ignore[arg-type]
         if confidence is not None:
             item["confidence"] = confidence
+        latency_ms = _compact_nonnegative_int(value.get("latency_ms"))
+        if latency_ms is not None:
+            item["latency_ms"] = latency_ms
         if isinstance(value.get("partial"), bool):
             item["partial"] = value["partial"]
         superseded_partials = _compact_superseded_partial_texts(value.get("superseded_partial_texts"))

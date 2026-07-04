@@ -1,0 +1,140 @@
+# KAME Session v1 Contract
+
+Status: draft contract for external realtime frontends
+Owner: Hermes realtime voice / VoiceOps
+Protocol id: `kame_session_v1`
+
+This contract is the transport-neutral boundary for Discord voice,
+VoiceClaw/OpenClaw-style frontends, phone/SIP, WhatsApp voice, desktop mic, and
+future clients. It lets a fast frontend act as the reflex without inheriting
+Hermes' tools or durable transcript authority.
+
+## Roles
+
+External frontends may provide:
+
+- live audio and playback control
+- reflex acknowledgements and provisional routes
+- transcript-looking witness text from Moshi/open-S2S, VoiceClaw/OpenClaw, or
+  classic ASR side channels
+- `ask_brain` / `openclaw_agent_consult` style oracle requests
+- cancellation and status correlation ids
+
+External frontends must not receive or execute direct Hermes file, shell,
+memory, payment, provisioning, phone, message, or credential tools.
+
+## Input Events
+
+Every spoken turn should use one `turn_id`. If raw audio is available, every
+witness transcript for that speech cut must share the same `audio_segment_ref`.
+
+Minimum external oracle request shape:
+
+```json
+{
+  "protocol": "kame_session_v1",
+  "tool_name": "ask_brain",
+  "tool_call_id": "frontend-call-001",
+  "audit_id": "frontend-audit-001",
+  "source_audit_id": "discord-audit-001",
+  "parent_audit_id": "voiceops-root-001",
+  "arguments": {
+    "query": "prepare the phone handoff",
+    "intent": "Prepare the phone handoff.",
+    "interface_already_said": "I'm preparing the handoff.",
+    "requested_response_style": {"spoken": true, "max_sentences": 1}
+  },
+  "audio": {
+    "segment_ref": "artifact://frontend/turn-001.wav",
+    "codec": "pcm_s16le",
+    "sample_rate_hz": 16000,
+    "channels": 1,
+    "time_range_ms": [120, 1840],
+    "vad": {"speech_start_ms": 120, "speech_end_ms": 1840},
+    "authority": "primary_audio"
+  },
+  "speaker": {
+    "platform": "discord",
+    "channel_user_id": "redacted-user",
+    "display_name": "redacted",
+    "is_bot": false
+  },
+  "channel": {
+    "transport": "discord_voice",
+    "guild_id": "redacted-guild",
+    "channel_id": "redacted-channel",
+    "surface": "desk_voice"
+  },
+  "transcript_hypotheses": [
+    {
+      "kind": "frontend_witness_hypothesis",
+      "source": "moshi",
+      "text": "prepare phone handoff",
+      "partial": false,
+      "confidence": 0.78,
+      "latency_ms": 140,
+      "authority": "hypothesis",
+      "tool_authority": false
+    }
+  ]
+}
+```
+
+If the adapter cannot prove whether transcript-looking text came from the live
+reflex model or a sibling caption/S2S lane, it must use
+`frontend_witness_hypothesis`. Vendor names belong in `source`, not in the
+authority model.
+
+When raw audio exists, transcript hypotheses are attached to that same turn as
+interpreter context. They do not create a second Hermes turn, do not schedule a
+parallel oracle request, and do not become durable transcript text unless the
+interpreter or oracle explicitly promotes them.
+
+## Output Events
+
+Hermes emits normalized session/job events back to the frontend:
+
+- accepted placeholder: `TOOL_RESULT` with `accepted = true`, `job_id`,
+  `tool_call_id`, and provider/source fields
+- oracle lifecycle: `ORACLE_JOB_ACCEPTED`, `ORACLE_JOB_QUEUED`,
+  `ORACLE_JOB_STARTED`, `ORACLE_JOB_WAITING_FOR_APPROVAL`,
+  `ORACLE_JOB_COMPLETED`, `ORACLE_JOB_FAILED`, `ORACLE_JOB_CANCELLED`
+- cancellation feedback: `INTERFACE_ORACLE_CANCEL`
+- bounded updates: `INTERFACE_ORACLE_UPDATE`
+- speech/playback events from the normal realtime voice stream
+
+Terminal events must preserve `tool_call_id`, `audit_id`, `source_audit_id`,
+and `parent_audit_id` so the frontend can correlate placeholders, progress,
+and final results without treating witness text as durable user history.
+
+## Authority Rules
+
+- Raw audio is the primary interpreter evidence when `audio.segment_ref` exists.
+- Transcript hypotheses are clues for the Gemma interpreter, not durable user
+  messages.
+- Text-only external requests are degraded compatibility mode.
+- `ask_brain` maps to a typed Hermes oracle job, not a hidden chat turn.
+- Frontend witness text cannot become `oracle_text`, spend reason, provider
+  selection, NemoClaw action packet, phone payload, tool argument, memory write,
+  file write, external message, or durable user history without
+  `interpreter_promoted` or `oracle_promoted` evidence.
+- A frontend may receive status and terminal results, but not direct Hermes
+  tools.
+
+## Required Proof Fields
+
+The headless smoke, VoiceOps readiness report, plan-run projection, and package
+audit should expose:
+
+- `external_frontend_protocol = "kame_session_v1"`
+- `external_frontend_protocol_contract = "docs/kame-session-v1.md"`
+- `external_frontend_tool = "ask_brain"` or
+  `external_frontend_input_source = "openclaw_agent_consult"`
+- shared `turn_id`, `audio_segment_ref`, `evidence_bundle_id`, and
+  `evidence_merge_key`
+- transcript hypotheses with `tool_authority = false`
+- witness metadata for source, confidence, latency, partial/final state,
+  audio time range, speaker guess, and channel guess when available
+- terminal correlation by `tool_call_id`
+- audit-id continuity from request to status and terminal event
+- direct-tool authority absence

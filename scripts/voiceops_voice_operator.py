@@ -1822,6 +1822,7 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("external_frontend_evidence_bundle_status") == "primary_audio"
         and int(smoke.get("external_frontend_evidence_bundle_transcript_hypotheses_count") or 0) >= 1
         and smoke.get("external_frontend_witness_kind_frontend_hypothesis") is True
+        and smoke.get("external_frontend_witness_metadata_complete") is True
         and smoke.get("external_frontend_hypothesis_not_durable_oracle_text") is True
         and smoke.get("external_frontend_durable_user_messages_empty") is True
         and smoke.get("external_frontend_durable_oracle_text_absent") is True
@@ -2703,6 +2704,10 @@ def build_voice_operator_report(
             "external_frontend_tool_result_observed": bool(
                 async_oracle_smoke.get("external_frontend_tool_result_observed")
             ),
+            "external_frontend_protocol": async_oracle_smoke.get("external_frontend_protocol"),
+            "external_frontend_protocol_contract": async_oracle_smoke.get(
+                "external_frontend_protocol_contract"
+            ),
             "external_frontend_job_id": async_oracle_smoke.get("external_frontend_job_id"),
             "external_frontend_provider": async_oracle_smoke.get("external_frontend_provider"),
             "external_frontend_tool": async_oracle_smoke.get("external_frontend_tool"),
@@ -2798,6 +2803,30 @@ def build_voice_operator_report(
             "external_frontend_witness_kind": async_oracle_smoke.get("external_frontend_witness_kind"),
             "external_frontend_witness_kind_frontend_hypothesis": bool(
                 async_oracle_smoke.get("external_frontend_witness_kind_frontend_hypothesis")
+            ),
+            "external_frontend_witness_metadata": dict(
+                async_oracle_smoke.get("external_frontend_witness_metadata") or {}
+            ),
+            "external_frontend_witness_metadata_complete": bool(
+                async_oracle_smoke.get("external_frontend_witness_metadata_complete")
+            ),
+            "external_frontend_witness_confidence": async_oracle_smoke.get(
+                "external_frontend_witness_confidence"
+            ),
+            "external_frontend_witness_latency_ms": async_oracle_smoke.get(
+                "external_frontend_witness_latency_ms"
+            ),
+            "external_frontend_witness_partial": async_oracle_smoke.get(
+                "external_frontend_witness_partial"
+            ),
+            "external_frontend_witness_audio_time_range_ms": list(
+                async_oracle_smoke.get("external_frontend_witness_audio_time_range_ms") or []
+            ),
+            "external_frontend_witness_speaker": dict(
+                async_oracle_smoke.get("external_frontend_witness_speaker") or {}
+            ),
+            "external_frontend_witness_channel": dict(
+                async_oracle_smoke.get("external_frontend_witness_channel") or {}
             ),
             "external_frontend_witness_tool_authority_false": bool(
                 async_oracle_smoke.get("external_frontend_witness_tool_authority_false")

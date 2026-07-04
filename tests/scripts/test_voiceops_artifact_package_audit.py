@@ -235,8 +235,23 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_evidence_merge_key"] = "kame-merge-wrong"
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_evidence_merge_key_propagated"] = False
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_evidence_bundle_single_turn"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_protocol"] = "legacy_voiceclaw"
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_protocol_contract"] = "docs/old.md"
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_status_audit_id"] = "wrong-status-audit"
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_completion_audit_id"] = "wrong-completion-audit"
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_kind"] = "s2s_transcript_hypothesis"
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_kind_frontend_hypothesis"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_metadata_complete"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_confidence"] = 0.12
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_latency_ms"] = 999
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_partial"] = True
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_audio_time_range_ms"] = [0, 1]
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_speaker"] = {
+        "channel_user_id": "wrong-user"
+    }
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_channel"] = {
+        "channel_id": "wrong-channel"
+    }
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_tool_authority_false"] = False
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_single_bundle_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_tool_authority"] = True
@@ -296,6 +311,14 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
         in report["issues"]
     )
     assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_status_audit_id_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_completion_audit_id_mismatch"
+        in report["issues"]
+    )
+    assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_audit_id_continuity_observed_mismatch"
         in report["issues"]
     )
@@ -332,11 +355,47 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
         in report["issues"]
     )
     assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_protocol_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_protocol_contract_mismatch"
+        in report["issues"]
+    )
+    assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_witness_kind_mismatch"
         in report["issues"]
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_witness_kind_frontend_hypothesis_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_witness_metadata_complete_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_witness_confidence_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_witness_latency_ms_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_witness_partial_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_witness_audio_time_range_ms_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_witness_speaker_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_witness_channel_mismatch"
         in report["issues"]
     )
     assert (
