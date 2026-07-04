@@ -45,6 +45,33 @@ inline, and late Moshi/Open-S2S/VoiceClaw/OpenClaw/reflex/classic-ASR text must
 merge into that same bundle as witness evidence. It must never fork a second
 Hermes turn.
 
+## Canonical Short Form
+
+Current decision as of 2026-07-05:
+
+```text
+Discord/phone/desktop audio
+  -> reflex: floor control, VAD/energy gate, barge-in, ack, provisional route
+  -> interpreter bundle: raw audio + metadata + reflex state + transcript hypotheses
+  -> Gemma interpreter: accept, correct, or reject the witness text
+  -> Hermes active /model: durable reasoning, tools, memory, spend, calls
+```
+
+The Moshi/Open-S2S transcript question has a narrow answer: yes, provide it to
+Gemma with the raw voice, but only as same-cut witness context. It is useful
+because it tells the interpreter what the live frontend believed it heard. It is
+dangerous if treated as a parallel STT lane, a second Hermes turn, or a durable
+user message. Normalized packets therefore put provider text under
+`transcript_hypotheses[]` with `role = "witness_context"`,
+`authority = "hypothesis"`, and `tool_authority = false`; promoted text must
+come later from `interpreter_promoted` or `oracle_promoted` fields.
+
+The implementation should optimize for the fastest post-speech acknowledgement
+from the reflex, then let Gemma adjudicate the accepted speech cut
+asynchronously. It should not wait for Moshi/STT text before acknowledging or
+creating the interpreter bundle when raw audio, speech-gate evidence, and a
+reflex route are already available.
+
 2026-07-05 amendment: the intended shape is not "reflex plus STT plus oracle"
 and not "Gemma ASR in parallel." It is a three-tier sensor-fan-in loop:
 

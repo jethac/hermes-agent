@@ -30,6 +30,26 @@ Hermes VoiceOps is a local-first operator for daily life and business:
 
 The hackathon entry is Milestone 0: a public proof that this shape is useful, viable, and presentable.
 
+## Current KAME Invariant
+
+The VoiceOps architecture is now fixed around three roles:
+
+- reflex: the always-warm voice interface that handles floor control,
+  VAD/energy gating, barge-in, immediate acknowledgement, and provisional
+  route/status narration
+- interpreter: Gemma-style direct-audio adjudication over one accepted speech
+  cut, receiving raw audio first and transcript hypotheses last
+- oracle: Hermes' active `/model`, selected through the normal Hermes model
+  interface, with authority over durable reasoning, tools, memory, spend, phone
+  calls, and external messages
+
+Moshi/Open-S2S "STT" is not a fourth role. When available, it is a witness
+hypothesis attached to the same raw-audio interpreter bundle. It can help Gemma
+recover clipped starts, names, numbers, and code-switched wording, but it cannot
+create a second Hermes turn, become `oracle_text`, or authorize Stripe,
+NemoClaw, phone, file, memory, message, or tool payloads before interpreter or
+oracle promotion.
+
 ## Spark Model Strategy
 
 There are two related but distinct model strategies.

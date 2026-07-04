@@ -23,6 +23,18 @@ useful for clipped starts, names, numbers, and code-switches without making it
 the transcript of record or the thing that authorizes Stripe, NemoClaw, phone,
 memory, files, tools, or external messages.
 
+The demo artifact should show this as one packet, not as three competing
+prompts:
+
+```text
+raw audio + timing + speaker/channel + reflex route + Moshi/Open-S2S witness
+  -> Gemma interpreter promoted evidence
+  -> Hermes active /model business action
+```
+
+That packet is the hackathon proof that the voice interface is fast without
+letting a quick transcript hallucination spend money or place a call.
+
 The design should not be described as a parallel STT race. The useful
 three-tier description is: the reflex controls the live floor, Gemma interprets
 the accepted raw-audio cut with any frontend transcript hypotheses attached,

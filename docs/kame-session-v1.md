@@ -9,6 +9,27 @@ VoiceClaw/OpenClaw-style frontends, phone/SIP, WhatsApp voice, desktop mic, and
 future clients. It lets a fast frontend act as the reflex without inheriting
 Hermes' tools or durable transcript authority.
 
+## Canonical Packet Invariant
+
+One accepted speech cut produces one evidence bundle and one oracle job
+lifecycle. Raw audio is primary interpreter evidence. Any transcript-looking
+text from Moshi, Open-S2S, VoiceClaw/OpenClaw, the reflex, or classic ASR is a
+same-cut witness hypothesis inside that bundle.
+
+The required normal-path input order is:
+
+```text
+raw_audio -> metadata -> reflex -> transcript_hypotheses
+```
+
+That ordering is not cosmetic. It prevents an adapter field named `transcript`,
+`stt_text`, or `query` from becoming the durable user prompt before Gemma has
+compared it with the waveform and speaker/channel/timing evidence. If raw audio
+is present, provider text must be normalized into `transcript_hypotheses[]` with
+`role = "witness_context"`, `authority = "hypothesis"`, and
+`tool_authority = false`. If raw audio is absent, the turn is degraded
+text-only compatibility and cannot satisfy full-KAME or high-risk action gates.
+
 ## Current Contract
 
 `kame_session_v1` carries one accepted speech cut, not one transcript. The

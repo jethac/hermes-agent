@@ -70,6 +70,14 @@ voice; it must not run a sibling conversation, patch queued `oracle_text`, or
 become durable history by arriving first. The accepted cut, not the first text
 string, is the unit of work.
 
+2026-07-05 implementation invariant: do not optimize for "best transcript
+wins." Optimize for "fast reflex, single evidence bundle, explicit
+promotion." The reflex may speak immediately after speech end. The interpreter
+packet may include Moshi/Open-S2S text when available, but raw audio remains the
+primary evidence and witness text remains `authority = "hypothesis"` until
+Gemma or the Hermes oracle promotes it. This is the shape to implement for both
+Discord and future phone/WhatsApp voice surfaces.
+
 Design consolidation: do not model this as "reflex plus Gemma ASR plus oracle."
 The reflex is latency-biased and provisional. Gemma is the direct-audio
 interpreter that may emit corrected multilingual transcript text as
