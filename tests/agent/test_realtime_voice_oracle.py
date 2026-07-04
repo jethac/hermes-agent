@@ -498,6 +498,120 @@ def test_voice_oracle_routes_voiceops_request_to_voiceops_toolset(monkeypatch):
     assert "Verbatim ASR evidence" in prompts[0]
 
 
+def test_voice_oracle_ephemeral_router_selects_voiceops_without_persisting_router_turn(monkeypatch):
+    init_kwargs = []
+    calls = []
+
+    class FakeAIAgent:
+        def __init__(self, **kwargs):
+            init_kwargs.append(kwargs)
+            self.platform = kwargs.get("platform")
+
+        def run_conversation(self, prompt, *, persist_user_message=None, stream_callback=None):
+            calls.append(
+                {
+                    "platform": self.platform,
+                    "prompt": prompt,
+                    "persist_user_message": persist_user_message,
+                }
+            )
+            if self.platform == "desktop_voice_tool_router":
+                return {"final_response": '{"decision":"toolsets","toolsets":["voiceops"]}'}
+            if stream_callback is not None:
+                stream_callback("prepared")
+            return {"final_response": "prepared"}
+
+    async def run():
+        monkeypatch.setattr(run_agent, "AIAgent", FakeAIAgent)
+        oracle = HermesRealtimeOracle(
+            RealtimeVoiceSessionConfig(
+                session_id="voiceops-router",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                metadata={"transport": "discord_voice"},
+                oracle_tool_router={
+                    "enabled": True,
+                    "mode": "ephemeral",
+                    "voiceops_toolsets": ["voiceops"],
+                    "default_toolsets": [],
+                },
+            )
+        )
+        chunks = []
+        async for delta in oracle.stream_answer("use Stripe to provision phone service"):
+            chunks.append(delta)
+        assert chunks == ["prepared"]
+
+    asyncio.run(run())
+    assert init_kwargs == [
+        {
+            "model": "",
+            "platform": "desktop_voice_tool_router",
+            "session_id": "voiceops-router:tool-router",
+            "enabled_toolsets": [],
+            "skip_memory": True,
+            "skip_context_files": True,
+            "quiet_mode": True,
+        },
+        {
+            "model": "",
+            "platform": "desktop_voice",
+            "session_id": "voiceops-router",
+            "enabled_toolsets": ["voiceops"],
+        },
+    ]
+    assert calls[0]["platform"] == "desktop_voice_tool_router"
+    assert calls[0]["persist_user_message"] is False
+    assert "must not call tools" in calls[0]["prompt"]
+    assert calls[1]["platform"] == "desktop_voice"
+    assert calls[1]["persist_user_message"] == "use Stripe to provision phone service"
+
+
+def test_voice_oracle_ephemeral_router_can_select_no_tools(monkeypatch):
+    init_kwargs = []
+    calls = []
+
+    class FakeAIAgent:
+        def __init__(self, **kwargs):
+            init_kwargs.append(kwargs)
+            self.platform = kwargs.get("platform")
+
+        def run_conversation(self, prompt, *, persist_user_message=None, stream_callback=None):
+            calls.append((self.platform, persist_user_message))
+            if self.platform == "desktop_voice_tool_router":
+                return {"final_response": '{"decision":"no_tools"}'}
+            return {"final_response": "chat only"}
+
+    async def run():
+        monkeypatch.setattr(run_agent, "AIAgent", FakeAIAgent)
+        oracle = HermesRealtimeOracle(
+            RealtimeVoiceSessionConfig(
+                session_id="voiceops-router-no-tools",
+                engine=RealtimeVoiceEngineKind.KAME_INTERFACE_ORACLE,
+                oracle_tool_router={
+                    "enabled": True,
+                    "mode": "ephemeral",
+                    "voiceops_toolsets": ["voiceops"],
+                    "default_toolsets": [],
+                },
+            )
+        )
+        assert await oracle.answer("tell me a short joke") == "chat only"
+
+    asyncio.run(run())
+    assert init_kwargs[0]["platform"] == "desktop_voice_tool_router"
+    assert init_kwargs[0]["enabled_toolsets"] == []
+    assert init_kwargs[1] == {
+        "model": "",
+        "platform": "desktop_voice",
+        "session_id": "voiceops-router-no-tools",
+        "enabled_toolsets": [],
+    }
+    assert calls == [
+        ("desktop_voice_tool_router", False),
+        ("desktop_voice", "tell me a short joke"),
+    ]
+
+
 def test_voice_oracle_tool_router_can_be_disabled(monkeypatch):
     init_kwargs = []
 

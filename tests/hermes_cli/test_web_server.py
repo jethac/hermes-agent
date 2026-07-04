@@ -3261,7 +3261,10 @@ class TestBuildSchemaFromConfig:
         assert "audio reflex model" in CONFIG_SCHEMA["voice.realtime.vllm_model"]["description"]
         assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.enabled"]["type"] == "boolean"
         assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.mode"]["type"] == "select"
-        assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.mode"]["options"] == ["deterministic"]
+        assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.mode"]["options"] == [
+            "deterministic",
+            "ephemeral",
+        ]
         assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.voiceops_toolsets"]["type"] == "list"
         assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.default_toolsets"]["type"] == "list"
         assert CONFIG_SCHEMA["voice.realtime.oracle_tool_router.tool_search.enabled"]["type"] == "select"
@@ -3498,7 +3501,7 @@ class TestBuildSchemaFromConfig:
                         "engine": "kame_interface_oracle",
                         "oracle_tool_router": {
                             "enabled": True,
-                            "mode": "deterministic",
+                            "mode": "ephemeral",
                             "voiceops_toolsets": ["voiceops", "stripe", "bad toolset!"],
                             "default_toolsets": "memory,search",
                             "tool_search": {
@@ -3518,7 +3521,7 @@ class TestBuildSchemaFromConfig:
         assert config.session_id == "voice-router-test"
         assert config.oracle_tool_router == {
             "enabled": True,
-            "mode": "deterministic",
+            "mode": "ephemeral",
             "voiceops_toolsets": ["voiceops", "stripe"],
             "default_toolsets": ["memory", "search"],
             "tool_search": {
@@ -3665,7 +3668,10 @@ class TestBuildSchemaFromConfig:
         assert CONFIG_SCHEMA["discord.realtime_voice.metrics.log_provider_spans"]["type"] == "boolean"
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_tool_router.enabled"]["type"] == "boolean"
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_tool_router.mode"]["type"] == "select"
-        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_tool_router.mode"]["options"] == ["deterministic"]
+        assert CONFIG_SCHEMA["discord.realtime_voice.oracle_tool_router.mode"]["options"] == [
+            "deterministic",
+            "ephemeral",
+        ]
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_tool_router.voiceops_toolsets"]["type"] == "list"
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_tool_router.default_toolsets"]["type"] == "list"
         assert CONFIG_SCHEMA["discord.realtime_voice.oracle_tool_router.tool_search.enabled"]["type"] == "select"

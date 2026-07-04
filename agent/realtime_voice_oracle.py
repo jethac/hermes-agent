@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import re
 import threading
 from typing import Any, AsyncIterator, Mapping, Optional
@@ -130,11 +131,17 @@ class HermesRealtimeOracle:
 
         prompt_metadata = dict(self.config.metadata or {})
         prompt_metadata.update(metadata or {})
-        enabled_toolsets = _voice_oracle_enabled_toolsets(
+        router_decision = _voice_oracle_tool_router_decision(
             transcript,
             prompt_metadata,
             self.config,
+            AIAgent,
         )
+        enabled_toolsets = router_decision.get("enabled_toolsets")
+        if isinstance(enabled_toolsets, tuple):
+            enabled_toolsets = list(enabled_toolsets)
+        if router_decision:
+            prompt_metadata["voice_tool_router_decision"] = dict(router_decision)
         tool_search_config = _voice_oracle_tool_search_config(self.config)
         agent_kwargs: dict[str, Any] = dict(
             model="",
@@ -193,17 +200,149 @@ def _voice_oracle_enabled_toolsets(
     metadata: Mapping[str, object],
     config: RealtimeVoiceSessionConfig,
 ) -> Optional[list[str]]:
+    decision = _voice_oracle_tool_router_decision(transcript, metadata, config)
+    toolsets = decision.get("enabled_toolsets")
+    if toolsets is None:
+        return None
+    return list(toolsets) if isinstance(toolsets, (list, tuple)) else None
+
+
+def _voice_oracle_tool_router_decision(
+    transcript: str,
+    metadata: Mapping[str, object],
+    config: RealtimeVoiceSessionConfig,
+    agent_class: Optional[type] = None,
+) -> dict[str, Any]:
     router = config.oracle_tool_router if isinstance(config.oracle_tool_router, Mapping) else {}
     if _metadata_bool(router.get("enabled"), default=True) is False:
-        return None
+        return {"mode": "disabled", "enabled_toolsets": None}
 
     mode = str(router.get("mode") or "deterministic").strip().lower()
-    if mode not in {"", "deterministic"}:
-        return _toolset_list_or_none(router.get("default_toolsets"))
+    if mode == "ephemeral":
+        decision = _voice_oracle_ephemeral_tool_router_decision(
+            transcript,
+            metadata,
+            config,
+            router,
+            agent_class,
+        )
+        if decision is not None:
+            return decision
 
     if _looks_like_voiceops_request(transcript, metadata):
-        return _toolset_list_or_none(router.get("voiceops_toolsets")) or ["voiceops"]
-    return _toolset_list_or_none(router.get("default_toolsets"))
+        return {
+            "mode": "deterministic",
+            "decision": "toolsets",
+            "enabled_toolsets": _toolset_list_or_none(router.get("voiceops_toolsets")) or ["voiceops"],
+            "persistent": False,
+            "tool_calls_allowed": False,
+            "fallback": mode not in {"", "deterministic"},
+        }
+    default_toolsets = _toolset_list_or_none(router.get("default_toolsets"))
+    return {
+        "mode": "deterministic",
+        "decision": "toolsets" if default_toolsets is not None else "default",
+        "enabled_toolsets": default_toolsets,
+        "persistent": False,
+        "tool_calls_allowed": False,
+        "fallback": mode not in {"", "deterministic"},
+    }
+
+
+def _voice_oracle_ephemeral_tool_router_decision(
+    transcript: str,
+    metadata: Mapping[str, object],
+    config: RealtimeVoiceSessionConfig,
+    router: Mapping[str, object],
+    agent_class: Optional[type],
+) -> Optional[dict[str, Any]]:
+    if agent_class is None:
+        return None
+    try:
+        router_agent = agent_class(
+            model=str(router.get("model") or ""),
+            platform="desktop_voice_tool_router",
+            session_id=f"{config.session_id}:tool-router",
+            enabled_toolsets=[],
+            skip_memory=True,
+            skip_context_files=True,
+            quiet_mode=True,
+        )
+        result = router_agent.run_conversation(
+            _voice_oracle_ephemeral_tool_router_prompt(transcript, metadata, router),
+            persist_user_message=False,
+        )
+        payload = _parse_router_json(result.get("final_response") if isinstance(result, Mapping) else result)
+    except Exception:
+        return None
+    decision = str(payload.get("decision") or payload.get("route") or "").strip().lower()
+    if decision in {"no_tools", "none", "chat_only"}:
+        return {
+            "mode": "ephemeral",
+            "decision": "no_tools",
+            "enabled_toolsets": [],
+            "persistent": False,
+            "tool_calls_allowed": False,
+        }
+    if decision in {"voiceops", "toolsets", "tools"}:
+        selected = _toolset_list_or_none(payload.get("toolsets"))
+        if selected is None and decision == "voiceops":
+            selected = _toolset_list_or_none(router.get("voiceops_toolsets")) or ["voiceops"]
+        allowed = set(_toolset_list_or_none(router.get("voiceops_toolsets")) or ["voiceops"])
+        allowed.update(_toolset_list_or_none(router.get("default_toolsets")) or [])
+        selected = [item for item in (selected or []) if item in allowed]
+        if selected:
+            return {
+                "mode": "ephemeral",
+                "decision": "toolsets",
+                "enabled_toolsets": selected,
+                "persistent": False,
+                "tool_calls_allowed": False,
+            }
+    return None
+
+
+def _voice_oracle_ephemeral_tool_router_prompt(
+    transcript: str,
+    metadata: Mapping[str, object],
+    router: Mapping[str, object],
+) -> str:
+    voiceops_toolsets = _toolset_list_or_none(router.get("voiceops_toolsets")) or ["voiceops"]
+    default_toolsets = _toolset_list_or_none(router.get("default_toolsets")) or []
+    intent = _metadata_text(metadata.get("kame_intent"))
+    transport = _metadata_text(metadata.get("transport"))
+    return (
+        "You are an ephemeral VoiceOps tool-selection router. "
+        "You must not call tools and your transcript must not be persisted. "
+        "Choose the smallest tool surface for the next Hermes oracle turn. "
+        "Return only JSON with either {\"decision\":\"no_tools\"} or "
+        "{\"decision\":\"toolsets\",\"toolsets\":[...]}.\n"
+        f"Allowed VoiceOps toolsets: {json.dumps(voiceops_toolsets)}.\n"
+        f"Allowed default toolsets: {json.dumps(default_toolsets)}.\n"
+        f"Transport: {transport or 'unknown'}.\n"
+        f"Reflex intent: {intent or 'unknown'}.\n"
+        f"User/oracle text: {_metadata_text(transcript)}"
+    )
+
+
+def _parse_router_json(raw: object) -> dict[str, Any]:
+    text = str(raw or "").strip()
+    if not text:
+        return {}
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text).strip()
+    try:
+        value = json.loads(text)
+    except Exception:
+        match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+        if not match:
+            return {}
+        try:
+            value = json.loads(match.group(0))
+        except Exception:
+            return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _looks_like_voiceops_request(transcript: str, metadata: Mapping[str, object]) -> bool:

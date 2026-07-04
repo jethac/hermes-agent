@@ -1051,7 +1051,7 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "voice.realtime.oracle_tool_router.mode": {
         "type": "select",
         "description": "Realtime voice oracle tool routing mode",
-        "options": ["deterministic"],
+        "options": ["deterministic", "ephemeral"],
         "category": "voice",
     },
     "voice.realtime.oracle_tool_router.voiceops_toolsets": {
@@ -1598,7 +1598,7 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "discord.realtime_voice.oracle_tool_router.mode": {
         "type": "select",
         "description": "Discord realtime voice oracle tool routing mode",
-        "options": ["deterministic"],
+        "options": ["deterministic", "ephemeral"],
         "category": "discord",
     },
     "discord.realtime_voice.oracle_tool_router.voiceops_toolsets": {
@@ -14182,7 +14182,7 @@ def _realtime_voice_oracle_tool_router_payload(realtime: Mapping[str, Any]) -> D
     if not isinstance(raw, Mapping):
         raw = {}
     mode = str(raw.get("mode") or "deterministic").strip().lower()
-    if mode not in {"deterministic"}:
+    if mode not in {"deterministic", "ephemeral"}:
         mode = "deterministic"
     return {
         "enabled": _truthy_config(raw.get("enabled"), default=True),

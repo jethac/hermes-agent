@@ -1612,6 +1612,12 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["tool_disclosure"]["deferred_count"] == len(_HERMES_CORE_TOOLS)
     assert report["proofs"]["tool_disclosure"]["token_reduction_estimate"] > 0
     assert report["tool_disclosure_smoke"]["ok"] is True
+    for test_ref in (
+        "tests/agent/test_realtime_voice_oracle.py::test_voice_oracle_ephemeral_router_selects_voiceops_without_persisting_router_turn",
+        "tests/agent/test_realtime_voice_oracle.py::test_voice_oracle_ephemeral_router_can_select_no_tools",
+    ):
+        assert test_ref in report["tool_disclosure_smoke"]["external_test_refs"]
+        assert test_ref in report["proofs"]["tool_disclosure"]["external_test_refs"]
     overflow_policy = report["async_oracle_acceptance"]["fifth_job_obeys_overflow_policy"]
     assert overflow_policy["ok"] is True
     assert overflow_policy["evidence"] == "async_oracle_smoke_plus_overflow_policy_tests"
