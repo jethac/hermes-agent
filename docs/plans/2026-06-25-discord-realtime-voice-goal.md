@@ -435,7 +435,10 @@ Still remaining before this goal can be marked complete:
    raw-audio interpreter bundle when enabled.
 8. The Gemma-style direct-audio interpreter receives raw audio first, then
    metadata/reflex state, then optional Moshi/STT hypotheses; those hypotheses
-   are non-authoritative until interpreter promotion.
+   are normalized into `transcript_hypotheses[]` with provider source,
+   latency, confidence when available, arrival phase,
+   `role = "witness_context"`, `authority = "hypothesis"`, and
+   `tool_authority = false` until interpreter or oracle promotion.
 9. Hermes' active `/model` remains the oracle; voice config does not select a
    separate oracle model.
 10. Hermes emits a fast acknowledgement for work that will take more than a
@@ -661,6 +664,8 @@ TTS delay.
 - First spoken acknowledgement is independent of optional
   Moshi/open-S2S/reflex/classic-ASR transcript hypotheses, and those
   hypotheses cannot block raw-audio Gemma interpretation.
+- Optional transcript hypotheses are logged with source, latency, confidence
+  when available, arrival phase, hypothesis authority, and no tool authority.
 - Chunked TTS starts before full oracle answer completion in realtime mode.
 - Logs include time to reflex acknowledgement, first assistant text/audio, and
   optional transcript-hypothesis latency when enabled.
@@ -834,3 +839,8 @@ uv run --extra dev --extra voice python -m pytest \
 - Transcript-looking output from Moshi, OpenClaw, VoiceClaw, classic ASR, or a
   hosted realtime frontend remains hypothesis authority until interpreter or
   oracle promotion.
+- Transcript-looking output is represented as `transcript_hypotheses[]` with
+  `role = "witness_context"`, `authority = "hypothesis"`, and
+  `tool_authority = false`; it does not become durable user text, `oracle_text`,
+  a spend reason, phone payload, memory/file content, external message, or tool
+  argument unless promoted.

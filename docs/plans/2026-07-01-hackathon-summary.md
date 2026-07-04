@@ -35,6 +35,14 @@ raw audio + timing + speaker/channel + reflex route + Moshi/Open-S2S witness
 That packet is the hackathon proof that the voice interface is fast without
 letting a quick transcript hallucination spend money or place a call.
 
+For the recorded proof, a Moshi/Open-S2S transcript should be shown only as a
+`transcript_hypotheses[]` entry attached to the same raw-audio cut. The artifact
+should expose its provider/source, latency, confidence when available,
+arrival phase, and adjudication outcome. The useful moment for judges is not
+"Moshi heard the user"; it is "Hermes preserved what Moshi thought it heard,
+Gemma compared it to raw audio, and only promoted evidence reached Stripe,
+NemoClaw, the phone payload, or durable Hermes history."
+
 The design should not be described as a parallel STT race. The useful
 three-tier description is: the reflex controls the live floor, Gemma interprets
 the accepted raw-audio cut with any frontend transcript hypotheses attached,
@@ -360,6 +368,10 @@ system heard the user.
 - When a Moshi/OpenClaw/VoiceClaw witness transcript is present, the artifact
   shows it sharing the raw-audio turn's `evidence_bundle_id` rather than
   creating a second Hermes turn. Text-only witness turns are labeled degraded.
+- Moshi/Open-S2S witness rows include source, latency, confidence when
+  available, arrival phase, `authority = "hypothesis"`, `tool_authority =
+  false`, and an interpreter adjudication outcome before any action payload can
+  reference their wording.
 - In a multi-human voice channel, witness text is bound to the accepted
   speaker/channel before it can influence promoted evidence. Wrong-speaker,
   wrong-channel, stale, or ambiguous-speaker hypotheses remain audit-only and
@@ -475,5 +487,8 @@ closed by external evidence gates:
 12. Add one demo artifact where a Moshi/open-S2S transcript and raw voice are
    submitted together as one interpreter packet, proving the text stayed
    witness context until Gemma promoted or rejected it.
-13. Implement the phone call handoff with context transfer from the Discord session.
-14. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.
+13. Add one degraded compatibility artifact where a text-only Moshi/Open-S2S
+   witness is preserved for audit but fails full-KAME and high-risk action
+   gates because no raw audio is available.
+14. Implement the phone call handoff with context transfer from the Discord session.
+15. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.

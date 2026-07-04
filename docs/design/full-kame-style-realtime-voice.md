@@ -45,6 +45,26 @@ inline, and late Moshi/Open-S2S/VoiceClaw/OpenClaw/reflex/classic-ASR text must
 merge into that same bundle as witness evidence. It must never fork a second
 Hermes turn.
 
+The current direct-audio interpreter packet should be understood as
+witness-assisted, not ASR-first. A Moshi/Open-S2S transcript can be extremely
+useful, but only when it is bound to the same accepted speech cut as the
+waveform and passed to Gemma as context. The adapter must preserve the
+frontend's text under `transcript_hypotheses[]` with source, latency,
+confidence when available, speaker/channel guesses, `arrival_phase`,
+`role = "witness_context"`, `authority = "hypothesis"`, and
+`tool_authority = false`. Gemma may then accept it as support, correct it from
+the waveform, or reject it as diagnostic-only. Until that promotion happens,
+the text cannot become `oracle_text`, durable history, a Stripe/NemoClaw spend
+reason, a phone payload, a tool argument, a memory/file write, or an external
+message.
+
+This is deliberately different from running Moshi as a parallel STT lane. The
+fast reflex can acknowledge and route immediately after speech end, the
+Moshi/Open-S2S witness can arrive before/with/after the raw-audio packet, and
+the evidence merger must still produce one bundle and one oracle job. If the
+frontend can provide only text and no waveform, that is degraded compatibility,
+not the full KAME path and not sufficient for high-risk action gates.
+
 ## Canonical Short Form
 
 Current decision as of 2026-07-05:

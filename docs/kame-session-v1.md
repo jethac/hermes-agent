@@ -30,6 +30,35 @@ is present, provider text must be normalized into `transcript_hypotheses[]` with
 `tool_authority = false`. If raw audio is absent, the turn is degraded
 text-only compatibility and cannot satisfy full-KAME or high-risk action gates.
 
+## Moshi / Open-S2S Witness Contract
+
+The supported way to use Moshi-style output is to send the clipped waveform and
+the frontend's transcript-looking text to the interpreter together. The
+transcript is not "the ASR result" from Hermes' point of view. It is a
+same-cut witness reading that helps Gemma compare what the live frontend
+believed it heard against the actual waveform.
+
+A normal Moshi/Open-S2S packet therefore has three binding requirements:
+
+- the waveform and witness share the same `turn_id`, `audio_segment_ref`,
+  `evidence_bundle_id`, and `evidence_merge_key`
+- the witness appears in `transcript_hypotheses[]` with `source`,
+  `latency_ms`, confidence when available, `arrival_phase`,
+  `role = "witness_context"`, `authority = "hypothesis"`,
+  `promotion_required = "interpreter_promoted_or_oracle_promoted"`, and
+  `tool_authority = false`
+- the interpreter response records an adjudication outcome before the text can
+  shape durable/actionable wording: `accepted_as_supporting_evidence`,
+  `corrected_by_audio`, or `rejected_or_diagnostic_only`
+
+This lets Moshi/Open-S2S help with clipped prefixes, names, numbers,
+code-switches, and rough intent without letting a fast hallucinated transcript
+spend money, provision services, place calls, write memory/files, or become the
+durable Hermes user message. If Moshi text arrives before the audio cut or
+after the interpreter has started, it must merge into the same bundle and job.
+If no raw audio exists, the turn is degraded compatibility mode and high-risk
+action gates fail closed.
+
 ## Current Contract
 
 `kame_session_v1` carries one accepted speech cut, not one transcript. The

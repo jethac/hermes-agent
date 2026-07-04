@@ -77,6 +77,16 @@ witness text while preserving it in the audit bundle. A provider that produces
 fast text but routinely captures the interpreter into false wording fails the
 interpreter role even if transcript latency is good.
 
+Every provider transcript in the evaluation must use the normalized
+`transcript_hypotheses[]` metadata contract before it is counted as useful
+evidence: provider `source`, `latency_ms`, confidence when available,
+`arrival_phase`, speaker/channel guesses when available,
+`role = "witness_context"`, `authority = "hypothesis"`,
+`promotion_required = "interpreter_promoted_or_oracle_promoted"`, and
+`tool_authority = false`. The report should distinguish this witness metadata
+from Gemma's promoted transcript/intent/entities so a fast Moshi/Open-S2S text
+path cannot be mistaken for interpreter authority.
+
 Provider comparison must be role-based. A candidate can win one role without
 winning the system:
 

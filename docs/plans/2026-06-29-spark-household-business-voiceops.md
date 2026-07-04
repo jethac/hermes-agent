@@ -238,9 +238,23 @@ Target KAME layout:
   `evidence_merge_key`, and must prove no duplicate oracle job or durable user
   message. A positive case should show Gemma promoting corrected wording after
   comparing raw audio and Moshi text. A negative case should show hallucinated,
-  ambiguous-speaker, stale, wrong-speaker, wrong-channel, or low-energy Moshi
-  text rejected and absent from spend, phone, NemoClaw, tool, memory, file,
+  wrong-speaker, wrong-channel, stale, or low-energy witness text retained only
+  as audit evidence and absent from spend, phone, NemoClaw, tool, memory, file,
   external-message, and durable-history sinks.
+- Moshi-context metadata rule: every Moshi/Open-S2S witness row in the package
+  must expose provider `source`, latency, confidence when available,
+  `arrival_phase`, speaker/channel guesses when available,
+  `role = "witness_context"`, `authority = "hypothesis"`,
+  `promotion_required = "interpreter_promoted_or_oracle_promoted"`, and
+  `tool_authority = false`. The package should also show the interpreter
+  outcome for that row: `accepted_as_supporting_evidence`,
+  `corrected_by_audio`, or `rejected_or_diagnostic_only`.
+- Degraded-witness rule: if a Moshi/Open-S2S frontend provides text without a
+  matching waveform, the packet can be retained as compatibility evidence but
+  must fail full-KAME readiness and high-risk action gates. It may support a
+  clarification or status response, but it cannot become a spend reason,
+  provider choice, phone script, memory/file content, durable user message, or
+  tool argument without later raw-audio-grounded interpreter/oracle promotion.
 - Witness-rejection evidence rule: every `rejected_or_diagnostic_only`
   hypothesis must preserve typed `rejection_reasons[]`. At minimum, artifacts
   should accept `ambiguous_speaker`, `wrong_speaker`, `wrong_channel`,
