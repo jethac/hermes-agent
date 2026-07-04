@@ -2263,6 +2263,29 @@ def test_voice_operator_validation_rejects_conflicting_interpreter_packet_witnes
     assert "interpreter_request_packet:transcript_hypothesis_0_channel_mismatch" in issues
 
 
+def test_voice_operator_validation_accepts_rejected_interpreter_packet_witness_binding():
+    report = _voice_operator_report()
+    report["interpreter_request_packet"]["transcript_hypotheses"][0].update(
+        {
+            "speaker_guess": {
+                "platform": "discord",
+                "channel_user_id": "other-human",
+            },
+            "channel_guess": {
+                "transport": "discord_voice",
+                "channel_id": "other-channel",
+            },
+            "adjudication": "rejected_or_diagnostic_only",
+            "rejection_reasons": ["wrong_speaker", "wrong_channel"],
+        }
+    )
+
+    issues = validate_voice_operator_report(report)
+
+    assert "interpreter_request_packet:transcript_hypothesis_0_speaker_mismatch" not in issues
+    assert "interpreter_request_packet:transcript_hypothesis_0_channel_mismatch" not in issues
+
+
 def test_voice_operator_validation_rejects_active_partial_interpreter_packet_hypothesis():
     report = _voice_operator_report()
     report["interpreter_request_packet"]["transcript_hypotheses"][0]["partial"] = True
@@ -3088,6 +3111,49 @@ def test_live_evidence_rejects_conflicting_witness_speaker_channel_binding():
     assert "live_turn:transcript_hypothesis_0_channel_mismatch" in live_evidence["issues"]
     assert live_evidence["live_turn"]["witness_binding_consistent"] is False
     assert live_evidence["live_turn"]["ok"] is False
+
+
+def test_live_evidence_accepts_rejected_witness_speaker_channel_mismatch_with_reasons(tmp_path):
+    evidence = _complete_live_evidence()
+    evidence["discord_live_probe"]["source_artifact"] = str(tmp_path / "discord-live-probe.json")
+    evidence["sidecar_session"]["source_artifact"] = str(tmp_path / "sidecar-session.json")
+    evidence["live_turn"]["source_artifact"] = str(tmp_path / "live-turn.json")
+    evidence["live_turn"]["speaker"] = {
+        "platform": "discord",
+        "channel_user_id": "jetha-redacted",
+    }
+    evidence["live_turn"]["channel"] = {
+        "transport": "discord_voice",
+        "channel_id": "general-redacted",
+    }
+    evidence["live_turn"]["transcript_hypotheses"][0].update(
+        {
+            "speaker_guess": {
+                "platform": "discord",
+                "channel_user_id": "other-human",
+            },
+            "channel_guess": {
+                "transport": "discord_voice",
+                "channel_id": "other-channel",
+            },
+            "adjudication": "rejected_or_diagnostic_only",
+            "rejection_reasons": ["wrong_speaker", "wrong_channel"],
+        }
+    )
+    evidence["live_turn"]["interpreter_adjudication_outcomes"] = [
+        "rejected_or_diagnostic_only"
+    ]
+    _write_attested_section(tmp_path / "discord-live-probe.json", evidence["discord_live_probe"], "discord_live_probe")
+    _write_attested_section(tmp_path / "sidecar-session.json", evidence["sidecar_session"], "sidecar_session")
+    _write_attested_section(tmp_path / "live-turn.json", evidence["live_turn"], "live_turn")
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert "live_turn:transcript_hypothesis_0_speaker_mismatch" not in live_evidence["issues"]
+    assert "live_turn:transcript_hypothesis_0_channel_mismatch" not in live_evidence["issues"]
+    assert live_evidence["live_turn"]["witness_binding_consistent"] is True
+    assert live_evidence["live_turn"]["rejected_witness_reasons_observed"] is True
+    assert live_evidence["live_turn"]["ok"] is True
 
 
 def test_live_evidence_rejects_active_partial_witness_hypothesis():

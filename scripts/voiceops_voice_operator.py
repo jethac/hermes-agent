@@ -1350,16 +1350,24 @@ def _mapping_witness_binding_conflict_issues(payload: Mapping[str, Any], *, issu
             accepted_speaker,
             speaker_guess,
             ("platform", "channel_user_id", "user_id"),
-        ):
+        ) and not _hypothesis_rejects_binding_conflict(hypothesis, "wrong_speaker"):
             issues.append(f"{issue_prefix}:transcript_hypothesis_{index}_speaker_mismatch")
         channel_guess = _hypothesis_mapping(hypothesis, "channel_guess", "channel")
         if accepted_channel and channel_guess and _mapping_conflicts(
             accepted_channel,
             channel_guess,
             ("transport", "guild_id", "channel_id"),
-        ):
+        ) and not _hypothesis_rejects_binding_conflict(hypothesis, "wrong_channel"):
             issues.append(f"{issue_prefix}:transcript_hypothesis_{index}_channel_mismatch")
     return issues
+
+
+def _hypothesis_rejects_binding_conflict(hypothesis: Mapping[str, Any], reason: str) -> bool:
+    adjudication = str(hypothesis.get("adjudication") or hypothesis.get("outcome") or "").strip()
+    return (
+        adjudication == "rejected_or_diagnostic_only"
+        and reason in _normalized_string_list(hypothesis.get("rejection_reasons"))
+    )
 
 
 def _accepted_mapping(payload: Mapping[str, Any], key: str) -> Mapping[str, Any]:
