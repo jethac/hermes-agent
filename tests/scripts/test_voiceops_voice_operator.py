@@ -195,6 +195,17 @@ def _async_oracle_smoke_payload() -> dict:
         "queued_update_latest_update_text": "include smoke update context",
         "queued_update_started_with_priority": True,
         "queued_update_reached_oracle": True,
+        "queued_interpreter_fold_in_observed": True,
+        "queued_interpreter_fold_in_oracle_text": "run corrected smoke task five",
+        "queued_interpreter_fold_in_transcript_source": "gemma_interpreter",
+        "queued_interpreter_fold_in_transcript_confidence": 0.88,
+        "queued_interpreter_fold_in_oracle_text_source": "gemma_interpreter",
+        "queued_interpreter_fold_in_evidence_authority": {
+            "intent": "interpreter_promoted",
+            "oracle_text": "interpreter_promoted",
+            "reflex_transcript_hypothesis": "reflex_hypothesis",
+            "transcript": "interpreter_promoted",
+        },
         "verbose_result_spoken_bounded": True,
         "verbose_result_committed_bounded": True,
         "verbose_result_commit_marked_truncated": True,
@@ -322,6 +333,14 @@ def _async_oracle_smoke_payload() -> dict:
         "unpromoted_hypothesis_action_sink_keys_checked": (
             "spend_reason",
             "spend_payload",
+            "provider_selection",
+            "provider_choice",
+            "provider_payload",
+            "nemoclaw_action_packet",
+            "nemoclaw_action_payload",
+            "action_packet",
+            "action_payload",
+            "approval_payload",
             "phone_call_payload",
             "call_payload",
             "tool_arguments",
@@ -335,6 +354,8 @@ def _async_oracle_smoke_payload() -> dict:
         "unpromoted_hypothesis_action_sink_values": {},
         "unpromoted_hypothesis_not_spend_reason": True,
         "unpromoted_hypothesis_not_spend_payload": True,
+        "unpromoted_hypothesis_not_provider_selection": True,
+        "unpromoted_hypothesis_not_nemoclaw_action_packet": True,
         "unpromoted_hypothesis_not_phone_call_payload": True,
         "unpromoted_hypothesis_not_call_payload": True,
         "unpromoted_hypothesis_not_tool_arguments": True,
@@ -1006,6 +1027,22 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["queued_update_latest_update_text"] == "include smoke update context"
     assert report["proofs"]["async_oracle_jobs"]["queued_update_started_with_priority"] is True
     assert report["proofs"]["async_oracle_jobs"]["queued_update_reached_oracle"] is True
+    assert report["proofs"]["async_oracle_jobs"]["queued_interpreter_fold_in_observed"] is True
+    assert (
+        report["proofs"]["async_oracle_jobs"]["queued_interpreter_fold_in_oracle_text"]
+        == "run corrected smoke task five"
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["queued_interpreter_fold_in_transcript_source"]
+        == "gemma_interpreter"
+    )
+    assert report["proofs"]["async_oracle_jobs"]["queued_interpreter_fold_in_transcript_confidence"] == 0.88
+    assert (
+        report["proofs"]["async_oracle_jobs"]["queued_interpreter_fold_in_evidence_authority"][
+            "oracle_text"
+        ]
+        == "interpreter_promoted"
+    )
     assert report["proofs"]["async_oracle_jobs"]["verbose_result_spoken_bounded"] is True
     assert report["proofs"]["async_oracle_jobs"]["verbose_result_committed_bounded"] is True
     assert report["proofs"]["async_oracle_jobs"]["verbose_result_commit_marked_truncated"] is True
@@ -1154,6 +1191,14 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert set(report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_action_sink_keys_checked"]) >= {
         "spend_reason",
         "spend_payload",
+        "provider_selection",
+        "provider_choice",
+        "provider_payload",
+        "nemoclaw_action_packet",
+        "nemoclaw_action_payload",
+        "action_packet",
+        "action_payload",
+        "approval_payload",
         "phone_call_payload",
         "call_payload",
         "tool_arguments",
@@ -1167,6 +1212,8 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_action_sink_values"] == {}
     assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_not_spend_reason"] is True
     assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_not_spend_payload"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_not_provider_selection"] is True
+    assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_not_nemoclaw_action_packet"] is True
     assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_not_phone_call_payload"] is True
     assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_not_call_payload"] is True
     assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_not_tool_arguments"] is True

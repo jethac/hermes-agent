@@ -1979,6 +1979,24 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "queued_update_latest_update_text": async_smoke.get("queued_update_latest_update_text"),
             "queued_update_started_with_priority": bool(async_smoke.get("queued_update_started_with_priority")),
             "queued_update_reached_oracle": bool(async_smoke.get("queued_update_reached_oracle")),
+            "queued_interpreter_fold_in_observed": bool(
+                async_smoke.get("queued_interpreter_fold_in_observed")
+            ),
+            "queued_interpreter_fold_in_oracle_text": async_smoke.get(
+                "queued_interpreter_fold_in_oracle_text"
+            ),
+            "queued_interpreter_fold_in_transcript_source": async_smoke.get(
+                "queued_interpreter_fold_in_transcript_source"
+            ),
+            "queued_interpreter_fold_in_transcript_confidence": async_smoke.get(
+                "queued_interpreter_fold_in_transcript_confidence"
+            ),
+            "queued_interpreter_fold_in_oracle_text_source": async_smoke.get(
+                "queued_interpreter_fold_in_oracle_text_source"
+            ),
+            "queued_interpreter_fold_in_evidence_authority": dict(
+                async_smoke.get("queued_interpreter_fold_in_evidence_authority") or {}
+            ),
             "verbose_result_spoken_bounded": bool(async_smoke.get("verbose_result_spoken_bounded")),
             "verbose_result_committed_bounded": bool(async_smoke.get("verbose_result_committed_bounded")),
             "verbose_result_commit_marked_truncated": bool(
@@ -2117,6 +2135,43 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             ),
             "unpromoted_hypothesis_tool_authority_false": bool(
                 async_smoke.get("unpromoted_hypothesis_tool_authority_false")
+            ),
+            "unpromoted_hypothesis_action_sink_keys_checked": async_smoke.get(
+                "unpromoted_hypothesis_action_sink_keys_checked"
+            )
+            or [],
+            "unpromoted_hypothesis_action_sinks_clean": bool(
+                async_smoke.get("unpromoted_hypothesis_action_sinks_clean")
+            ),
+            "unpromoted_hypothesis_not_spend_reason": bool(
+                async_smoke.get("unpromoted_hypothesis_not_spend_reason")
+            ),
+            "unpromoted_hypothesis_not_spend_payload": bool(
+                async_smoke.get("unpromoted_hypothesis_not_spend_payload")
+            ),
+            "unpromoted_hypothesis_not_provider_selection": bool(
+                async_smoke.get("unpromoted_hypothesis_not_provider_selection")
+            ),
+            "unpromoted_hypothesis_not_nemoclaw_action_packet": bool(
+                async_smoke.get("unpromoted_hypothesis_not_nemoclaw_action_packet")
+            ),
+            "unpromoted_hypothesis_not_phone_call_payload": bool(
+                async_smoke.get("unpromoted_hypothesis_not_phone_call_payload")
+            ),
+            "unpromoted_hypothesis_not_call_payload": bool(
+                async_smoke.get("unpromoted_hypothesis_not_call_payload")
+            ),
+            "unpromoted_hypothesis_not_tool_arguments": bool(
+                async_smoke.get("unpromoted_hypothesis_not_tool_arguments")
+            ),
+            "unpromoted_hypothesis_not_memory_write": bool(
+                async_smoke.get("unpromoted_hypothesis_not_memory_write")
+            ),
+            "unpromoted_hypothesis_not_file_write": bool(
+                async_smoke.get("unpromoted_hypothesis_not_file_write")
+            ),
+            "unpromoted_hypothesis_not_message_payload": bool(
+                async_smoke.get("unpromoted_hypothesis_not_message_payload")
             ),
             "witness_fusion_timing_smoke_ok": bool(async_smoke.get("witness_fusion_timing_smoke_ok")),
             "witness_fusion_arrival_phases": async_smoke.get("witness_fusion_arrival_phases") or [],

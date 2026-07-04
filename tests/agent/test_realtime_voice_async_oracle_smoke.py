@@ -88,6 +88,12 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["queued_update_latest_update_text"] == "include smoke update context"
     assert report["queued_update_started_with_priority"] is True
     assert report["queued_update_reached_oracle"] is True
+    assert report["queued_interpreter_fold_in_observed"] is True
+    assert report["queued_interpreter_fold_in_oracle_text"] == "run corrected smoke task five"
+    assert report["queued_interpreter_fold_in_transcript_source"] == "gemma_interpreter"
+    assert report["queued_interpreter_fold_in_transcript_confidence"] == 0.88
+    assert report["queued_interpreter_fold_in_oracle_text_source"] == "gemma_interpreter"
+    assert report["queued_interpreter_fold_in_evidence_authority"]["oracle_text"] == "interpreter_promoted"
     assert report["verbose_result_spoken_bounded"] is True
     assert report["verbose_result_committed_bounded"] is True
     assert report["verbose_result_commit_marked_truncated"] is True
@@ -207,6 +213,14 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert set(report["unpromoted_hypothesis_action_sink_keys_checked"]) >= {
         "spend_reason",
         "spend_payload",
+        "provider_selection",
+        "provider_choice",
+        "provider_payload",
+        "nemoclaw_action_packet",
+        "nemoclaw_action_payload",
+        "action_packet",
+        "action_payload",
+        "approval_payload",
         "phone_call_payload",
         "call_payload",
         "tool_arguments",
@@ -220,6 +234,8 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["unpromoted_hypothesis_action_sink_values"] == {}
     assert report["unpromoted_hypothesis_not_spend_reason"] is True
     assert report["unpromoted_hypothesis_not_spend_payload"] is True
+    assert report["unpromoted_hypothesis_not_provider_selection"] is True
+    assert report["unpromoted_hypothesis_not_nemoclaw_action_packet"] is True
     assert report["unpromoted_hypothesis_not_phone_call_payload"] is True
     assert report["unpromoted_hypothesis_not_call_payload"] is True
     assert report["unpromoted_hypothesis_not_tool_arguments"] is True

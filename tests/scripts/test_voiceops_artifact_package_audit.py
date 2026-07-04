@@ -241,6 +241,10 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_single_bundle_observed"] = False
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_tool_authority"] = True
     readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_tool_authority_false"] = False
+    readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_not_provider_selection"] = False
+    readiness["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_not_nemoclaw_action_packet"] = False
+    readiness["proofs"]["async_oracle_jobs"]["queued_interpreter_fold_in_observed"] = False
+    readiness["proofs"]["async_oracle_jobs"]["queued_interpreter_fold_in_oracle_text"] = "run uncorrected task five"
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_early_single_bundle"] = False
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_evidence_merge_keys"] = {"early": "kame-merge-wrong"}
     readiness["proofs"]["async_oracle_jobs"]["witness_fusion_accepted_audio_gate_observed"] = False
@@ -349,6 +353,22 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.unpromoted_hypothesis_tool_authority_false_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.unpromoted_hypothesis_not_provider_selection_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.unpromoted_hypothesis_not_nemoclaw_action_packet_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.queued_interpreter_fold_in_observed_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.queued_interpreter_fold_in_oracle_text_mismatch"
         in report["issues"]
     )
     assert (

@@ -2,11 +2,11 @@
 
 ## One-Line Pitch
 
-Hermes becomes a Spark/PGX-powered household and business operator that can be spoken to over Discord, given a spending budget through Stripe, provision services for itself, and carry the same operating context into a phone call.
+Hermes becomes a VoiceOps hackathon proof targeting Spark/PGX: a household and business operator that can be spoken to over Discord, given a spending budget through Stripe, provision services for itself, and carry the same operating context into a phone call.
 
 ## Demo Shape
 
-The demo starts in Discord voice. The user joins a voice channel and talks naturally to Hermes. Hermes listens, acknowledges quickly through the reflex, sends raw-audio evidence plus labeled witness hypotheses to the Gemma interpreter, uses the active Hermes `/model` oracle for durable work, and replies by voice in the channel.
+The demo starts in Discord voice. The user joins a voice channel and talks naturally to Hermes. Hermes listens, acknowledges quickly through the reflex, sends raw-audio evidence plus labeled witness hypotheses to the Gemma interpreter, uses the active Hermes `/model` oracle for durable work, and replies by voice in the channel. Open S2S, STT, TTS, or hosted realtime providers may appear in the demo only as role-labeled components: reflex, interpreter, auxiliary witness, outbound TTS, or degraded fallback.
 
 The user then gives Hermes a spending budget. Hermes uses Stripe-backed spending controls and skills to provision a service it needs, such as a VoIP provider account or phone-number-capable communications service.
 
@@ -38,10 +38,11 @@ The current local deployment has three layers.
 First, Discord handles live voice I/O. The Hermes gateway joins a voice channel, receives Discord audio frames, forwards them to the realtime voice sidecar, may post provenance-labeled rough caption or transcript-hypothesis status when enabled, and plays synthesized replies back into the channel.
 
 Second, the voice sidecar and streaming speech bridge handle speech conversion,
-playback, and bring-up fallbacks. Cartesia remains useful as a cloud STT/TTS
-baseline, but the intended KAME path is not Cartesia-driven: the reflex owns
-live floor control, Gemma interprets clipped raw audio with labeled transcript
-hypotheses, and Hermes' active oracle owns durable work.
+playback, and bring-up fallbacks. Cartesia remains useful as a cloud TTS,
+comparison, or degraded fallback baseline, but the intended KAME path is not
+Cartesia-STT-driven: the reflex owns live floor control, Gemma interprets
+clipped raw audio with labeled transcript hypotheses, and Hermes' active oracle
+owns durable work.
 
 Third, the local model server runs reproducible model containers:
 
@@ -73,17 +74,17 @@ The previous Gemma 12B + Nemotron Nano mixture-of-agents path is no longer the
 live demo strategy. It added too much orchestration latency to voice turns and
 made response timing harder to reason about. The demo path is now tiered:
 the reflex acknowledges immediately, Gemma interprets the raw audio plus the
-reflex/Moshi transcript hypotheses without blocking the voice loop, and Hermes'
-active model handles oracle work through the normal Hermes model path. Moshi/S2S
-or ASR transcript output is witness context for Gemma and oracle-visible only as
-labeled audit context or promoted evidence, not a replacement for raw-audio
-interpretation. If the Moshi-style frontend emits a transcript, it should be
-attached to the same interpreter request as the clipped audio segment so Gemma
-can compare what the live reflex thought it heard against
-the waveform. The demo must keep those fields separate in logs and prompts: raw
-audio is primary interpreter evidence, Moshi/S2S and ASR text are labeled
-hypotheses, and only interpreter/oracle judgment can promote wording into a
-durable user request or tool-critical argument.
+frontend-witness/reflex/S2S/classic-ASR hypotheses without blocking the voice
+loop, and Hermes' active model handles oracle work through the normal Hermes
+model path. Moshi/S2S or ASR transcript output is witness context for Gemma and
+oracle-visible only as labeled audit context or promoted evidence, not a
+replacement for raw-audio interpretation. If the Moshi-style frontend emits a
+transcript, it should be attached to the same interpreter request as the clipped
+audio segment so Gemma can compare what the live reflex thought it heard
+against the waveform. The demo must keep those fields separate in logs and
+prompts: raw audio is primary interpreter evidence, Moshi/S2S and ASR text are
+labeled hypotheses, and only interpreter/oracle judgment can promote wording
+into a durable user request or tool-critical argument.
 
 The current implementation target should be described as evidence-bundle KAME,
 not "Moshi STT" and not "Gemma ASR." The user-facing reflex is allowed to be an
@@ -227,9 +228,10 @@ The final voice architecture should separate low-latency conversational reflexes
 - The **reflex** model handles immediate acknowledgement, floor control,
   rough transcript hypotheses, and concise narration of what it is asking the
   oracle to do.
-- The **interpreter** model, preferably Gemma 4, reviews raw audio plus the
-  reflex/Moshi hypotheses and produces corrected transcript, multilingual
-  intent, entities, confidence, and oracle request patches.
+- The **interpreter** model, preferably Gemma 4, reviews raw audio plus
+  frontend-witness/reflex/S2S/classic-ASR hypotheses and produces corrected
+  transcript, multilingual intent, entities, confidence, and oracle request
+  patches.
 - The **oracle** is Hermes' active model and handles tool use, memory, business logic, and longer reasoning.
 - **Heavy requests** go directly to Hermes' active oracle model. For the hackathon target, that is Nemotron 3 Super, not an MoA wrapper.
 - The reflex should produce real user-visible acknowledgements and status, with
@@ -284,12 +286,26 @@ system heard the user.
 - The oracle request artifact shows promoted interpreter/oracle fields as the
   action source, with unpromoted Moshi/S2S/ASR text retained only as labeled
   audit context.
-- The active Hermes model routes to the local PGX Nemotron 3 Super endpoint.
+- The active Hermes model routes through the normal `/model` path, preferably
+  to local Nemotron 3 Super when available; any hosted or smaller fallback is
+  labeled clearly in the artifact.
 - Heavy planning/build/debug requests go directly through the active Hermes oracle, without the Gemma 12B + Nemotron Nano MoA path.
 - Stripe-linked provisioning is constrained by an explicit budget.
 - Spend/provision/call actions are represented as NemoClaw-style packets before
   live execution.
 - The phone handoff preserves context from the Discord turn.
+
+## Headless Readiness Plan
+
+The hackathon package should be runnable without live services first, then
+closed by external evidence gates:
+
+- generate the Milestone 0 package headlessly
+- run `scripts/voiceops_plan_run.py --dry-audit --package-audit`
+- keep readiness blocked until live Discord voice evidence, spend/provisioning
+  preflight evidence, and Spark/PGX model evidence are attached
+- use the package audit to reject false-ready claims, transcript-only action
+  payloads, missing promoted evidence, and missing provider-role disclosure
 
 ## Known Constraints
 
@@ -324,6 +340,10 @@ system heard the user.
   timing, Hermes passes them to Gemma with transcript hypotheses attached. If it
   can provide only text, the path is useful compatibility evidence, but not proof
   of the full raw-audio KAME interpreter loop.
+- Open S2S alternatives are candidates by role, not replacements for the
+  interpreter/oracle contract. A fast frontend can improve acknowledgement and
+  witness quality, but it cannot promote its own transcript into spend,
+  provisioning, phone, memory, file, durable history, or tool arguments.
 - Open S2S and STT/TTS alternatives must be described by role in the demo plan:
   reflex, interpreter, auxiliary transcript evidence, outbound TTS, or degraded
   fallback. A fast transcript is not enough to authorize spending, provisioning,

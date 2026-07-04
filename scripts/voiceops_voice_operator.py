@@ -1780,6 +1780,7 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("queued_update_latest_update_visible") is True
         and smoke.get("queued_update_started_with_priority") is True
         and smoke.get("queued_update_reached_oracle") is True
+        and smoke.get("queued_interpreter_fold_in_observed") is True
         and smoke.get("running_job_update_observed") is True
         and smoke.get("running_update_latest_update_visible") is True
         and smoke.get("running_update_reached_oracle") is True
@@ -1797,6 +1798,8 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("unpromoted_hypothesis_action_sinks_clean") is True
         and smoke.get("unpromoted_hypothesis_not_spend_reason") is True
         and smoke.get("unpromoted_hypothesis_not_spend_payload") is True
+        and smoke.get("unpromoted_hypothesis_not_provider_selection") is True
+        and smoke.get("unpromoted_hypothesis_not_nemoclaw_action_packet") is True
         and smoke.get("unpromoted_hypothesis_not_phone_call_payload") is True
         and smoke.get("unpromoted_hypothesis_not_call_payload") is True
         and smoke.get("unpromoted_hypothesis_not_tool_arguments") is True
@@ -2607,6 +2610,24 @@ def build_voice_operator_report(
                 async_oracle_smoke.get("queued_update_started_with_priority")
             ),
             "queued_update_reached_oracle": bool(async_oracle_smoke.get("queued_update_reached_oracle")),
+            "queued_interpreter_fold_in_observed": bool(
+                async_oracle_smoke.get("queued_interpreter_fold_in_observed")
+            ),
+            "queued_interpreter_fold_in_oracle_text": async_oracle_smoke.get(
+                "queued_interpreter_fold_in_oracle_text"
+            ),
+            "queued_interpreter_fold_in_transcript_source": async_oracle_smoke.get(
+                "queued_interpreter_fold_in_transcript_source"
+            ),
+            "queued_interpreter_fold_in_transcript_confidence": async_oracle_smoke.get(
+                "queued_interpreter_fold_in_transcript_confidence"
+            ),
+            "queued_interpreter_fold_in_oracle_text_source": async_oracle_smoke.get(
+                "queued_interpreter_fold_in_oracle_text_source"
+            ),
+            "queued_interpreter_fold_in_evidence_authority": dict(
+                async_oracle_smoke.get("queued_interpreter_fold_in_evidence_authority") or {}
+            ),
             "verbose_result_spoken_bounded": bool(async_oracle_smoke.get("verbose_result_spoken_bounded")),
             "verbose_result_committed_bounded": bool(
                 async_oracle_smoke.get("verbose_result_committed_bounded")
@@ -2856,6 +2877,12 @@ def build_voice_operator_report(
             ),
             "unpromoted_hypothesis_not_spend_payload": bool(
                 async_oracle_smoke.get("unpromoted_hypothesis_not_spend_payload")
+            ),
+            "unpromoted_hypothesis_not_provider_selection": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_not_provider_selection")
+            ),
+            "unpromoted_hypothesis_not_nemoclaw_action_packet": bool(
+                async_oracle_smoke.get("unpromoted_hypothesis_not_nemoclaw_action_packet")
             ),
             "unpromoted_hypothesis_not_phone_call_payload": bool(
                 async_oracle_smoke.get("unpromoted_hypothesis_not_phone_call_payload")

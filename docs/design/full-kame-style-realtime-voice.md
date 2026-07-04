@@ -2,10 +2,20 @@
 
 Status: design draft
 Target branch: `wip/full-kame-reflex-voice`
-Target deployment: one DGX Spark as the intended local appliance path; cloud providers remain allowed only as clearly labeled bring-up fallbacks
+Target deployment: one DGX Spark as the intended local appliance path. Hackathon
+artifacts may prove the workflow and evidence gates before Spark-local
+readiness is proven; cloud providers remain allowed only as clearly labeled
+bring-up fallbacks.
 Preferred local reflex: fastest stable floor-control model, such as Moshi/PersonaPlex-class S2S or a smaller timing/noise-gated model
 Preferred local interpreter: Gemma 4 E2B/E4B/12B audio-multimodal
 Preferred local oracle target: Hermes active `/model`, with Nemotron 3 Super as the first Spark-local NVIDIA target to measure before readiness claims
+
+Canonical rule: every provider is assigned to a role before it is trusted.
+Open S2S systems such as Moshi, VoiceClaw, OpenClaw Talk, Ultravox-like
+frontends, or hosted realtime APIs may be reflexes, witness producers,
+interpreters, TTS providers, or degraded fallbacks. They are not allowed to
+silently become the Hermes oracle, the transcript of record, or an action
+authority source.
 
 Canonical current design: three-tier sensor fan-in, not STT-first. The reflex
 is the always-warm live interface; Gemma is the post-cut audio interpreter; the
@@ -258,6 +268,67 @@ conversations. The user hears the reflex quickly. Gemma gets both the waveform
 and the Moshi/open-S2S witness text. The oracle receives compact, promoted
 business intent rather than raw partials or duplicate STT turns.
 
+## Provider Role Matrix
+
+Provider and model selection must be described by role, not by brand. This is
+the implementation map for open S2S, STT/TTS, and hosted realtime alternatives:
+
+| Role | Valid providers | Contract |
+| --- | --- | --- |
+| Reflex / floor control | Moshi/PersonaPlex-class S2S, VoiceClaw/OpenClaw-style frontend, small local timing model, hosted realtime fallback | Owns VAD-adjacent turn-taking, barge-in, acknowledgement, and provisional route. May emit witness text, but has no tool authority. |
+| Interpreter / evidence | Gemma 4 audio-multimodal family, or another direct-audio model that can accept bounded clips | Receives raw audio first and transcript hypotheses second. Emits promoted transcript, intent, entities, confidence, and disagreement flags. |
+| Auxiliary transcript witness | Moshi/OpenClaw/VoiceClaw transcript-looking output, classic ASR, Nemotron/Riva ASR, cloud ASR fallback | Captions and clues only. Must stay `authority = "hypothesis"` until accepted or corrected by the interpreter. |
+| Oracle / brain | Hermes active `/model` only | Owns tools, memory, files, approvals, spend, phone calls, and durable outcomes. Voice config must not add `oracle_model`. |
+| Outbound TTS | Magpie/Riva, Piper-class local TTS, Cartesia/cloud fallback, hosted realtime voice output | Speaks approved text. TTS choice does not change transcript authority or oracle model. |
+| Degraded compatibility | text-only VoiceClaw/OpenClaw/Moshi bridge, text-only hosted realtime callback | May draft, clarify, or produce low-risk status. Cannot satisfy full KAME, Stripe, NemoClaw, phone, memory, file, or message gates. |
+
+This matrix is intentionally conservative. A model may be excellent at several
+tasks, but a single request must still name which role it is playing. For
+example, a Moshi transcript may be a strong witness for Gemma, but it is still
+not the user's durable message. A hosted realtime API may be a useful bring-up
+reflex or TTS path, but it does not replace Hermes' active `/model` as the
+oracle.
+
+## Non-Negotiable Implementation Rules
+
+- Do not run a separate STT-first Hermes conversation when raw audio is
+  available.
+- Do not call Gemma "ASR" in code, docs, or demo copy. Its role is interpreter
+  or evidence adjudicator.
+- Do not call Moshi/OpenClaw/VoiceClaw transcript-looking output "the
+  transcript" unless the authority label is visible and non-authoritative.
+- Do not create a VoiceOps-specific `oracle_model`; use Hermes `/model`.
+- Do not let text-only frontend evidence close full-KAME, Stripe, NemoClaw,
+  phone, memory, file, external-message, or durable-history readiness gates.
+- Do not let a witness transcript schedule a second oracle job for the same
+  speech cut.
+- Do not treat acknowledgement latency and oracle latency as the same metric.
+  Reflex acknowledgement is allowed to be fast while the oracle continues in
+  the background.
+
+## Required Artifact Proof
+
+Every headless or recorded proof of this design should show the same facts:
+
+- one `turn_id`, one `evidence_bundle_id`, and one `evidence_merge_key` for the
+  speech cut
+- accepted `audio_segment_ref`, time range, VAD result, and energy/noise-gate
+  decision
+- reflex acknowledgement and provisional route
+- transcript hypotheses with `kind`, `source`, timing/confidence when
+  available, partial/final state, `authority = "hypothesis"`, and
+  `tool_authority = false`
+- interpreter adjudication for each witness:
+  `accepted_as_supporting_evidence`, `corrected_by_audio`, or
+  `rejected_or_diagnostic_only`
+- promoted `interpreter_corrected_transcript`, normalized intent, entities, and
+  confidence before those fields reach the active Hermes oracle
+- sink-specific checks proving unpromoted witness text did not enter Stripe
+  spend reasons, provider selections, NemoClaw action packets, phone payloads,
+  tool arguments, memory writes, file writes, external messages, or durable
+  user history
+- explicit degraded-mode labeling when raw audio is missing
+
 ## Three-Tier Sensor Fan-In Contract
 
 The latest design decision is to keep the architecture three-tier while
@@ -366,11 +437,11 @@ model pretending to own every job:
    stable enough.
 2. **Interpreter:** the audio evidence adjudicator. Gemma 4 E2B/E4B/12B-style
    multimodal models belong here: they receive the clipped raw audio segment
-   plus any labeled Moshi/reflex/STT transcript hypotheses, then produce
-   corrected multilingual evidence, transcript candidates, and oracle request
-   patches. This is the layer that can behave like multilingual transcript
-   adjudication for Hermes, but it is not the live endpointer and not a
-   required ASR proof. Raw audio is the primary signal; transcripts are
+   plus labeled frontend-witness, reflex, S2S, or classic-ASR hypotheses, then
+   produce corrected multilingual evidence, transcript candidates, and oracle
+   request patches. This is the layer that can behave like multilingual
+   transcript adjudication for Hermes, but it is not the live endpointer and
+   not a required ASR proof. Raw audio is the primary signal; transcripts are
    context, not authority.
 3. **Oracle:** Hermes' active model, selected through the normal `/model`
    interface. It owns tools, memory, approvals, files, spend, provisioning,
@@ -451,12 +522,16 @@ input must keep provenance until a later layer promotes it.
 | `interpreter_corrected_transcript` | Gemma-style interpreter | durable user request candidate and tool-critical wording | first promoted transcript |
 | promoted oracle text / final result | Hermes active `/model` | tool use, memory, files, spend, calls, durable outcome | action authority after policy checks |
 
-This allows a three-tier design without making STT the control path. Moshi/S2S
-transcripts are valuable because they summarize the live reflex's hearing of
-the turn, including dropped prefixes or code-switched phrases. They must travel
-beside the raw audio into the Gemma interpreter, not replace the raw audio and
-not become a separate oracle prompt. Classic ASR follows the same rule and is
-kept primarily for fallback, diagnostics, and literal-evidence checks.
+This allows a three-tier design without making STT the control path. Ambiguous
+Moshi/OpenClaw/VoiceClaw transcript-looking text should default to
+`frontend_witness_hypothesis`, with `reflex_transcript_hypothesis` and
+`s2s_transcript_hypothesis` reserved for producers the adapter can identify
+precisely. These hypotheses are valuable because they summarize what the live
+frontend believed it heard, including dropped prefixes or code-switched
+phrases. They must travel beside the raw audio into the Gemma interpreter, not
+replace the raw audio and not become a separate oracle prompt. Classic ASR
+follows the same rule and is kept primarily for fallback, diagnostics, and
+literal-evidence checks.
 
 The important distinction is not "Moshi instead of ASR" versus "classic ASR".
 Both are transcript-like side channels. They can be useful evidence, especially
@@ -491,13 +566,14 @@ still only a hypothesis. The correct packet shape is raw audio plus
 provenance-labeled hypotheses, not "pick whichever transcript arrived first."
 
 When the frontend is Moshi-like and produces both speech and text, the text
-should be carried to the interpreter as `reflex_transcript_hypothesis` or
-`s2s_transcript_hypothesis` alongside the clipped waveform. The interpreter may
-use it to notice that the live reflex dropped "hey Hermes", misheard a name, or
-invented a command, but the hypothesis must not become durable user text until
-the interpreter promotes it. This is the practical way to use Moshi STT output:
-it is evidence about the reflex's hearing, not a replacement for raw audio and
-not a second user message.
+should default to `frontend_witness_hypothesis` alongside the clipped waveform
+unless the adapter can prove it came from the live reflex model itself or from
+a distinct caption/S2S component. The interpreter may use it to notice that
+the live frontend dropped "hey Hermes", misheard a name, or invented a command,
+but the hypothesis must not become durable user text until the interpreter
+promotes it. This is the practical way to use Moshi transcript-looking output:
+it is evidence about what the frontend believed it heard, not a replacement for
+raw audio and not a second user message.
 
 ## Interpreter Evidence Bundle Contract
 
@@ -826,17 +902,19 @@ job envelope with explicit evidence fields:
 - `reflex_intent` and `interface_already_said` for what the live interface chose
   and already spoke
 - `reflex_transcript_hypothesis` for the reflex model's own hearing
-- `auxiliary_transcript_hypotheses[]` for Moshi/open-S2S captions, classic ASR,
-  or other transcript-like side channels, each with source, timing/confidence
-  when available, and `authority = "hypothesis"`
+- `transcript_hypotheses[]` for frontend-witness, Moshi/open-S2S caption,
+  reflex, classic-ASR, or other transcript-like side channels, each with kind,
+  source, timing/confidence when available, and `authority = "hypothesis"`
 - `frontend_session_id`, `frontend_turn_id`, and `tool_call_id` for correlation,
   cancellation, and terminal result delivery
 
 Every evidence field should also carry an authority label. The minimum labels
-are `primary_audio`, `reflex_hypothesis`, `auxiliary_hypothesis`,
-`interpreter_promoted`, `oracle_promoted`, and `diagnostic_only`. The scheduler
-may use provisional reflex intent to create a queue envelope or narrate work,
-but durable replay must make clear which fields were hypotheses and which field
+are `primary_audio`, `reflex_hypothesis`, `frontend_witness_hypothesis`,
+`auxiliary_hypothesis`, `interpreter_promoted`, `oracle_promoted`, and
+`diagnostic_only`. `frontend_witness_hypothesis` is the preferred label for
+ambiguous Moshi/OpenClaw/VoiceClaw transcript-looking text. The scheduler may
+use provisional reflex intent to create a queue envelope or narrate work, but
+durable replay must make clear which fields were hypotheses and which field
 actually drove the oracle/tool action.
 
 If an external frontend can provide only text and no replayable audio reference,
@@ -1517,14 +1595,15 @@ Preferred reflex track:
   floor-control candidate
 - rough transcript hypothesis captured as early, non-durable context
 - text-only fallback through streaming STT only when the realtime reflex is
-  unavailable or too unstable
+  unavailable or too unstable; this is degraded compatibility, not full KAME
 - the model must be good at barge-in, immediate acknowledgements, concise voice
   responses, and following the Hermes capability contract
 
 Preferred interpreter track:
 
 - Gemma 4 E2B/E4B/12B as the first audio-understanding evidence candidate
-- raw audio plus reflex/Moshi transcript hypotheses as normal input
+- raw audio plus frontend-witness/reflex/S2S transcript hypotheses as normal
+  input
 - optional classic ASR transcript hypothesis as an additional comparison input
 - outputs corrected transcript, entities, language notes, confidence, and
   oracle request patches
@@ -1533,7 +1612,9 @@ Preferred interpreter track:
 
 Preferred speech track:
 
-- use Cartesia or another cloud bridge only as a fallback or provider-comparison path while local speech is being validated
+- use Cartesia or another cloud bridge only as a fallback or
+  provider-comparison path while local speech is being validated
+- do not use Cartesia STT as primary KAME input, scheduler, or control path
 - evaluate local transcript hypothesis sources and TTS separately before combining them
 - do not feed STT into the reflex in normal full KAME mode
 - use ASR as fallback or additional auxiliary transcript hypothesis evidence for escalated
@@ -1719,10 +1800,10 @@ raw-audio Gemma interpretation.
 
 ### Phase 3: Gemma Interpreter Evidence Lane
 
-Add Gemma 4 as the non-blocking interpreter over the clipped raw audio plus the
-reflex and Moshi/S2S transcript hypotheses. It should produce corrected
-transcript, entities, language notes, confidence, disagreement flags, and oracle
-request patches.
+Add Gemma 4 as the non-blocking interpreter over the clipped raw audio plus
+frontend-witness, reflex, S2S, and optional classic-ASR hypotheses. It should
+produce corrected transcript, entities, language notes, confidence,
+disagreement flags, and oracle request patches.
 
 The Moshi/S2S transcript is a companion signal for this interpreter request,
 not a replacement for the waveform and not a second path into the oracle. In
@@ -1868,11 +1949,12 @@ Integration tests:
 - late output from cancelled jobs is not spoken or committed
 - sidecar unavailable fallback
 - TTS unavailable fallback
-- realtime reflex unavailable fallback to STT-fed routing
+- realtime reflex unavailable degraded fallback to STT-fed routing; this is
+  pre-KAME compatibility and must not be presented as full KAME evidence
 - fail-closed sidecar failure after oracle-job acceptance emits `SESSION_ERROR`
   and drains/cancels active oracle jobs with the configured shutdown timeout
-- escalated turn includes interpreter evidence and optional auxiliary transcript
-  evidence when configured
+- escalated turn includes interpreter evidence and optional frontend-witness,
+  reflex, S2S, or classic-ASR hypotheses when configured
 - interpreter evidence can patch a queued/running oracle job without blocking
   the immediate reflex acknowledgement
 - oracle timeout with spoken status
@@ -1953,8 +2035,9 @@ Already present:
 
 - Discord voice join/leave path
 - realtime sidecar path
-- streaming STT/TTS provider bridge path
-- Cartesia and ElevenLabs-style provider configuration
+- streaming STT/TTS provider bridge path for fallback and bring-up
+- Cartesia and ElevenLabs-style provider configuration for fallback,
+  comparison, and outbound speech experiments
 - mixer playback path
 - speech-energy-gated barge-in
 - fallback to legacy behavior when sidecar startup fails
@@ -1966,8 +2049,10 @@ Already present:
 - auxiliary transcript-hypothesis lane for escalated turns
 - ephemeral versus durable transcript policy at the session boundary
 - oracle hint streaming back to live interface providers
-- explicit KAME provenance for realtime-reflex, interpreter, and STT-fed fallback turns
-- visible frontend fallback state when KAME uses local STT as the reflex fallback
+- explicit KAME provenance for realtime-reflex, interpreter, and degraded
+  STT-fed fallback turns
+- visible degraded frontend fallback state when local STT is used because the
+  realtime reflex path is unavailable
 - DGX Spark launch/profile generation for reflex, interpreter, oracle,
   auxiliary transcript, and TTS targets
 - benchmark matrix templates for local reflex, interpreter, and speech candidates

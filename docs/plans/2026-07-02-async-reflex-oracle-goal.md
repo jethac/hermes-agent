@@ -40,11 +40,12 @@ parallel oracle turn.
 
 The Moshi transcript is useful context, not control. It should help Gemma detect
 clipped prefixes, names, numbers, code-switching, and hallucinated commands,
-but it must remain `reflex_hypothesis` or `auxiliary_hypothesis` until Gemma
-promotes raw-audio-grounded evidence for the active oracle. Hypothesis-only
-text may support diagnostics, captions, or clarification. It must not become
-`oracle_text`, durable user history, a spend reason, call payload, memory/file
-content, or a tool argument by arriving first.
+but it must remain `frontend_witness_hypothesis` or another explicit
+hypothesis kind until Gemma promotes raw-audio-grounded evidence for the active
+oracle. Hypothesis-only text may support diagnostics, captions, or
+clarification. It must not become `oracle_text`, durable user history, a spend
+reason, call payload, memory/file content, or a tool argument by arriving
+first.
 
 Reflex acknowledgement should not wait for that witness text. If raw audio and
 a reflex route are available, the session creates one interpreter packet
@@ -90,7 +91,7 @@ The reflex is the live interface. It owns:
 The interpreter is the evidence lane. It owns:
 
 - raw clipped audio review after each speech cut
-- comparison against the reflex/Moshi transcript hypotheses
+- comparison against frontend-witness/reflex/S2S/classic-ASR hypotheses
 - optional comparison against classic ASR hypotheses when enabled
 - corrected transcript alternatives
 - multilingual intent, entities, numbers, names, URLs, code terms, and language
@@ -138,9 +139,12 @@ The evidence bundle must preserve provenance:
 
 Each field must also carry an explicit authority label in logs and durable job
 records. The minimum labels are `primary_audio`, `reflex_hypothesis`,
-`auxiliary_hypothesis`, `interpreter_promoted`, `oracle_promoted`, and
-`diagnostic_only`. A field can be useful before it is authoritative; it just
-cannot be replayed later as if the user verified it.
+`frontend_witness_hypothesis`, `auxiliary_hypothesis`,
+`interpreter_promoted`, `oracle_promoted`, and `diagnostic_only`.
+`auxiliary_hypothesis` remains a generic fallback label; ambiguous
+Moshi/OpenClaw/VoiceClaw transcript-looking text should prefer
+`frontend_witness_hypothesis`. A field can be useful before it is
+authoritative; it just cannot be replayed later as if the user verified it.
 
 The oracle may see all of those fields, but only after they are labeled. It must
 never receive a Moshi or ASR transcript as if it were the user's verified
@@ -596,11 +600,11 @@ approval payloads, credentials, or tool arguments.
 
 The interpreter gets a different compact view: the current turn id, clipped
 audio reference, speaker/channel metadata, reflex route and acknowledgement,
-optional reflex/Moshi/S2S transcript hypotheses, optional ASR hypothesis, and
-active job id. Those fields should arrive as one evidence bundle for the speech
-cut, not as independent prompts racing each other. The interpreter can perform
-the durable multilingual transcript adjudication from this bundle, but it is not
-the streaming endpointer and does not need tool schemas or broad Hermes state.
+optional frontend-witness/reflex/S2S/classic-ASR hypotheses, and active job id.
+Those fields should arrive as one evidence bundle for the speech cut, not as
+independent prompts racing each other. The interpreter can perform the durable
+multilingual transcript adjudication from this bundle, but it is not the
+streaming endpointer and does not need tool schemas or broad Hermes state.
 
 The compact interpreter view should keep raw audio first, live interface context
 second, and hypotheses third. That ordering matters: it tells Gemma that Moshi,

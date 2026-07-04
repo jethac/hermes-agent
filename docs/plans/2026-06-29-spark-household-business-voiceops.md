@@ -72,11 +72,11 @@ Target KAME layout:
   events, interpreter requests, or durable transcript candidates.
 - Interpreter/evidence: Gemma 4 E2B/E4B/12B-style audio-multimodal model,
   run non-blocking after each speech cut to adjudicate raw audio plus
-  reflex/Moshi transcript hypotheses into corrected transcript, multilingual
-  intent, entities, confidence, and oracle request patches. Raw audio is the
-  primary signal; Moshi/S2S and classic ASR transcripts are labeled hypotheses
-  supplied as context in the same interpreter evidence bundle, not
-  prerequisites, separate turns, or authority.
+  frontend-witness/reflex/S2S/classic-ASR hypotheses into corrected
+  transcript, multilingual intent, entities, confidence, and oracle request
+  patches. Raw audio is the primary signal; Moshi/S2S and classic ASR
+  transcripts are labeled hypotheses supplied as context in the same
+  interpreter evidence bundle, not prerequisites, separate turns, or authority.
 - Oracle/brain: whatever Hermes `/model` selects, with Nemotron 3 Super as the
   first preferred local NVIDIA candidate to evaluate on DGX Spark. VoiceOps
   submits oracle jobs to the active Hermes model; it does not configure a
@@ -714,6 +714,24 @@ Required proof:
 - WhatsApp and phone/SMS appear as reachable follow-on surfaces.
 - The DGX Spark target is explicit in the story and artifacts.
 
+Recorded artifact must show:
+
+- one `evidence_bundle_id`, one `evidence_merge_key`, and the accepted
+  `audio_segment_ref` for the spoken budget/provisioning request
+- reflex acknowledgement and provisional route before oracle completion
+- Moshi/OpenClaw/VoiceClaw/reflex/classic-ASR transcript-looking text, if any,
+  preserved only as transcript hypotheses or frontend witness context
+- Gemma interpreter adjudication for those witnesses:
+  `accepted_as_supporting_evidence`, `corrected_by_audio`, or
+  `rejected_or_diagnostic_only`
+- promoted transcript, intent, entities, and confidence as the source that
+  reaches the active Hermes `/model`
+- Stripe spend reason, provider selection, NemoClaw action packet, phone-call
+  payload, tool arguments, memory/file writes, and external messages free of
+  unpromoted witness text
+- readiness gaps still marked external when live Discord, spend/provisioning,
+  or Spark/PGX evidence has not actually been collected
+
 Video spine:
 
 1. User joins Discord voice.
@@ -1101,6 +1119,12 @@ uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-di
 
 `--dry-audit` builds the same plan summary in a temporary artifact root, prints the readiness gaps, closure status, safety flags, current-environment blockers, and ordered `next_actions`, then removes the temporary artifacts on exit. It does not write the requested artifact paths, and it refuses `--run-command-probes` and `--run-readonly-discovery` so it cannot silently become a subprocess or network-capable probe. Its `ok` field means no hard validation failures, not readiness; use `readiness_ok` or `closure_status: complete` for readiness automation. The `next_actions` records are machine-readable and include each remaining gate, whether the current host can run it, current environment blockers, the first safe evidence command, any separate diagnostic command, and the success check.
 
+This is the headless readiness plan for the current pivot: generate the package
+and package audit first, then close the external gates with collected live
+Discord voice evidence, spend/provisioning preflight evidence, and Spark/PGX
+model evidence. Transcript-only or frontend-only demos must stay blocked from
+full KAME and Spark-local readiness.
+
 Artifact-writing indexer with final package audit:
 
 ```bash
@@ -1244,3 +1268,5 @@ Long term:
 - blocking the hackathon proof on fully local Gemma audio serving
 - blocking the hackathon proof on real purchases
 - hiding dry-run status to make the demo look more complete than it is
+- claiming full KAME, Stripe/NemoClaw/phone readiness, or Spark-local readiness
+  from transcript-only, frontend-only, or hosted-fallback demos

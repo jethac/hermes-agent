@@ -1974,6 +1974,14 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
     action_sink_keys = (
         "spend_reason",
         "spend_payload",
+        "provider_selection",
+        "provider_choice",
+        "provider_payload",
+        "nemoclaw_action_packet",
+        "nemoclaw_action_payload",
+        "action_packet",
+        "action_payload",
+        "approval_payload",
         "phone_call_payload",
         "call_payload",
         "tool_arguments",
@@ -2056,6 +2064,14 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
         "unpromoted_hypothesis_action_sink_values": sink_values,
         "unpromoted_hypothesis_not_spend_reason": action_sink_results["spend_reason"],
         "unpromoted_hypothesis_not_spend_payload": action_sink_results["spend_payload"],
+        "unpromoted_hypothesis_not_provider_selection": action_sink_results["provider_selection"]
+        and action_sink_results["provider_choice"]
+        and action_sink_results["provider_payload"],
+        "unpromoted_hypothesis_not_nemoclaw_action_packet": action_sink_results["nemoclaw_action_packet"]
+        and action_sink_results["nemoclaw_action_payload"]
+        and action_sink_results["action_packet"]
+        and action_sink_results["action_payload"]
+        and action_sink_results["approval_payload"],
         "unpromoted_hypothesis_not_phone_call_payload": action_sink_results["phone_call_payload"],
         "unpromoted_hypothesis_not_call_payload": action_sink_results["call_payload"],
         "unpromoted_hypothesis_not_tool_arguments": action_sink_results["tool_arguments"]
@@ -3409,6 +3425,35 @@ async def run_smoke() -> dict[str, Any]:
             for event in events
         )
     )
+    sequence += 1
+    await engine.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.INTERFACE_ORACLE_UPDATE,
+            session_id="voice-smoke-async-oracle",
+            sequence=sequence,
+            payload={
+                "job_id": task_5_queued.payload["job_id"],
+                "update_type": "interpreter_evidence",
+                "source": "gemma_interpreter",
+                "corrected_transcript": "run corrected smoke task five",
+                "normalized_intent": "Run smoke task 5",
+                "confidence": 0.88,
+                "reason": "attach queued promoted interpreter evidence",
+            },
+        )
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.INTERFACE_ORACLE_UPDATE
+            and event.payload.get("job_id") == task_5_queued.payload["job_id"]
+            and "transcript=run corrected smoke task five"
+            in str(event.payload.get("latest_interpreter_evidence") or "")
+            and "intent=Run smoke task 5"
+            in str(event.payload.get("latest_interpreter_evidence") or "")
+            and "confidence=0.88" in str(event.payload.get("latest_interpreter_evidence") or "")
+            for event in events
+        )
+    )
 
     task_3_started = next(
         event
@@ -3799,6 +3844,29 @@ async def run_smoke() -> dict[str, Any]:
         and "include smoke update context" in tuple(getattr(request, "job_updates", ()))
         for request in oracle.requests
     )
+    queued_interpreter_request = next(
+        (
+            request
+            for request in oracle.requests
+            if str(getattr(request, "intent", "")) == "Run smoke task 5"
+            and "include smoke update context" in tuple(getattr(request, "job_updates", ()))
+        ),
+        None,
+    )
+    queued_interpreter_fold_in_metadata = (
+        queued_interpreter_request.to_metadata() if queued_interpreter_request is not None else {}
+    )
+    queued_interpreter_fold_in_observed = (
+        queued_interpreter_request is not None
+        and getattr(queued_interpreter_request, "oracle_text", "") == "run corrected smoke task five"
+        and getattr(queued_interpreter_request, "transcript", "") == "run corrected smoke task five"
+        and getattr(queued_interpreter_request, "transcript_source", "") == "gemma_interpreter"
+        and getattr(queued_interpreter_request, "transcript_confidence", None) == 0.88
+        and getattr(queued_interpreter_request, "oracle_text_source", "") == "gemma_interpreter"
+        and queued_interpreter_fold_in_metadata.get("kame_oracle_text_source") == "gemma_interpreter"
+        and queued_interpreter_fold_in_metadata.get("kame_evidence_authority", {}).get("oracle_text")
+        == "interpreter_promoted"
+    )
     running_update_records = [
         (request, update_text, metadata)
         for request, update_text, metadata in oracle.updates
@@ -4006,6 +4074,7 @@ async def run_smoke() -> dict[str, Any]:
             and queued_update_latest_update_visible
             and queued_update_started_with_priority
             and queued_update_reached_oracle
+            and queued_interpreter_fold_in_observed
             and verbose_result_spoken_bounded
             and verbose_result_committed_bounded
             and verbose_result_commit_marked_truncated
@@ -4376,6 +4445,12 @@ async def run_smoke() -> dict[str, Any]:
         "unpromoted_hypothesis_not_spend_payload": unpromoted_hypothesis_smoke[
             "unpromoted_hypothesis_not_spend_payload"
         ],
+        "unpromoted_hypothesis_not_provider_selection": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_not_provider_selection"
+        ],
+        "unpromoted_hypothesis_not_nemoclaw_action_packet": unpromoted_hypothesis_smoke[
+            "unpromoted_hypothesis_not_nemoclaw_action_packet"
+        ],
         "unpromoted_hypothesis_not_phone_call_payload": unpromoted_hypothesis_smoke[
             "unpromoted_hypothesis_not_phone_call_payload"
         ],
@@ -4741,6 +4816,38 @@ async def run_smoke() -> dict[str, Any]:
         else "",
         "queued_update_started_with_priority": queued_update_started_with_priority,
         "queued_update_reached_oracle": queued_update_reached_oracle,
+        "queued_interpreter_fold_in_observed": queued_interpreter_fold_in_observed,
+        "queued_interpreter_fold_in_oracle_text": getattr(
+            queued_interpreter_request,
+            "oracle_text",
+            "",
+        )
+        if queued_interpreter_request is not None
+        else "",
+        "queued_interpreter_fold_in_transcript_source": getattr(
+            queued_interpreter_request,
+            "transcript_source",
+            "",
+        )
+        if queued_interpreter_request is not None
+        else "",
+        "queued_interpreter_fold_in_transcript_confidence": getattr(
+            queued_interpreter_request,
+            "transcript_confidence",
+            None,
+        )
+        if queued_interpreter_request is not None
+        else None,
+        "queued_interpreter_fold_in_oracle_text_source": getattr(
+            queued_interpreter_request,
+            "oracle_text_source",
+            "",
+        )
+        if queued_interpreter_request is not None
+        else "",
+        "queued_interpreter_fold_in_evidence_authority": dict(
+            queued_interpreter_fold_in_metadata.get("kame_evidence_authority", {})
+        ),
         "verbose_result_spoken_bounded": verbose_result_spoken_bounded,
         "verbose_result_committed_bounded": verbose_result_committed_bounded,
         "verbose_result_commit_marked_truncated": verbose_result_commit_marked_truncated,

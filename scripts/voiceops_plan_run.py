@@ -1682,6 +1682,26 @@ async def build_plan_run_async(
                     "queued_update_reached_oracle": voice_operator["proofs"]["async_oracle_jobs"][
                         "queued_update_reached_oracle"
                     ],
+                    "queued_interpreter_fold_in_observed": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["queued_interpreter_fold_in_observed"],
+                    "queued_interpreter_fold_in_oracle_text": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["queued_interpreter_fold_in_oracle_text"],
+                    "queued_interpreter_fold_in_transcript_source": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["queued_interpreter_fold_in_transcript_source"],
+                    "queued_interpreter_fold_in_transcript_confidence": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["queued_interpreter_fold_in_transcript_confidence"],
+                    "queued_interpreter_fold_in_oracle_text_source": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["queued_interpreter_fold_in_oracle_text_source"],
+                    "queued_interpreter_fold_in_evidence_authority": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "queued_interpreter_fold_in_evidence_authority"
+                        ]
+                    ),
                     "verbose_result_spoken_bounded": voice_operator["proofs"]["async_oracle_jobs"][
                         "verbose_result_spoken_bounded"
                     ],
@@ -1880,6 +1900,12 @@ async def build_plan_run_async(
                     "unpromoted_hypothesis_not_spend_payload": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["unpromoted_hypothesis_not_spend_payload"],
+                    "unpromoted_hypothesis_not_provider_selection": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unpromoted_hypothesis_not_provider_selection"],
+                    "unpromoted_hypothesis_not_nemoclaw_action_packet": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["unpromoted_hypothesis_not_nemoclaw_action_packet"],
                     "unpromoted_hypothesis_not_phone_call_payload": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["unpromoted_hypothesis_not_phone_call_payload"],

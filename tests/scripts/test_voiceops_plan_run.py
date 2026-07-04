@@ -1248,6 +1248,21 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     )
     assert voice_result["details"]["async_oracle_smoke"]["queued_update_started_with_priority"] is True
     assert voice_result["details"]["async_oracle_smoke"]["queued_update_reached_oracle"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["queued_interpreter_fold_in_observed"] is True
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["queued_interpreter_fold_in_oracle_text"]
+        == "run corrected smoke task five"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["queued_interpreter_fold_in_transcript_source"]
+        == "gemma_interpreter"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["queued_interpreter_fold_in_evidence_authority"][
+            "oracle_text"
+        ]
+        == "interpreter_promoted"
+    )
     assert voice_result["details"]["async_oracle_smoke"]["verbose_result_spoken_bounded"] is True
     assert voice_result["details"]["async_oracle_smoke"]["verbose_result_committed_bounded"] is True
     assert voice_result["details"]["async_oracle_smoke"]["verbose_result_commit_marked_truncated"] is True
@@ -1374,6 +1389,11 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_action_sink_values"] == {}
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_spend_reason"] is True
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_spend_payload"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_provider_selection"] is True
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_nemoclaw_action_packet"]
+        is True
+    )
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_phone_call_payload"] is True
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_call_payload"] is True
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_tool_arguments"] is True
