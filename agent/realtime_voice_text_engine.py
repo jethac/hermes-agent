@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import os
 import re
@@ -4238,6 +4239,7 @@ def _oracle_request_auxiliary_hypotheses_from_evidence(
         hypothesis: dict[str, Any] = {
             "source": source or "unknown",
             "text": text,
+            "text_digest": _transcript_text_digest(text),
             "authority": "hypothesis",
         }
         confidence = item.get("confidence")
@@ -4288,6 +4290,11 @@ def _oracle_request_auxiliary_hypotheses_from_evidence(
         active_by_source_kind[source_kind_key] = hypothesis
         compact.append(hypothesis)
     return tuple(compact)
+
+
+def _transcript_text_digest(text: str) -> str:
+    normalized = " ".join(str(text or "").split())
+    return "sha256:" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _record_superseded_partial_hypothesis(

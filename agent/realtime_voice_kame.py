@@ -1229,6 +1229,7 @@ def _canonical_transcript_hypothesis(value: object) -> dict[str, Any]:
         "kind": kind,
         "source": source,
         "text": text,
+        "text_digest": _transcript_text_digest(text),
         "role": KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
         "authority": "hypothesis",
         "promotion_required": KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
@@ -1270,6 +1271,11 @@ def _canonical_transcript_hypothesis(value: object) -> dict[str, Any]:
     if rejection_reasons:
         hypothesis["rejection_reasons"] = rejection_reasons
     return hypothesis
+
+
+def _transcript_text_digest(text: str) -> str:
+    normalized = " ".join(str(text or "").split())
+    return "sha256:" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _canonical_reflex_transcript_hypothesis(
@@ -1497,6 +1503,7 @@ def _auxiliary_transcript_hypothesis(value: object) -> dict[str, Any]:
         return {
             "source": "unknown",
             "text": text,
+            "text_digest": _transcript_text_digest(text),
             "role": KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
             "authority": "hypothesis",
             "promotion_required": KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
@@ -1515,6 +1522,7 @@ def _auxiliary_transcript_hypothesis(value: object) -> dict[str, Any]:
     hypothesis: dict[str, Any] = {
         "source": source,
         "text": text,
+        "text_digest": _transcript_text_digest(text),
         "role": KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
         "authority": "hypothesis",
         "promotion_required": KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,

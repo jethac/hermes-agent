@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 
 import pytest
@@ -25,6 +26,11 @@ def _witness_context_contract() -> dict[str, object]:
         "role": "witness_context",
         "promotion_required": "interpreter_promoted_or_oracle_promoted",
     }
+
+
+def _text_digest(text: str) -> str:
+    normalized = " ".join(str(text or "").split())
+    return "sha256:" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _request(text: str, *, route: KameRoute = KameRoute.ORACLE_DIRECT) -> KameOracleRequest:
@@ -199,6 +205,7 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
         {
             "source": "moshi",
             "text": "three to the power of seventeen",
+            "text_digest": _text_digest("three to the power of seventeen"),
             **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
@@ -209,6 +216,7 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
         {
             "source": "asr",
             "text": "what is three to the power of seventeen",
+            "text_digest": _text_digest("what is three to the power of seventeen"),
             **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
@@ -270,12 +278,16 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
     assert job_status["transcript_hypotheses"][0]["authority"] == "hypothesis"
     assert job_status["transcript_hypotheses"][0]["confidence"] == 0.71
     assert job_status["transcript_hypotheses"][0]["text"].startswith("three to the power of seventeen with")
+    assert job_status["transcript_hypotheses"][0]["text_digest"] == _text_digest(
+        job_status["transcript_hypotheses"][0]["text"]
+    )
     assert "sk_test" not in job_status["transcript_hypotheses"][0]["text"]
     assert job_status["transcript_hypotheses"][1:] == (
         {
             "kind": "frontend_witness_hypothesis",
             "source": "moshi",
             "text": "three to the power of seventeen",
+            "text_digest": _text_digest("three to the power of seventeen"),
             **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
@@ -286,6 +298,7 @@ async def test_job_status_exposes_bounded_kame_evidence_contract_fields():
             "kind": "classic_asr_hypothesis",
             "source": "asr",
             "text": "what is three to the power of seventeen",
+            "text_digest": _text_digest("what is three to the power of seventeen"),
             **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
@@ -896,6 +909,7 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
         {
             "source": "classic_asr_fallback_optional",
             "text": "what is three to the power of seventeen",
+            "text_digest": _text_digest("what is three to the power of seventeen"),
             **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
@@ -1025,6 +1039,7 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
             "kind": "frontend_witness_hypothesis",
             "source": "moshi",
             "text": "three to the power of seventeen",
+            "text_digest": _text_digest("three to the power of seventeen"),
             **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
@@ -1035,6 +1050,7 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
             "kind": "classic_asr_hypothesis",
             "source": "classic_asr_fallback_optional",
             "text": "what is three to the power of seventeen",
+            "text_digest": _text_digest("what is three to the power of seventeen"),
             **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
@@ -1134,6 +1150,7 @@ async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witn
         {
             "source": "moshi",
             "text": "provision the phone account",
+            "text_digest": _text_digest("provision the phone account"),
             **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
@@ -1148,6 +1165,7 @@ async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witn
         {
             "source": "moshi",
             "text": "reuse the stale caption",
+            "text_digest": _text_digest("reuse the stale caption"),
             **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,
@@ -1162,6 +1180,7 @@ async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witn
         {
             "source": "voiceclaw",
             "text": "wrong room command",
+            "text_digest": _text_digest("wrong room command"),
             **_witness_context_contract(),
             "authority": "hypothesis",
             "tool_authority": False,

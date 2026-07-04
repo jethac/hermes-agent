@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import hashlib
 import inspect
 import json
 import logging
@@ -1291,6 +1292,7 @@ def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
             "kind": "reflex_transcript_hypothesis",
             "source": job.reflex_transcript_source or "reflex_audio",
             "text": job.reflex_transcript_hypothesis,
+            "text_digest": _transcript_text_digest(job.reflex_transcript_hypothesis),
             "role": KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
             "authority": "hypothesis",
             "promotion_required": KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
@@ -1315,6 +1317,7 @@ def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
             "kind": _compact_evidence_text(value.get("kind"), limit=80) or _job_transcript_hypothesis_kind(source),
             "source": source,
             "text": text,
+            "text_digest": _transcript_text_digest(text),
             "role": KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
             "authority": "hypothesis",
             "promotion_required": KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
@@ -1850,6 +1853,7 @@ def _compact_auxiliary_transcript_hypotheses(
         item: dict[str, Any] = {
             "source": source,
             "text": text,
+            "text_digest": _transcript_text_digest(text),
             "role": KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
             "authority": "hypothesis",
             "promotion_required": KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
@@ -1930,6 +1934,11 @@ def _compact_superseded_partial_texts(value: Any) -> tuple[str, ...]:
         if text and text not in compact:
             compact.append(text)
     return tuple(compact)
+
+
+def _transcript_text_digest(text: str) -> str:
+    normalized = " ".join(str(text or "").split())
+    return "sha256:" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _compact_witness_arrival_phase(value: Mapping[str, Any]) -> str:
