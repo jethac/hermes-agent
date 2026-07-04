@@ -1306,6 +1306,18 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["approval_wait_observed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["approval_status_committed"] is True
     assert voice_result["details"]["async_oracle_smoke"]["approval_tool_progress_observed"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["approval_tool_progress_kame_gate_present"] is True
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["approval_tool_progress_kame_gate_schema_version"]
+        == "voiceops.runtime_kame_action_gate.v1"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["approval_tool_progress_kame_gate_failed_closed"]
+        is True
+    )
+    assert "missing_promoted_evidence" in voice_result["details"]["async_oracle_smoke"][
+        "approval_tool_progress_kame_gate_issues"
+    ]
     assert voice_result["details"]["async_oracle_smoke"]["approval_payload_redacted"] is True
     assert voice_result["details"]["async_oracle_smoke"]["approval_completed"] is False
     assert voice_result["details"]["async_oracle_smoke"]["approval_gate_failed_closed"] is True

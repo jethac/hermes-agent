@@ -1667,6 +1667,20 @@ async def build_plan_run_async(
                     "approval_tool_progress_observed": voice_operator["proofs"]["async_oracle_jobs"][
                         "approval_tool_progress_observed"
                     ],
+                    "approval_tool_progress_kame_gate_present": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["approval_tool_progress_kame_gate_present"],
+                    "approval_tool_progress_kame_gate_schema_version": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["approval_tool_progress_kame_gate_schema_version"],
+                    "approval_tool_progress_kame_gate_failed_closed": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["approval_tool_progress_kame_gate_failed_closed"],
+                    "approval_tool_progress_kame_gate_issues": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "approval_tool_progress_kame_gate_issues"
+                        ]
+                    ),
                     "approval_payload_redacted": voice_operator["proofs"]["async_oracle_jobs"][
                         "approval_payload_redacted"
                     ],

@@ -58,6 +58,16 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["approval_wait_observed"] is True
     assert report["approval_status_committed"] is True
     assert report["approval_tool_progress_observed"] is True
+    assert report["approval_tool_progress_kame_gate_present"] is True
+    assert (
+        report["approval_tool_progress_kame_gate_schema_version"]
+        == "voiceops.runtime_kame_action_gate.v1"
+    )
+    assert report["approval_tool_progress_kame_gate_failed_closed"] is True
+    assert "missing_promoted_evidence" in report["approval_tool_progress_kame_gate_issues"]
+    assert "interpreter_evidence_not_consumed_before_irreversible_action" in report[
+        "approval_tool_progress_kame_gate_issues"
+    ]
     assert report["approval_payload_redacted"] is True
     assert report["approval_secret_leaked"] is False
     assert report["approval_secret_canary_checked"] is True

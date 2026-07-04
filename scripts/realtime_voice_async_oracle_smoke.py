@@ -4124,6 +4124,19 @@ async def run_smoke() -> dict[str, Any]:
         and event.payload.get("phase") == "tool"
         and event.payload.get("tool_event", {}).get("approval_required") is True
     ]
+    approval_tool_progress_gate = (
+        dict(approval_tool_progress[-1].payload.get("tool_event", {}).get("kame_action_gate") or {})
+        if approval_tool_progress
+        else {}
+    )
+    approval_tool_progress_gate_issues = list(approval_tool_progress_gate.get("issues") or [])
+    approval_tool_progress_kame_gate_failed_closed = (
+        approval_tool_progress_gate.get("schema_version") == "voiceops.runtime_kame_action_gate.v1"
+        and approval_tool_progress_gate.get("ok") is False
+        and "missing_promoted_evidence" in approval_tool_progress_gate_issues
+        and "interpreter_evidence_not_consumed_before_irreversible_action"
+        in approval_tool_progress_gate_issues
+    )
     approval_status_commits = [
         event
         for event in recorder.events
@@ -4413,6 +4426,7 @@ async def run_smoke() -> dict[str, Any]:
             and durable_completed_jobs == len(completed)
             and bool(approval_waiting)
             and bool(approval_tool_progress)
+            and approval_tool_progress_kame_gate_failed_closed
             and bool(approval_status_commits)
             and approval_payload_redacted
             and not approval_secret_leaked
@@ -5271,6 +5285,11 @@ async def run_smoke() -> dict[str, Any]:
         "approval_wait_observed": bool(approval_waiting),
         "approval_status_committed": bool(approval_status_commits),
         "approval_tool_progress_observed": bool(approval_tool_progress),
+        "approval_tool_progress_kame_gate_present": bool(approval_tool_progress_gate),
+        "approval_tool_progress_kame_gate_schema_version": approval_tool_progress_gate.get("schema_version")
+        or "",
+        "approval_tool_progress_kame_gate_failed_closed": approval_tool_progress_kame_gate_failed_closed,
+        "approval_tool_progress_kame_gate_issues": approval_tool_progress_gate_issues,
         "approval_payload_redacted": approval_payload_redacted,
         "approval_secret_leaked": approval_secret_leaked,
         "approval_secret_canary_checked": True,

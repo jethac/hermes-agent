@@ -178,6 +178,13 @@ def _async_oracle_smoke_payload() -> dict:
         "approval_wait_observed": True,
         "approval_status_committed": True,
         "approval_tool_progress_observed": True,
+        "approval_tool_progress_kame_gate_present": True,
+        "approval_tool_progress_kame_gate_schema_version": "voiceops.runtime_kame_action_gate.v1",
+        "approval_tool_progress_kame_gate_failed_closed": True,
+        "approval_tool_progress_kame_gate_issues": [
+            "missing_promoted_evidence",
+            "interpreter_evidence_not_consumed_before_irreversible_action",
+        ],
         "approval_payload_redacted": True,
         "approval_secret_leaked": False,
         "approval_secret_canary_checked": True,
@@ -1166,6 +1173,15 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["approval_wait_observed"] is True
     assert report["proofs"]["async_oracle_jobs"]["approval_status_committed"] is True
     assert report["proofs"]["async_oracle_jobs"]["approval_tool_progress_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["approval_tool_progress_kame_gate_present"] is True
+    assert (
+        report["proofs"]["async_oracle_jobs"]["approval_tool_progress_kame_gate_schema_version"]
+        == "voiceops.runtime_kame_action_gate.v1"
+    )
+    assert report["proofs"]["async_oracle_jobs"]["approval_tool_progress_kame_gate_failed_closed"] is True
+    assert "missing_promoted_evidence" in report["proofs"]["async_oracle_jobs"][
+        "approval_tool_progress_kame_gate_issues"
+    ]
     assert report["proofs"]["async_oracle_jobs"]["approval_payload_redacted"] is True
     assert report["proofs"]["async_oracle_jobs"]["approval_completed"] is False
     assert report["proofs"]["async_oracle_jobs"]["approval_gate_failed_closed"] is True

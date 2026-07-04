@@ -2069,6 +2069,10 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         "approval_wait_visible_and_redacted": smoke.get("approval_wait_observed") is True
         and smoke.get("approval_status_committed") is True
         and smoke.get("approval_tool_progress_observed") is True
+        and smoke.get("approval_tool_progress_kame_gate_present") is True
+        and smoke.get("approval_tool_progress_kame_gate_schema_version")
+        == "voiceops.runtime_kame_action_gate.v1"
+        and smoke.get("approval_tool_progress_kame_gate_failed_closed") is True
         and smoke.get("approval_payload_redacted") is True
         and smoke.get("approval_secret_leaked") is False
         and smoke.get("approval_secret_canary_checked") is True
@@ -3117,6 +3121,18 @@ def build_voice_operator_report(
             "approval_wait_observed": bool(async_oracle_smoke.get("approval_wait_observed")),
             "approval_status_committed": bool(async_oracle_smoke.get("approval_status_committed")),
             "approval_tool_progress_observed": bool(async_oracle_smoke.get("approval_tool_progress_observed")),
+            "approval_tool_progress_kame_gate_present": bool(
+                async_oracle_smoke.get("approval_tool_progress_kame_gate_present")
+            ),
+            "approval_tool_progress_kame_gate_schema_version": str(
+                async_oracle_smoke.get("approval_tool_progress_kame_gate_schema_version") or ""
+            ),
+            "approval_tool_progress_kame_gate_failed_closed": bool(
+                async_oracle_smoke.get("approval_tool_progress_kame_gate_failed_closed")
+            ),
+            "approval_tool_progress_kame_gate_issues": list(
+                async_oracle_smoke.get("approval_tool_progress_kame_gate_issues") or []
+            ),
             "approval_payload_redacted": bool(async_oracle_smoke.get("approval_payload_redacted")),
             "approval_secret_leaked": bool(async_oracle_smoke.get("approval_secret_leaked")),
             "approval_secret_canary_checked": bool(async_oracle_smoke.get("approval_secret_canary_checked")),

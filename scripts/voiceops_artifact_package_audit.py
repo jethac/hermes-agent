@@ -2145,6 +2145,19 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "approval_wait_observed": bool(async_smoke.get("approval_wait_observed")),
             "approval_status_committed": bool(async_smoke.get("approval_status_committed")),
             "approval_tool_progress_observed": bool(async_smoke.get("approval_tool_progress_observed")),
+            "approval_tool_progress_kame_gate_present": bool(
+                async_smoke.get("approval_tool_progress_kame_gate_present")
+            ),
+            "approval_tool_progress_kame_gate_schema_version": async_smoke.get(
+                "approval_tool_progress_kame_gate_schema_version"
+            ),
+            "approval_tool_progress_kame_gate_failed_closed": bool(
+                async_smoke.get("approval_tool_progress_kame_gate_failed_closed")
+            ),
+            "approval_tool_progress_kame_gate_issues": async_smoke.get(
+                "approval_tool_progress_kame_gate_issues"
+            )
+            or [],
             "approval_payload_redacted": bool(async_smoke.get("approval_payload_redacted")),
             "approval_secret_leaked": bool(async_smoke.get("approval_secret_leaked")),
             "approval_secret_canary_checked": bool(async_smoke.get("approval_secret_canary_checked")),

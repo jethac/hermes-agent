@@ -6512,6 +6512,14 @@ def test_async_oracle_job_failed_kame_gate_suppresses_tool_result_completion(mon
         assert "missing_promoted_evidence" in waiting.payload["approval"]["kame_action_gate"]["issues"]
         assert "secret" not in str(waiting.payload)
         assert tool_call_progress.payload["tool_event"]["approval_required"] is True
+        assert (
+            tool_call_progress.payload["tool_event"]["kame_action_gate"]["schema_version"]
+            == "voiceops.runtime_kame_action_gate.v1"
+        )
+        assert tool_call_progress.payload["tool_event"]["kame_action_gate"]["ok"] is False
+        assert "missing_promoted_evidence" in tool_call_progress.payload["tool_event"]["kame_action_gate"][
+            "issues"
+        ]
         assert "arguments" not in tool_call_progress.payload["tool_event"]
         assert "secret" not in str(tool_call_progress.payload)
 
