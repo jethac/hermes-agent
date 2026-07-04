@@ -714,6 +714,48 @@ def test_realtime_voice_alpha_report_requires_kame_witness_packet_proof():
     )
 
 
+def test_realtime_voice_alpha_report_rejects_conflicting_kame_witness_lineage():
+    manifest = _valid_manifest()
+    manifest["engine"] = "kame_interface_oracle"
+    manifest["frontend_provider"] = "gemma4"
+    manifest["frontend_model"] = "gemma-4-E2B-it"
+    manifest["interface_audio_input"] = "native_audio"
+    manifest["asr_mode"] = "on_escalation"
+    manifest["conversation_quality"] = {
+        "live_like": True,
+        "mode": "kame_reflex",
+        "reason": "audio_reflex_tts",
+        "sidecar_verified": True,
+    }
+    manifest["sidecar"]["health"]["frontend"] = {
+        "provider": "vllm",
+        "model": "gemma-4-E2B-it",
+    }
+    manifest["sidecar"]["health"]["capabilities"] = {
+        "utterance_stt": True,
+        "streaming_stt": False,
+        "tts": True,
+        "native_s2s": False,
+        "vllm_audio_frontend": True,
+        "output_languages": ["en", "ja"],
+    }
+    report = _add_kame_route_evidence([manifest, *_valid_alpha_report()[1:]])
+    for entry in report:
+        if entry.get("kind") in {"audio_session", "session_turn"}:
+            entry["transcript_hypotheses"][0][
+                "audio_segment_ref"
+            ] = "artifact://redacted/stale-or-wrong-speaker-cut.wav"
+            break
+
+    issues = validate_realtime_voice_alpha_report(report)
+
+    assert any(
+        "kame_witness_packet: conflicting raw-audio witness/interpreter packet lineage" in issue.format()
+        and "kame_lineage_conflict.audio_segment_ref" in issue.format()
+        for issue in issues
+    )
+
+
 def test_realtime_voice_alpha_report_rejects_kame_voice_capability_denial_output():
     manifest = _valid_manifest()
     manifest["engine"] = "kame_interface_oracle"

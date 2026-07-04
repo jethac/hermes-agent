@@ -666,6 +666,12 @@ _KAME_VALID_WITNESS_ADJUDICATION_OUTCOMES = {
     "corrected_by_audio",
     "rejected_or_diagnostic_only",
 }
+_KAME_LINEAGE_FIELD_ALIASES = {
+    "turn_id": ("turn_id", "kame_turn_id"),
+    "audio_segment_ref": ("audio_segment_ref", "kame_audio_segment_ref", "audio_ref", "segment_ref"),
+    "evidence_bundle_id": ("evidence_bundle_id", "kame_evidence_bundle_id"),
+    "evidence_merge_key": ("evidence_merge_key", "kame_evidence_merge_key"),
+}
 
 
 def _validate_kame_witness_packet_evidence(
@@ -678,6 +684,20 @@ def _validate_kame_witness_packet_evidence(
     ]
     if not routed_entries:
         return []
+    lineage_issue_details = []
+    for entry in routed_entries:
+        conflicts = _kame_lineage_conflict_fields(entry)
+        if conflicts:
+            label = str(entry.get("text") or entry.get("fixture") or entry.get("kind") or "entry")
+            lineage_issue_details.append(f"{label}: {','.join(conflicts[:4])}")
+    if lineage_issue_details:
+        return [
+            RealtimeVoiceSmokeReportIssue(
+                "kame_witness_packet",
+                "conflicting raw-audio witness/interpreter packet lineage",
+                "; ".join(lineage_issue_details[:3]),
+            )
+        ]
     valid_entries = [entry for entry in routed_entries if _entry_has_complete_kame_witness_packet(entry)]
     if valid_entries:
         return []
@@ -707,6 +727,7 @@ def _kame_witness_packet_missing_fields(entry: Mapping[str, Any]) -> list[str]:
     for key in ("turn_id", "audio_segment_ref", "evidence_bundle_id", "evidence_merge_key"):
         if not str(entry.get(key) or "").strip():
             missing.append(key)
+    missing.extend(_kame_lineage_conflict_fields(entry))
     for key in ("audio_segment_ref_observed", "interpreter_evidence_observed", "transcript_hypotheses_labeled"):
         if entry.get(key) is not True:
             missing.append(key)
@@ -737,6 +758,35 @@ def _kame_witness_packet_missing_fields(entry: Mapping[str, Any]) -> list[str]:
             if str(promoted.get(key) or "").strip() != "interpreter_promoted":
                 missing.append(f"promoted_evidence_authority.{key}")
     return missing
+
+
+def _kame_lineage_conflict_fields(entry: Mapping[str, Any]) -> list[str]:
+    conflicts: list[str] = []
+    for field, aliases in _KAME_LINEAGE_FIELD_ALIASES.items():
+        values = _kame_lineage_values(entry, aliases)
+        if len(values) > 1:
+            conflicts.append(f"kame_lineage_conflict.{field}")
+    return conflicts
+
+
+def _kame_lineage_values(entry: Mapping[str, Any], aliases: tuple[str, ...]) -> set[str]:
+    values: set[str] = set()
+    payloads: list[Mapping[str, Any]] = [entry]
+    metadata = entry.get("metadata")
+    if isinstance(metadata, Mapping):
+        payloads.append(metadata)
+    audio = entry.get("audio")
+    if isinstance(audio, Mapping):
+        payloads.append(audio)
+    hypotheses = entry.get("transcript_hypotheses")
+    if isinstance(hypotheses, Sequence) and not isinstance(hypotheses, (str, bytes, bytearray)):
+        payloads.extend(hypothesis for hypothesis in hypotheses if isinstance(hypothesis, Mapping))
+    for payload in payloads:
+        for alias in aliases:
+            value = payload.get(alias)
+            if str(value or "").strip():
+                values.add(str(value).strip())
+    return values
 
 
 def _sequence_field(value: Any) -> tuple[str, ...]:

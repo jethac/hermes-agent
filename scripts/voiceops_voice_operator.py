@@ -288,6 +288,13 @@ LIVE_EVIDENCE_REQUIRED_TURN_KAME_IDS = (
     "evidence_merge_key",
 )
 
+LIVE_EVIDENCE_KAME_LINEAGE_FIELD_ALIASES = {
+    "turn_id": ("turn_id", "kame_turn_id"),
+    "audio_segment_ref": ("audio_segment_ref", "kame_audio_segment_ref", "audio_ref", "segment_ref"),
+    "evidence_bundle_id": ("evidence_bundle_id", "kame_evidence_bundle_id"),
+    "evidence_merge_key": ("evidence_merge_key", "kame_evidence_merge_key"),
+}
+
 LIVE_EVIDENCE_TEMPLATE_SOURCE_ARTIFACTS = {
     "discord-live-probe.json",
     "voice-status-or-sidecar-report.json",
@@ -1284,6 +1291,39 @@ def _normalized_string_list(value: Any) -> list[str]:
     return normalized
 
 
+def _live_turn_kame_lineage_conflict_issues(live_turn: Mapping[str, Any]) -> list[str]:
+    return _mapping_kame_lineage_conflict_issues(live_turn, issue_prefix="live_turn")
+
+
+def _mapping_kame_lineage_conflict_issues(payload: Mapping[str, Any], *, issue_prefix: str) -> list[str]:
+    issues: list[str] = []
+    for field, aliases in LIVE_EVIDENCE_KAME_LINEAGE_FIELD_ALIASES.items():
+        values = _mapping_kame_lineage_values(payload, aliases)
+        if len(values) > 1:
+            issues.append(f"{issue_prefix}:kame_lineage_conflict_{field}")
+    return issues
+
+
+def _mapping_kame_lineage_values(payload: Mapping[str, Any], aliases: tuple[str, ...]) -> set[str]:
+    values: set[str] = set()
+    payloads: list[Mapping[str, Any]] = [payload]
+    metadata = payload.get("metadata")
+    if isinstance(metadata, Mapping):
+        payloads.append(metadata)
+    audio = payload.get("audio")
+    if isinstance(audio, Mapping):
+        payloads.append(audio)
+    hypotheses = payload.get("transcript_hypotheses")
+    if isinstance(hypotheses, list):
+        payloads.extend(hypothesis for hypothesis in hypotheses if isinstance(hypothesis, Mapping))
+    for payload in payloads:
+        for alias in aliases:
+            value = payload.get(alias)
+            if str(value or "").strip():
+                values.add(str(value).strip())
+    return values
+
+
 def _live_turn_witness_packet_status(live_turn: Mapping[str, Any]) -> tuple[list[str], dict[str, bool]]:
     issues: list[str] = []
     hypotheses = live_turn.get("transcript_hypotheses")
@@ -1532,6 +1572,9 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
         if not value:
             issues.append(f"live_turn:missing_{key}")
     kame_lineage_ids_complete = all(live_turn_kame_ids.values())
+    kame_lineage_conflict_issues = _live_turn_kame_lineage_conflict_issues(live_turn)
+    issues.extend(kame_lineage_conflict_issues)
+    kame_lineage_consistent = not kame_lineage_conflict_issues
     transcript_hypotheses_observed = (
         live_turn.get("transcript_hypotheses_labeled") is True
         or live_turn.get("transcript_observed") is True
@@ -1598,6 +1641,7 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
         "live_turn": {
             "ok": all(live_turn.get(key) is True for key in LIVE_EVIDENCE_REQUIRED_TURN_BOOLS)
             and kame_lineage_ids_complete
+            and kame_lineage_consistent
             and not transcript_only_witness_rejected_for_full_kame
             and all(witness_packet_status.values())
             and first_audio_ms is not None
@@ -1605,6 +1649,7 @@ def validate_live_probe_evidence(payload: Mapping[str, Any], *, paths: list[Path
             and barge_in_ms is not None
             and barge_in_ms <= 150,
             "kame_lineage_ids_complete": kame_lineage_ids_complete,
+            "kame_lineage_consistent": kame_lineage_consistent,
             "turn_id": live_turn_kame_ids["turn_id"],
             "audio_segment_ref": live_turn_kame_ids["audio_segment_ref"],
             "evidence_bundle_id": live_turn_kame_ids["evidence_bundle_id"],
@@ -4008,6 +4053,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
             item.get("authority") != "hypothesis" for item in hypotheses if isinstance(item, Mapping)
         ):
             issues.append("interpreter_request_packet:hypothesis_authority_mismatch")
+        issues.extend(_mapping_kame_lineage_conflict_issues(packet, issue_prefix="interpreter_request_packet"))
         promotion = packet.get("promotion") if isinstance(packet.get("promotion"), Mapping) else {}
         if promotion.get("interpreter_corrected_transcript") != async_proof.get(
             "witness_fusion_early_promoted_transcript"

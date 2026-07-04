@@ -1975,6 +1975,17 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["barge_in_policy"]["silent_packet_policy"].startswith("silent PCM")
 
 
+def test_voice_operator_validation_rejects_conflicting_interpreter_packet_hypothesis_lineage():
+    report = _voice_operator_report()
+    report["interpreter_request_packet"]["transcript_hypotheses"][0][
+        "audio_segment_ref"
+    ] = "artifact://redacted/stale-or-wrong-speaker-cut.wav"
+
+    issues = validate_voice_operator_report(report)
+
+    assert "interpreter_request_packet:kame_lineage_conflict_audio_segment_ref" in issues
+
+
 def test_voice_operator_validation_rejects_missing_core_coverage():
     smoke = _smoke_payload()
     smoke["events"] = ["audio.output.chunk"]
@@ -2705,6 +2716,7 @@ def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing
     assert report["live_probe_required_for_completion"]["missing_gates"] == []
     assert report["proofs"]["live_evidence"]["ok"] is True
     assert live_evidence["live_turn"]["kame_lineage_ids_complete"] is True
+    assert live_evidence["live_turn"]["kame_lineage_consistent"] is True
     assert live_evidence["live_turn"]["turn_id"] == "voiceops-live-turn-budget"
     assert live_evidence["live_turn"]["audio_segment_ref"] == "artifact://redacted/voiceops-live-turn-budget.wav"
     assert live_evidence["live_turn"]["evidence_bundle_id"] == "kame-evidence-live-turn-budget"
@@ -2734,6 +2746,21 @@ def test_live_evidence_requires_concrete_kame_lineage_ids():
     assert "live_turn:missing_evidence_bundle_id" in live_evidence["issues"]
     assert "live_turn:missing_evidence_merge_key" in live_evidence["issues"]
     assert live_evidence["live_turn"]["kame_lineage_ids_complete"] is False
+    assert live_evidence["live_turn"]["ok"] is False
+
+
+def test_live_evidence_rejects_conflicting_witness_kame_lineage():
+    evidence = _complete_live_evidence()
+    evidence["live_turn"]["transcript_hypotheses"][0][
+        "audio_segment_ref"
+    ] = "artifact://redacted/stale-or-wrong-speaker-cut.wav"
+
+    live_evidence = validate_live_probe_evidence(evidence)
+
+    assert live_evidence["overall_status"] == "partial_live_evidence"
+    assert "live_turn:kame_lineage_conflict_audio_segment_ref" in live_evidence["issues"]
+    assert live_evidence["live_turn"]["kame_lineage_ids_complete"] is True
+    assert live_evidence["live_turn"]["kame_lineage_consistent"] is False
     assert live_evidence["live_turn"]["ok"] is False
 
 
