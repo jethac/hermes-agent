@@ -214,6 +214,26 @@ def test_package_audit_rejects_interpreter_request_packet_artifact_drift(tmp_pat
     assert "voice_operator_readiness:interpreter_request_packet_standalone_artifact_mismatch" in report["issues"]
 
 
+def test_package_audit_rejects_interpreter_request_packet_canonical_policy_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    voice_dir = artifact_root / "voiceops-voice-operator" / "current"
+    readiness_path = voice_dir / "voice-operator-readiness.json"
+    packet_path = voice_dir / "interpreter-request-packet.json"
+    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    for payload in (readiness["interpreter_request_packet"], packet):
+        payload["interpreter_input_order"] = ["transcript_hypotheses", "raw_audio"]
+        payload["interpreter_prompt_policy"] = {"version": "legacy_transcript_first"}
+    _write_json(readiness_path, readiness)
+    _write_json(packet_path, packet)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "voice_operator_readiness:interpreter_request_packet:interpreter_input_order_mismatch" in report["issues"]
+    assert "voice_operator_readiness:interpreter_request_packet:interpreter_prompt_policy_mismatch" in report["issues"]
+
+
 def test_package_audit_rejects_pcm_conversion_proof_drift(tmp_path):
     artifact_root = _generate_package(tmp_path)
     readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
