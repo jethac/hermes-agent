@@ -40,11 +40,11 @@ parallel oracle turn.
 
 The Moshi transcript is useful context, not control. It should help Gemma detect
 clipped prefixes, names, numbers, code-switching, and hallucinated commands,
-but it must remain `reflex_hypothesis` or `auxiliary_hypothesis` until Gemma or
-the active oracle promotes it. Hypothesis-only text may support diagnostics,
-captions, or clarification. It must not become `oracle_text`, durable user
-history, a spend reason, call payload, memory/file content, or a tool argument
-by arriving first.
+but it must remain `reflex_hypothesis` or `auxiliary_hypothesis` until Gemma
+promotes raw-audio-grounded evidence for the active oracle. Hypothesis-only
+text may support diagnostics, captions, or clarification. It must not become
+`oracle_text`, durable user history, a spend reason, call payload, memory/file
+content, or a tool argument by arriving first.
 
 Reflex acknowledgement should not wait for that witness text. If raw audio and
 a reflex route are available, the session creates one interpreter packet
@@ -183,7 +183,7 @@ Implementation corollary: remove "wait for ASR evidence" from the normal KAME
 path. Moshi/open-S2S transcript text and classic ASR text are allowed to enrich
 the interpreter request, but neither should delay acknowledgement, create a
 second oracle request, or be treated as the user's durable message before
-interpreter/oracle promotion.
+raw-audio-grounded interpreter promotion.
 
 Moshi-context corollary: if the live S2S/frontend emits a transcript-looking
 field, Hermes should preserve it because it is useful evidence about what the
@@ -307,6 +307,15 @@ arrives after the interpreter request starts, attach it as a late hypothesis on
 the same interpreter bundle and oracle job. It must never create a duplicate
 oracle job, durable transcript, or approval-capable action record by itself.
 
+Noise-gated raw-audio rule: the packet only exists after the realtime frontend
+has identified an intentional speech cut. Energy/VAD metadata is not merely
+diagnostic; it is part of the authority boundary. Silence, room tone, harmonic
+artifacts, and low-energy non-speech packets must not trigger barge-in, oracle
+jobs, interpreter requests, or transcript promotion. Headless proof should show
+the accepted cut's `audio_segment_ref`, time range, energy/VAD decision, and
+the fact that Moshi/OpenClaw/VoiceClaw/classic-ASR text was attached as witness
+context after the raw-audio gate rather than used as the gate itself.
+
 Tool-pressure rule: the realtime voice oracle path should not keep the broad
 Hermes core tool surface in the active voice context. Headless acceptance should
 prove that `tools.tool_search.defer_core = all` hides every Hermes core tool
@@ -320,9 +329,11 @@ degraded text-only frontend path. A VoiceClaw/OpenClaw/Moshi bridge that can
 send only witness text remains useful for audit and clarification, but it must
 report `degraded_text_only`, preserve the witness hypothesis, carry
 `raw_audio_available = false`, and fail Stripe/NemoClaw/phone/file/memory
-approval gates until interpreter or oracle promotion exists. This is the
-enforcement counterpart to the Moshi-context rule: the text can help Gemma when
-the waveform exists; without the waveform, it is not full KAME evidence.
+approval gates unless raw-audio-grounded interpreter evidence exists. This is
+the enforcement counterpart to the Moshi-context rule: the text can help Gemma
+when the waveform exists; without the waveform, it is not full KAME evidence,
+and oracle-only promotion of text-only witness content is insufficient for
+irreversible action.
 
 2026-07-04 amendment: when the waveform exists, a Moshi/OpenClaw/VoiceClaw
 witness transcript should be passed to the interpreter, not discarded. The
@@ -440,9 +451,12 @@ For external realtime clients, an oracle job is also the compatibility target
 for VoiceClaw/OpenClaw-style brain calls. A client may submit an
 `ask_brain`-shaped request, but Hermes must translate it into the same
 `OracleJob` shape used by Discord KAME sessions before it reaches the oracle.
-Text-only `ask_brain` requests are degraded and non-authoritative until
-interpreter/oracle promotion exists. No external frontend should receive direct
-Hermes tools as a shortcut around the job manager.
+Text-only `ask_brain` requests are degraded and non-authoritative for
+high-risk actions unless raw-audio-grounded interpreter evidence exists. They
+may produce drafts, clarifications, or low-risk status, but they cannot satisfy
+Stripe/NemoClaw/phone/file/memory action gates through oracle-only promotion.
+No external frontend should receive direct Hermes tools as a shortcut around
+the job manager.
 
 Minimum fields:
 
@@ -1003,6 +1017,10 @@ Add a local smoke report mode that proves:
   reflex route, raw audio, Moshi/open-S2S witness text, optional ASR fallback
   text, interpreter promotion, and oracle action are distinct fields with
   explicit authority labels
+- energy/noise gating is visible in the evidence bundle: accepted speech cuts
+  expose VAD/energy metadata, ignored silence/non-speech packets do not create
+  oracle jobs or interpreter requests, and no transcript hypothesis can promote
+  itself by arriving before the raw-audio cut
 - a Moshi/open-S2S transcript that arrives before the audio cut, with the audio
   cut, or after interpreter start attaches to the same `turn_id` /
   `audio_segment_ref` and never creates a second Hermes turn
@@ -1043,7 +1061,7 @@ Add a local smoke report mode that proves:
   `stale_witness`
 - degraded text-only VoiceClaw/OpenClaw/Moshi fixtures preserve hypothesis text
   for audit and clarification, but report `degraded_reason` and fail high-risk
-  action gates until interpreter/oracle promotion exists
+  action gates unless raw-audio-grounded interpreter evidence exists
 - unflagged high-risk tool calls and tool results fail closed, including nested
   `function.name` tool-call shapes, while low-risk oracle tool progress remains
   streamable

@@ -9,51 +9,37 @@ Preferred local oracle target: Hermes active `/model`, with Nemotron 3 Super as 
 
 Canonical current design: three-tier sensor fan-in, not STT-first. The reflex
 is the always-warm live interface; Gemma is the post-cut audio interpreter; the
-Hermes active `/model` is the oracle. Moshi/OpenClaw/VoiceClaw transcript-like
-text is useful precisely because it records what the realtime frontend believed
-it heard, but it is witness context inside the interpreter bundle. Classic ASR
-is the same class of optional evidence. Neither one schedules a second Hermes
-turn, becomes durable user text, or authorizes tools, spend, calls, files,
-memory, or external messages before interpreter/oracle promotion.
+Hermes active `/model` is the oracle. The normal unit of work is one
+energy-gated speech cut with raw audio as primary evidence. Moshi/OpenClaw/
+VoiceClaw transcript-like text and classic ASR text may accompany that cut, but
+only as labeled witness hypotheses inside the same interpreter bundle. They do
+not schedule a second Hermes turn, become durable user text, authorize tools,
+or carry spend/call/file/memory/message authority before raw-audio-grounded
+interpreter promotion.
 
-Latest operator decision: yes, when a Moshi/OpenClaw/VoiceClaw-style frontend
-can expose both the clipped waveform and an STT-like string for the same speech
-cut, send both to Gemma in one interpreter evidence bundle. The raw waveform is
-primary. The Moshi/STT-like string is `frontend_witness_hypothesis` or a narrower
-hypothesis label when provenance is known. It is context for direct-audio
-interpretation, not a parallel ASR turn, not a scheduler, and not the user's
-durable transcript until interpreter or oracle promotion.
+Current operator decision: when a Moshi/OpenClaw/VoiceClaw-style frontend can
+expose both the clipped waveform and an STT-like string for the same speech cut,
+send both to Gemma in one interpreter evidence bundle. The raw waveform goes
+first. The transcript-looking text is `frontend_witness_hypothesis` unless the
+adapter can prove a narrower source label. It is context for direct-audio
+interpretation, not a parallel ASR turn, not a scheduler, not a fourth agent,
+and not the user's durable transcript until Gemma promotes raw-audio-grounded
+evidence for the active Hermes oracle.
 
-Current pivot: raw voice is the normal evidence path into the interpreter.
-Moshi/open-S2S or classic STT text may accompany that raw voice as labeled
-context, but it must not become the scheduler, the durable transcript, or a
-second prompt competing with the interpreter. The runtime target is
-three-tier sensor fan-in: fast reflex, direct-audio interpreter,
-optional/fallback transcript hypotheses as non-authoritative witness context,
-and Hermes's active model as oracle.
-
-Current clarification: Moshi/STT transcript capture is not a fourth agent lane.
-It is an attachment producer for the interpreter evidence bundle. The session
-may collect transcript text opportunistically, but the unit of work remains one
-speech cut with raw audio as primary evidence, plus whatever labeled hypotheses
-were available before or after the cut.
-
-Current refinement: the useful Moshi/open-S2S shape is witness-assisted
-interpretation. If the reflex/frontend can emit an STT-like string, Hermes
-should preserve it and send it to Gemma with the clipped raw voice, VAD/energy
-timing, speaker/channel metadata, reflex route, and spoken acknowledgement.
-Gemma should read that text as "what the realtime frontend believed it heard,"
-not as a verified transcript. The interpreter output should include both
-promoted fields and explicit witness adjudication so later code can tell whether
-the witness was accepted, corrected, rejected, or kept diagnostic-only. The
-oracle should receive promoted intent/transcript/entities plus labeled audit
-context, not a standalone Moshi-text user turn.
+The endpointer/noise gate is part of the contract, not an implementation
+detail. The reflex should maintain an adaptive energy floor, ignore silence and
+low-energy non-speech packets for barge-in and cut creation, and hand the
+interpreter one bounded segment per user speech cut. This is what makes a small
+direct-audio interpreter viable: Gemma should receive intentional speech plus
+timing metadata, not every Discord packet, room tone, or harmonic artifact.
 
 This also means the runtime should not block reflex acknowledgement waiting for
 Moshi/STT text. If the waveform and reflex route are available, create the
 bundle and let the interpreter start. Transcript hypotheses can attach before
-the cut, with the cut, or later as late evidence, but only the interpreter or
-Hermes oracle can promote them into action text.
+the cut, with the cut, or later as late evidence, but only raw-audio-grounded
+interpreter evidence can promote them into action text. If raw audio is absent,
+the request is degraded text-only compatibility mode and cannot satisfy full
+KAME readiness or high-risk action gates.
 
 2026-07-03 amendment: the design is now explicitly evidence-bundle KAME. The
 fast reflex may be Moshi/open-S2S-like and may produce an STT-looking text
@@ -151,7 +137,7 @@ because it captures what the live frontend believed it heard, so it should be
 included in the interpreter request beside the raw voice. It is still witness
 context: it cannot schedule a separate Hermes turn, cannot become durable chat
 history, and cannot authorize tools, spend, calls, memory, files, or messages
-unless Gemma or the active oracle promotes it.
+unless Gemma promotes raw-audio-grounded evidence for the active oracle.
 
 | Tier | Primary input | Immediate output | Authority boundary |
 | --- | --- | --- | --- |
@@ -194,7 +180,8 @@ Queue/status surfaces may expose a compact `provisional_request_summary` so the
 reflex can narrate what it is asking the oracle to do, but that summary is not
 the user's verified transcript. It must carry `authority = "reflex_hypothesis"`
 and `tool_authority = false`, and it cannot satisfy spend, call, tool, memory,
-file, or external-message action gates before interpreter or oracle promotion.
+file, or external-message action gates before raw-audio-grounded interpreter
+promotion.
 
 Partial witness hypotheses are active only until a newer same-source,
 same-kind witness supersedes them. When Moshi, OpenClaw, VoiceClaw, or classic
@@ -208,9 +195,10 @@ durable user text.
 This packet is the only normal merge point. It is valid for the reflex to use a
 witness transcript for local narration, but invalid for that transcript to
 create a second Hermes user turn, patch `oracle_text`, or satisfy any action
-approval before interpreter/oracle promotion. When raw audio is missing, the
-same adapter may still submit a degraded compatibility request, but the request
-must be labeled text-only and cannot count as full KAME readiness.
+approval before raw-audio-grounded interpreter promotion. When raw audio is
+missing, the same adapter may still submit a degraded compatibility request, but
+the request must be labeled text-only, cannot count as full KAME readiness, and
+cannot satisfy high-risk action gates through oracle-only promotion.
 
 2026-07-04 interpreter-context decision: if a Moshi/OpenClaw/VoiceClaw-style
 frontend can emit transcript-like text for the same speech cut as the raw
@@ -359,9 +347,11 @@ The practical shape is therefore allowed to look "parallel" only inside one
 evidence bundle. A Moshi/open-S2S frontend can speak quickly and emit a rough
 transcript. A classic ASR fallback can produce literal text for captions,
 diagnostics, or high-risk literal checks. Gemma can consume both, plus the raw
-audio, as context. Only the interpreter/oracle promotion result may become
+audio, as context. Only the interpreter promotion result may become
 durable user text, Stripe/NemoClaw spend rationale, phone-call payload, memory,
-file content, or tool argument.
+file content, or tool argument. When raw audio is available, that promotion
+must be grounded in the interpreter's direct-audio judgment, not in whichever
+transcript hypothesis arrived first.
 
 This is the important distinction for Moshi-style output: the transcript is not
 the thing Hermes acts on. It is a compact observation from the live interface,
@@ -391,10 +381,10 @@ If the raw audio is unavailable, the session is no longer in full KAME mode for
 that turn. A text-only Moshi/OpenClaw/VoiceClaw bridge can still submit an
 `ask_brain` compatibility request, but the request must be marked degraded,
 must preserve the source as `hypothesis` or `fallback_text`, and may only
-draft, clarify, or produce low-risk status until raw-audio evidence plus
-interpreter/oracle promotion exists. High-risk tools, spend, provisioning,
-files, memory writes, external messages, and calls fail closed on text-only
-fallback evidence.
+draft, clarify, or produce low-risk status. High-risk tools, spend,
+provisioning, files, memory writes, external messages, and calls fail closed on
+text-only fallback evidence; oracle-only promotion of that text is not enough
+to make it action authority.
 
 ## Signal Authority Rules
 
@@ -441,7 +431,7 @@ The frontend transcript adapter should therefore be boring and strict:
   partial/final state when available
 - never schedule an oracle job from that text alone when raw audio exists
 - never overwrite `oracle_text`, durable transcript, spend reason, call text,
-  memory text, or file content without interpreter or oracle promotion
+  memory text, or file content without raw-audio-grounded interpreter promotion
 - keep the original raw-audio reference available for replay, disagreement
   checks, and later audit
 
@@ -815,7 +805,8 @@ Accepted/queued placeholders, safe reflex status, and transcript sync packets
 remain transport/session state. Durable Hermes voice history may retain counts,
 authority labels, job ids, and promoted interpreter/oracle fields, but raw
 Moshi/S2S/ASR/reflex hypothesis strings must not appear in durable conversation
-records unless a trusted interpreter or the active Hermes oracle promotes them.
+records unless a trusted interpreter promotes them from raw-audio-grounded
+evidence.
 
 If a Moshi-style frontend provides both audio and transcript text, the audio
 reference should be preferred even when the transcript appears cleaner. The
@@ -843,8 +834,8 @@ Runtime merge algorithm:
    on the same bundle and allow only bounded queued-job patches or pre-action
    corrections.
 5. If witness text arrives without raw audio, mark the turn degraded and keep
-   the text out of high-risk action authority until interpreter or oracle
-   promotion explicitly accepts it.
+   the text out of high-risk action authority; oracle-only promotion of
+   text-only witness content does not satisfy the full KAME action boundary.
 
 Acceptance for this merge path is concrete: one speech cut must produce exactly
 one evidence bundle id, no more than one oracle job unless the reflex explicitly

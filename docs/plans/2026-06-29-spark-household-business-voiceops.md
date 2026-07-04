@@ -66,7 +66,10 @@ Target KAME layout:
   such as Moshi/PersonaPlex-class S2S or an even smaller timing/noise-gated
   classifier path, optimized for turn-taking, barge-in, immediate
   acknowledgement, and rough transcript hypotheses. This model owns live floor
-  control, not tool execution or durable transcript truth.
+  control, not tool execution or durable transcript truth. Its first
+  responsibility is a calibrated energy/noise gate: silence, room tone, Discord
+  receiver artifacts, and low-energy non-speech frames must not create barge-in
+  events, interpreter requests, or durable transcript candidates.
 - Interpreter/evidence: Gemma 4 E2B/E4B/12B-style audio-multimodal model,
   run non-blocking after each speech cut to adjudicate raw audio plus
   reflex/Moshi transcript hypotheses into corrected transcript, multilingual
@@ -90,20 +93,24 @@ Target KAME layout:
   classic ASR text all enter as witness hypotheses when available.
 - Evidence: a speech cut should preserve raw audio, reflex hypothesis,
   Moshi/S2S hypothesis, optional ASR hypothesis, and interpreter correction as
-  distinct provenance-labeled fields. Only interpreter/oracle judgment can
-  promote a transcript hypothesis into durable user text or tool-critical
-  arguments.
+  distinct provenance-labeled fields. When raw audio is available, only
+  raw-audio-grounded interpreter evidence can promote a transcript hypothesis
+  into durable user text or tool-critical arguments for the oracle to act on.
 - Degraded compatibility: if a VoiceClaw/OpenClaw/Moshi-style frontend can
   provide only text and no raw audio reference, Hermes may still draft,
   clarify, or submit a low-risk compatibility request, but the turn must be
   marked degraded. It cannot satisfy full KAME readiness, Stripe/NemoClaw/phone
-  action gates, or promoted transcript evidence without interpreter/oracle
-  promotion.
+  action gates, or promoted transcript evidence without raw-audio-grounded
+  interpreter evidence. Oracle-only promotion of text-only witness content is
+  insufficient for irreversible action.
 - Merge point: the Gemma interpreter request is the normal merge point for raw
   audio plus transcript hypotheses. Moshi/S2S transcript output should be
   supplied as context beside the waveform, not as a replacement for the waveform
   and not as a second oracle prompt. Classic ASR uses the same path only when
-  enabled for fallback, diagnostics, or literal-evidence checks.
+  enabled for fallback, diagnostics, captions, or literal-evidence checks. A
+  Moshi transcript that arrives without a matching raw-audio segment is useful
+  compatibility evidence, but it is not the normal path and cannot prove full
+  KAME behavior.
 - External frontend packet shape: VoiceClaw/OpenClaw/Moshi-style bridges should
   send raw-audio references and timing when available, plus any transcript-like
   strings as labeled hypotheses. A text-only `ask_brain` bridge is useful for
@@ -130,7 +137,8 @@ Target KAME layout:
   Gemma's role is interpreter/evidence adjudicator, not a blocking ASR service.
   The reflex may propose a queue envelope and narrate work from provisional
   intent, while durable user wording and tool-critical fields require
-  interpreter or oracle promotion.
+  raw-audio-grounded interpreter promotion before the oracle treats them as
+  action evidence.
 - No-ASR-gate rule: the normal KAME path must not require ASR evidence before
   acknowledgement, job creation, or raw-audio interpretation. Dedicated ASR is
   fallback, diagnostics, captions, or high-risk literal-evidence support. Moshi,
@@ -142,7 +150,8 @@ Target KAME layout:
   the text as a hypothesis attached to the same raw-audio bundle. Do not fork a
   second Hermes turn, do not overwrite the raw-audio route, and do not let that
   text become a spend reason, phone-call payload, memory entry, file write, or
-  durable chat message unless Gemma or the active Hermes oracle promotes it.
+  durable chat message unless Gemma promotes raw-audio-grounded evidence for
+  the active Hermes oracle.
 - Witness-context rule: Moshi/OpenClaw/VoiceClaw transcript output is witness
   testimony from the realtime frontend, not the verified user utterance. Gemma
   should receive that witness text beside the clipped waveform, speaker/channel
@@ -182,6 +191,11 @@ Target KAME layout:
   frontend believed it heard, optional classic ASR is fallback or diagnostic
   evidence, and Gemma receives those hypotheses beside the clipped waveform.
   The first transcript to arrive is not the transcript of record.
+- Noise-gated raw-audio rule: every full-KAME turn should expose the energy gate
+  decision that produced the speech cut. Headless artifacts should show that the
+  system ignored silence/non-speech packets, preserved the selected
+  `audio_segment_ref`, and sent that bounded raw segment to the interpreter
+  before treating any Moshi/S2S/ASR text as actionable evidence.
 - Task-state rule: the reflex needs a compact job-status projection with safe
   capacity counts, job ids, states, priorities, and ordinal-friendly spoken
   labels. It must name at least the first four active oracle jobs and a queued
@@ -409,7 +423,8 @@ knows the text came from a separate caption/S2S side channel, use
 `frontend_witness_hypothesis` with `authority = "hypothesis"` and attach it to
 the same raw-audio interpreter bundle. None of those names permits transcript
 only scheduling, durable user text, spend reasons, phone payloads, or tool
-arguments without interpreter/oracle promotion.
+arguments without raw-audio-grounded interpreter promotion when audio is
+available.
 
 Confirmed packet rule for the hackathon build: the demo should show one spoken
 request producing one KAME evidence bundle. If Moshi/OpenClaw/VoiceClaw-style
@@ -517,7 +532,8 @@ Target:
 - dedicated classic ASR is an optional auxiliary transcript-hypothesis lane and
   fallback, not the reflex driver
 - speculative ASR or S2S transcript capture may run to hide latency, but the
-  result stays a labeled hypothesis until interpreter/oracle promotion
+  result stays a labeled hypothesis until raw-audio-grounded interpreter
+  promotion
 - local Nemotron Speech or equivalent streaming ASR only as optional fallback,
   diagnostic, caption, or literal-evidence hypothesis input
 - local Magpie/Riva-style TTS when available
@@ -527,16 +543,17 @@ The operating rule is one voice turn, one evidence bundle. Moshi/open-S2S text,
 classic ASR text, and reflex transcript text may arrive at different times, but
 they all attach to the same raw-audio turn as hypotheses. They do not schedule a
 second oracle turn, overwrite `oracle_text`, or become spend/call/tool arguments
-until Gemma or the Hermes oracle promotes them. This lets the demo keep the
-acknowledgement path fast while still using transcript-like output as useful
-context for multilingual correction and business-critical actions.
+until Gemma promotes raw-audio-grounded evidence for the active Hermes oracle.
+This lets the demo keep the acknowledgement path fast while still using
+transcript-like output as useful context for multilingual correction and
+business-critical actions.
 
 Current design rule: if a Moshi/OpenClaw/VoiceClaw-style frontend provides both
 raw voice and an STT-like transcript for the same speech cut, pass both to the
 Gemma interpreter in one packet. The transcript is a witness hypothesis about
 what the realtime frontend believed it heard. It is valuable context for Gemma,
 but it is not a required ASR proof, not a separate user turn, and not an action
-authority source until interpreter or oracle promotion.
+authority source until raw-audio-grounded interpreter promotion.
 
 Provider selection must be role-based:
 
@@ -1004,7 +1021,7 @@ oracle work. Moshi/open-S2S transcript text is allowed and useful, but only as a
 frontend witness attached to the same raw-audio interpreter bundle. It must not
 count as a separate Spark readiness role, create a second Hermes turn, replace
 raw-audio evidence, or satisfy spend/provisioning/phone approval gates without
-interpreter or oracle promotion.
+raw-audio-grounded interpreter promotion.
 
 Headless command:
 
