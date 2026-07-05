@@ -1865,9 +1865,9 @@ Modes:
   forwarded as evidence.
 - `on_escalation`: dedicated ASR runs only after the reflex chooses `defer` or
   `oracle_direct`.
-- `speculative`: dedicated ASR may start at speech end in parallel with the
-  reflex, but its output is discarded for local turns and never drives the
-  reflex.
+- `speculative`: dedicated ASR may start asynchronously at speech end for
+  explicit comparison, captions, or literal-evidence experiments, but its
+  output is discarded for local turns and never drives the reflex.
 - `debug`: transcript evidence runs for comparison, captions, and diagnostics.
 - `fallback`: transcript evidence feeds the reflex only when the realtime reflex
   audio path is unavailable.
@@ -1877,10 +1877,12 @@ otherwise `disabled`. Dedicated ASR should be enabled only for explicit
 fallback, diagnostics, captions, or literal-evidence checks, and its output must
 stay off the acknowledgement critical path.
 
-`speculative` can be enabled if measurements show that waiting until after the
-reflex decision delays oracle requests. Even then, transcript evidence remains
-an interpreter hypothesis input plus optional labeled audit context for the
-oracle, not a reflex dependency and not a peer conversation path.
+`speculative` is disabled by default and should stay an explicit diagnostic or
+comparison mode. It can be enabled if measurements show value in hiding optional
+transcript-hypothesis latency behind the reflex decision. Even then, transcript
+evidence remains an interpreter hypothesis input plus optional labeled audit
+context for the oracle, not a reflex dependency, not a peer conversation path,
+and not a readiness requirement for direct-audio KAME turns.
 
 `speculative` is also not a request to make ASR authoritative. It exists only to
 hide optional comparison latency behind the reflex decision. If speculative ASR

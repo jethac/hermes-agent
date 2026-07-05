@@ -385,6 +385,13 @@ or intent, and whether Gemma rejected any hallucinated or wrong-speaker text.
 That measurement is the point of carrying Moshi text beside raw voice instead
 of treating it as the canonical user request.
 
+Local ASR, Nemotron Speech, Riva, or similar transcript evidence is not required
+for Track C full-KAME readiness unless the run explicitly claims
+transcript-evidence mode. A full-KAME Spark run must prove reflex timing,
+raw-audio interpreter evidence, Hermes active `/model` oracle routing, TTS, and
+local stack health. Transcript hypotheses are useful when present, but missing
+ASR evidence is not a failure for a direct-audio run.
+
 Track C artifacts should expose the interpreter prompt bundle order:
 `raw_audio`, speaker/channel/VAD metadata, reflex route and spoken
 acknowledgement, then `transcript_hypotheses[]`. That ordering is part of the

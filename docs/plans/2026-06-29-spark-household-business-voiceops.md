@@ -1003,7 +1003,8 @@ Recorded artifact must show:
   memory, file, message, and durable-history sinks are clean, plus empty
   `unpromoted_witness_sink_values`
 - readiness gaps still marked external when live Discord, spend/provisioning,
-  or Spark/PGX evidence has not actually been collected
+  Spark/DGX evidence, or ThinkStation PGX staging-host evidence has not actually
+  been collected
 
 Video spine:
 

@@ -25,6 +25,30 @@ That text is a witness claim about what a frontend believed it heard. It is not
 the transcript of record, not a second Hermes user turn, not `oracle_text`, not
 a spend reason, and not tool authority.
 
+## 2026-07-05 Runtime Lock
+
+The current implementation target is not "replace STT with Gemma" and not
+"run STT beside Gemma." It is:
+
+```text
+energy/noise gate accepts one speech cut
+  -> reflex answers the floor immediately
+  -> Gemma receives the raw cut plus same-cut witness context
+  -> Hermes active /model receives only promoted interpreter output
+```
+
+Moshi, Open-S2S, VoiceClaw/OpenClaw, reflex-caption, or classic-ASR text should
+be provided to Gemma when it belongs to the same accepted speech cut. That is
+the desired context path. The adapter must attach the text to the interpreter
+packet as a hypothesis, not submit it as a competing Hermes prompt.
+
+This makes the fast text useful without making it authoritative. The witness
+can help Gemma recover a clipped prefix, name, number, code-switched phrase, or
+rough intent. It can also be rejected as stale, wrong-speaker, wrong-channel,
+low-energy, hallucinated, or contradicted by the waveform. The oracle never
+sees raw witness text as the user request unless Gemma or the oracle promotes
+it.
+
 ## Why This Shape
 
 The reflex needs to be fast enough to answer the floor as soon as the user stops
@@ -146,6 +170,14 @@ The next implementation pass should prove:
 6. Latency metrics distinguish speech-end-to-reflex-ack, audio-cut-to-Gemma
    submission, witness arrival, Gemma promotion, oracle start, oracle first
    token, TTS first audio, and playback completion.
+
+The headless proof must include at least three witness timing cases for the
+same contract: witness before raw audio, witness with raw audio, and witness
+after interpreter start. All three cases must converge on one `turn_id`, one
+`audio_segment_ref`, one `evidence_bundle_id`, one `evidence_merge_key`, and
+one oracle job lifecycle. A fourth negative case must prove that witness-only
+text without raw audio is labeled degraded and fails full-KAME/high-risk action
+readiness.
 
 ## Non-Goals
 

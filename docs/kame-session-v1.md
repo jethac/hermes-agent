@@ -142,6 +142,12 @@ only under the same-cut witness contract. A Moshi/Open-S2S string is useful
 because it is a fast report of what the live interface believed it heard. It is
 not the user message, not a second STT conversation, and not a scheduler.
 
+This is the normative rule for open S2S frontends. If the frontend can provide
+raw audio and transcript-like text for one accepted speech cut, Hermes should
+send both to the Gemma interpreter. If it can provide only text, Hermes may use
+that text for degraded compatibility, captions, or clarification, but it cannot
+claim full KAME readiness and cannot release high-risk action gates.
+
 The canonical interpreter envelope is therefore:
 
 ```text
@@ -236,6 +242,30 @@ The raw text may be present inside a redacted, access-controlled source artifact
 for audit, but normal Hermes prompts, egress messages, Stripe/NemoClaw reasons,
 phone payloads, memory writes, file writes, and tool arguments should carry only
 the digest, source/timing metadata, adjudication outcome, and promoted wording.
+
+### Three-Tier Runtime Acceptance
+
+A conforming full-KAME turn proves these properties:
+
+- the energy/noise gate accepted one bounded speech cut before interpreter or
+  oracle scheduling
+- the reflex acknowledgement did not wait for Moshi, Open-S2S, or classic-ASR
+  witness text
+- the interpreter packet used `mode = "witness_assisted_direct_audio"` and
+  `interpreter_input_order = ["raw_audio", "metadata", "reflex",
+  "transcript_hypotheses"]`
+- every transcript-looking provider field normalized into
+  `transcript_hypotheses[]` with hypothesis authority
+- early, inline, and late witnesses merged into the same bundle and oracle job
+- the Hermes `/model` oracle started only after `interpreter_promoted` or
+  `oracle_promoted` wording existed
+- Stripe, NemoClaw, phone, file, memory, message, and tool sinks contained no
+  unpromoted witness text
+
+An implementation that schedules one Hermes turn from the witness transcript
+and another from the waveform is non-conforming, even if both turns are later
+deduplicated. The accepted speech cut, not the first text string, is the unit of
+work.
 
 ### Witness-Assisted Direct-Audio Profile
 
@@ -888,9 +918,10 @@ and final results without treating witness text as durable user history.
 - Raw audio is the primary interpreter evidence when `audio.segment_ref` exists.
 - Transcript hypotheses are clues for the Gemma interpreter, not durable user
   messages.
-- Moshi/open-S2S/reflex/classic-ASR text may arrive in parallel as witness or
-  fallback context, but it must not block reflex acknowledgement or oracle-job
-  envelope creation when the accepted raw audio and reflex route are sufficient.
+- Moshi/open-S2S/reflex/classic-ASR text may arrive asynchronously as witness
+  or fallback context, but it must not block reflex acknowledgement or
+  oracle-job envelope creation when the accepted raw audio and reflex route are
+  sufficient.
 - Negative speech evidence outranks transcript-looking text. Low-energy witness
   text remains diagnostic and has no scheduling or tool authority.
 - Text-only external requests are degraded compatibility mode.

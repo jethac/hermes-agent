@@ -220,6 +220,14 @@ accepted cut; Hermes should merge it into the same interpreter bundle in all
 three cases. The witness text must be labeled as hypothesis authority and must
 not create a second oracle job or durable user turn.
 
+The runtime profile for this path is `witness_assisted_direct_audio`. It is the
+normal full-KAME profile when raw audio and same-cut witness text are both
+available. It is not a request to run Moshi or classic ASR as a parallel
+conversation. The adapter should submit the raw-audio interpreter packet as
+soon as the energy/noise gate accepts the cut, then attach same-cut witness text
+if it is already available or when it arrives later. The reflex acknowledgement
+must not wait on that witness text.
+
 Full KAME events should normalize toward this bundle shape:
 
 ```json
@@ -258,6 +266,35 @@ for text-oracle fallback, captions, and comparison runs. In full KAME mode they
 must be normalized into `transcript_hypotheses[]` before they can influence the
 interpreter, and they must not directly populate `oracle_text` or durable user
 history.
+
+### Adapter Checklist For Open S2S Frontends
+
+For Moshi, VoiceClaw/OpenClaw, and other open speech-to-speech frontends, the
+adapter is correct only if it can satisfy this checklist:
+
+- silence, echo, harmonic artifacts, and low-energy non-speech do not create a
+  speech cut, barge-in, interpreter request, oracle job, or transcript
+  hypothesis
+- accepted speech cuts create one bundle keyed by `turn_id`,
+  `audio_segment_ref`, `evidence_bundle_id`, and `evidence_merge_key`
+- raw audio and timing metadata are present before transcript hypotheses in the
+  interpreter packet
+- frontend text fields named `stt`, `caption`, `transcript`, `query`, or
+  `user_text` normalize to `transcript_hypotheses[]`
+- witness hypotheses carry source, arrival phase, speaker/channel binding,
+  digest, latency when available, `authority = "hypothesis"`, and
+  `tool_authority = false`
+- late witness text patches the same evidence bundle instead of scheduling a
+  second Hermes turn
+- the Hermes oracle runner starts only from `interpreter_promoted` or
+  `oracle_promoted` wording
+- sink checks prove unpromoted witness text is absent from Stripe, NemoClaw,
+  phone, file, memory, message, and tool payloads
+
+Headless tests should cover witness-before-audio, witness-with-audio,
+witness-after-interpreter-start, and witness-only degraded fallback. Those
+tests should assert one oracle job lifecycle for the first three cases and no
+full-KAME/high-risk readiness for the witness-only case.
 
 When Hermes forwards microphone chunks to a text-oracle sidecar, it adds a server-owned `input_generation` to each sidecar-bound `audio.input.chunk`. Sidecars should echo that value on `transcript.partial` and `transcript.final` events. Hermes uses it to ignore stale speech-recognition results after barge-in or after a newer utterance has started. Desktop clients do not set or rely on this field.
 
@@ -382,9 +419,16 @@ enabled unless deliberately disabled, that the configured sidecar is healthy,
 and that public provider naming stays capability-based rather than tied to a
 specific workstation or accelerator. Plain `hermes doctor` reports the same
 section informatively without failing ordinary installs that have not opted into
-realtime voice. Full KAME readiness additionally requires reflex floor-control
-timing, raw-audio interpreter evidence, transcript-hypothesis provenance when
-present, and Hermes `/model` oracle routing evidence.
+realtime voice.
+
+This operator gate is deliberately split by claim. Provider-bridge alpha
+readiness proves the fallback/text-oracle path: audio can reach a speech
+provider, Hermes can receive transcript events, Hermes can answer with its
+active `/model`, and TTS can play back. Full KAME readiness proves a different
+path: reflex floor-control timing, raw-audio interpreter evidence,
+transcript-hypothesis provenance when present, and Hermes `/model` oracle
+routing from promoted evidence. Passing provider STT fixtures does not close
+the full-KAME gate by itself.
 
 `--realtime-voice-smoke` implies the strict gate, then opens the configured
 sidecar websocket, sends a transcript-backed `audio.input.chunk`, and waits for
@@ -394,13 +438,14 @@ it proves sidecar auth, session startup, event streaming, and basic transcript
 turn latency without requiring a particular GPU or audio device.
 
 `--realtime-voice-alpha` expands to the documented provider-bridge private-alpha
-evidence set: protocol smoke, the four required English/Japanese STT audio
-fixtures, the required English/Japanese full audio-session smokes, the four
-required English/Japanese TTS phrases, and the required barge-in smoke. Use it
-with `--realtime-voice-report` for a single release-candidate run, then repeat
-with separate report filenames until the minimum run count is satisfied. Full
-KAME release evidence should treat those STT fixtures as optional fallback or
-comparison evidence, and must also collect reflex/interpreter/oracle evidence.
+evidence set: protocol smoke, the four required English/Japanese fallback-STT
+audio fixtures, the required English/Japanese full audio-session smokes, the
+four required English/Japanese TTS phrases, and the required barge-in smoke. Use
+it with `--realtime-voice-report` for a single release-candidate run, then
+repeat with separate report filenames until the minimum run count is satisfied.
+Full KAME release evidence should treat those STT fixtures as optional fallback
+or comparison evidence, and must also collect reflex/interpreter/oracle
+evidence.
 
 `--realtime-voice-audio-fixture` sends real audio bytes through the same
 websocket path and, for provider-bridge/text-oracle profiles, requires
@@ -538,7 +583,16 @@ python -m hermes_cli.realtime_voice_report ./artifacts/realtime-voice-evidence/*
 
 `realtime_voice_fixture_pack` uses Hermes' configured TTS provider to generate the required English/Japanese input utterances and converts them to WebM/Opus with `ffmpeg`. Teams may replace those generated files with hand-recorded fixtures, but the filenames and utterance intent should stay stable so report validation remains comparable across machines and sidecar providers.
 
-The alpha evidence helper preflights the four required audio fixture paths before starting any doctor run or sidecar smoke. For provider-bridge profiles, the EN/JA hello fixtures are also reused by the full audio-session smoke so the report proves real audio can flow through STT, Hermes session/oracle text, and TTS in one live turn. If a fixture is missing, it fails immediately with the exact path to create, preserving the documented relative fixture identifiers used by report validation. Full KAME runs may reuse those fixtures, but the required proof is the raw-audio interpreter path and reflex/oracle provenance rather than STT transcript availability.
+The alpha evidence helper preflights the four required audio fixture paths
+before starting any provider-bridge doctor run or sidecar smoke. For
+provider-bridge profiles, the EN/JA hello fixtures are also reused by the full
+audio-session smoke so the report proves real audio can flow through STT,
+Hermes session/oracle text, and TTS in one fallback live turn. If a fixture is
+missing, it fails immediately with the exact path to create, preserving the
+documented relative fixture identifiers used by report validation. Full KAME
+runs may reuse those fixtures, but the required proof is the raw-audio
+interpreter path, reflex timing, promoted evidence, and oracle provenance
+rather than STT transcript availability.
 
 For a single debug run, the helper above is equivalent to:
 

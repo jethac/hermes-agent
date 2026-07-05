@@ -29,6 +29,14 @@ Portable STT/TTS providers remain supported as fallback, diagnostics, and
 bring-up baselines. They must not be treated as the primary full-KAME control
 path when the reflex and interpreter are healthy.
 
+The current product lock is `witness_assisted_direct_audio`: a fast reflex
+answers the floor, a Gemma-style interpreter adjudicates the accepted raw-audio
+cut, and Hermes' active `/model` remains the business/action oracle. Moshi,
+Open-S2S, VoiceClaw/OpenClaw, reflex-caption, and classic-ASR text can and
+should be passed to the interpreter when it describes the same speech cut, but
+only as `transcript_hypotheses[]` witness context. It must not become a second
+Hermes turn or action authority by arriving first.
+
 ## Production-Readiness Ladder
 
 Realtime voice should ship in visible tiers instead of as a single "done" switch. Each tier keeps the same desktop websocket and Hermes oracle boundary, so users can move inference from a laptop to a LAN sidecar or provider endpoint without changing the desktop app.
@@ -42,11 +50,21 @@ Realtime voice should ship in visible tiers instead of as a single "done" switch
 
 The ladder is intentionally hardware-neutral. A developer may use a large local inference workstation, a small desktop with cloud STT/TTS, a LAN model server, or a hosted provider, but the product contract is capabilities and evidence: preflight status, sidecar health, live-like `conversation_quality`, evidence-backed `production_readiness`, latency targets, English/Japanese fixture reports, launch-review checks, and safe fallback behavior.
 
+DGX Spark remains the preferred local-appliance story and a key evidence
+target, but it is not the protocol boundary. A ThinkStation PGX, remote GPU
+host, or hosted provider may be used for bring-up and comparison when artifacts
+label what ran where. Full KAME readiness is granted by reflex, raw-audio
+interpreter, TTS, and Hermes `/model` oracle evidence, not by the hostname or
+accelerator.
+
 ## Goals
 
 - Let a user have a low-latency spoken conversation with Hermes in the desktop app.
 - Preserve Hermes' existing data boundary: memory, files, MCP, tools, profiles, approvals, and session state remain owned by Hermes.
-- Allow a local process, remote inference host, or cloud endpoint to run Gemma, streaming STT, streaming TTS, and native S2S inference.
+- Allow a local process, remote inference host, or cloud endpoint to run the
+  selected voice capabilities: reflex, Gemma-style raw-audio interpretation,
+  TTS, native S2S, and optional streaming STT for fallback, captions,
+  diagnostics, or witness context.
 - Make the desktop portable by separating microphone/playback/session UI from the machine or service that performs voice inference.
 - Autostart the reference sidecar for loopback local/Gemma/vLLM configurations so basic realtime voice does not require a second manual process.
 - Keep the desktop UI protocol stable while engines change behind it.
@@ -222,6 +240,14 @@ rejects a stale, hallucinated, ambiguous-speaker, wrong-speaker,
 wrong-channel, or energy-inconsistent hypothesis. Text-only frontend bridges
 are compatibility mode and must be
 labeled degraded when raw audio is unavailable.
+
+Acceptance evidence must also include timing-shape coverage. The same contract
+has to work when witness text arrives before raw audio, with raw audio, and
+after interpreter submission. All three cases must produce one `turn_id`, one
+`audio_segment_ref`, one `evidence_bundle_id`, one `evidence_merge_key`, and
+one oracle job lifecycle. A transcript-only packet may be useful for captions
+or clarification, but it must remain degraded until same-cut raw audio is bound
+and promoted evidence exists.
 
 The product requirement is three-tier sensor fan-in, not a parallel STT
 conversation. A fast reflex may provide immediate floor control and a
