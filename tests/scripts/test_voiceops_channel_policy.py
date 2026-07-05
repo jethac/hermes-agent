@@ -16,6 +16,7 @@ from scripts.voiceops_channel_policy import (
     REQUIRED_TRANSCRIPT_HYPOTHESIS_CONTRACT,
     REQUIRED_TRANSCRIPT_HYPOTHESIS_FIELDS,
     apply_redactions,
+    build_operator_review_decision,
     build_review_decision_scaffold,
     build_channel_policy,
     build_review_packet,
@@ -697,6 +698,32 @@ def test_channel_policy_review_decision_validates_non_mutating_approval():
     assert validate_channel_policy_review_decision(decision, review=review) == []
 
 
+def test_build_operator_review_decision_is_non_mutating_and_review_closing():
+    policy = build_channel_policy()
+    review = build_review_packet(policy)
+    decision = build_operator_review_decision(
+        review,
+        decision_by="codex-headless-review",
+        decided_at="2026-07-05T00:00:00Z",
+    )
+
+    assert decision["decision"] == "approve_dry_run_only"
+    assert decision["review_status"] == "approved"
+    assert decision["artifact_only"] is True
+    assert decision["changes_policy"] is False
+    assert decision["changes_readiness_by_itself"] is False
+    assert decision["real_egress_enabled"] is False
+    assert decision["acknowledged_operator_must_not"] == review["operator_must_not"]
+    assert {signoff["role"] for signoff in decision["signoffs"]} == {
+        "business_owner",
+        "channel_owner",
+        "privacy_reviewer",
+        "security_owner",
+    }
+    assert all(signoff["approved"] is True for signoff in decision["signoffs"])
+    assert validate_channel_policy_review_decision(decision, review=review) == []
+
+
 def test_channel_policy_review_decision_rejects_mutating_or_incomplete_approval():
     policy = build_channel_policy()
     review = build_review_packet(policy)
@@ -734,6 +761,43 @@ def test_channel_policy_cli_smoke(tmp_path):
     assert Path(payload["artifacts"]["markdown"]).exists()
     assert Path(payload["artifacts"]["review_json"]).exists()
     assert Path(payload["artifacts"]["review_markdown"]).exists()
+
+
+def test_channel_policy_cli_writes_separate_operator_decision(tmp_path):
+    script = Path(__file__).resolve().parents[2] / "scripts" / "voiceops_channel_policy.py"
+    decision_path = tmp_path / "operator-channel-policy-review-decision.json"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--output-dir",
+            str(tmp_path),
+            "--write-operator-decision",
+            str(decision_path),
+            "--decision-by",
+            "codex-headless-review",
+            "--decided-at",
+            "2026-07-05T00:00:00Z",
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(result.stdout)
+    review = json.loads(Path(payload["artifacts"]["review_json"]).read_text(encoding="utf-8"))
+    decision = json.loads(decision_path.read_text(encoding="utf-8"))
+
+    assert payload["ok"] is True
+    assert payload["validation_issues"] == []
+    assert payload["artifacts"]["operator_decision_json"] == str(decision_path)
+    assert decision["decision"] == "approve_dry_run_only"
+    assert decision["real_egress_enabled"] is False
+    assert validate_channel_policy_review_decision(
+        decision,
+        review=review,
+        review_path=Path(payload["artifacts"]["review_json"]),
+    ) == []
 
 
 def test_parse_args_defaults_to_requested_artifact_dir():

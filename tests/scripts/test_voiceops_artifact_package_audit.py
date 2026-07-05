@@ -4,6 +4,11 @@ import json
 from pathlib import Path
 
 from scripts.voiceops_artifact_package_audit import audit_package, parse_args, write_audit
+from scripts.voiceops_channel_policy import (
+    REVIEW_DECISION_ARTIFACT_ID,
+    REVIEW_DECISION_SCHEMA_VERSION,
+    stable_review_sha256,
+)
 from scripts.voiceops_plan_run import build_plan_run, write_plan_run
 
 
@@ -17,6 +22,43 @@ def _generate_package(tmp_path: Path, **plan_kwargs) -> Path:
     summary = build_plan_run(artifact_root=artifact_root, output_dir=output_dir, env={}, **plan_kwargs)
     write_plan_run(output_dir, summary)
     return artifact_root
+
+
+def _valid_channel_policy_decision(review: dict) -> dict:
+    return {
+        "schema_version": REVIEW_DECISION_SCHEMA_VERSION,
+        "artifact_id": REVIEW_DECISION_ARTIFACT_ID,
+        "milestone": review["milestone"],
+        "policy_id": review["policy_id"],
+        "policy_version": review["policy_version"],
+        "review_artifact_ref": "channel-policy-review.json",
+        "review_artifact_stable_sha256": stable_review_sha256(review),
+        "decision": "approve_dry_run_only",
+        "review_status": "approved",
+        "artifact_only": True,
+        "changes_policy": False,
+        "changes_readiness_by_itself": False,
+        "real_egress_enabled": False,
+        "kame_action_evidence_gate": {
+            "gate_id": review["kame_action_evidence_gate"]["gate_id"],
+            "design_reference": review["kame_action_evidence_gate"]["design_reference"],
+            "required_interpreter_profile": review["kame_action_evidence_gate"][
+                "required_interpreter_profile"
+            ],
+            "raw_transcript_text_allowed_in_channel_egress": False,
+            "unpromoted_witness_may_enter_payloads": False,
+        },
+        "acknowledged_operator_must_not": review["operator_must_not"],
+        "signoffs": [
+            {
+                "role": signoff["role"],
+                "approved": True,
+                "decision_by": f"{signoff['role']}-ref",
+                "decided_at": "2026-07-05T00:00:00Z",
+            }
+            for signoff in review["required_signoffs"]
+        ],
+    }
 
 
 def _rewrite_json_strings(value, rewrite):
@@ -95,6 +137,38 @@ def test_package_audit_accepts_generated_headless_package(tmp_path):
     assert audit_markdown.startswith("# VoiceOps Artifact Package Audit")
     assert "Readiness claim: no" in audit_markdown
     assert "static_package_consistency_only" in audit_markdown
+
+
+def test_package_audit_accepts_safe_channel_policy_operator_review(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    output_dir = artifact_root / "voiceops-plan" / "current"
+    review_path = artifact_root / "voiceops-channel-policy" / "current" / "channel-policy-review.json"
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    decision_path = (
+        artifact_root
+        / "voiceops-channel-policy"
+        / "current"
+        / "operator-channel-policy-review-decision.json"
+    )
+    _write_json(decision_path, _valid_channel_policy_decision(review))
+
+    summary = build_plan_run(
+        artifact_root=artifact_root,
+        output_dir=output_dir,
+        env={},
+        channel_policy_operator_decision=decision_path,
+    )
+    write_plan_run(output_dir, summary)
+
+    report = audit_package(artifact_root)
+
+    assert summary["review_gaps"] == []
+    assert summary["review_actions"][0]["status"] == "operator_review_accepted"
+    assert summary["review_actions"][0]["decision_artifact"] == str(decision_path)
+    assert summary["readiness_ok"] is False
+    assert report["ok"] is True
+    assert report["issues"] == []
+    assert report["readiness_claim"] is False
 
 
 def test_package_audit_accepts_allowlisted_readonly_discovery_safety_summary(tmp_path):

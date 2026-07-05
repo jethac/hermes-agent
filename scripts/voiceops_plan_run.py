@@ -678,7 +678,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
             "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json "
             "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json "
             "--post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json "
-            "--channel-policy-operator-decision artifacts/voiceops-channel-policy/current/channel-policy-review-decision.json "
+            "--channel-policy-operator-decision artifacts/voiceops-channel-policy/current/operator-channel-policy-review-decision.json "
             f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
         ),
         "final_package_audit_command": (

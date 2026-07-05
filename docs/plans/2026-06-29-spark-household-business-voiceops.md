@@ -1340,6 +1340,35 @@ confidence, speaker/channel binding, and adjudication metadata. Raw witness
 text is not allowed as WhatsApp/SMS/phone/Discord egress content, and
 hypothesis-only wording cannot satisfy the promoted-evidence gate.
 
+To close the review gap without enabling real egress, write a separate
+non-mutating operator decision artifact. Do not edit the generated
+`channel-policy-review-decision.json` scaffold, because package audit expects
+that scaffold to remain pending:
+
+```bash
+uv run python scripts/voiceops_channel_policy.py \
+  --output-dir artifacts/voiceops-channel-policy/current \
+  --write-operator-decision artifacts/voiceops-channel-policy/current/operator-channel-policy-review-decision.json \
+  --operator-decision approve_dry_run_only \
+  --decision-by redacted-operator-review
+```
+
+Then re-index with:
+
+```bash
+uv run python scripts/voiceops_plan_run.py \
+  --artifact-root artifacts \
+  --output-dir artifacts/voiceops-plan/current \
+  --package-audit \
+  --channel-policy-operator-decision artifacts/voiceops-channel-policy/current/operator-channel-policy-review-decision.json
+```
+
+This accepted decision closes only the Milestone 3 review gap. It must keep
+`artifact_only = true`, `changes_policy = false`,
+`changes_readiness_by_itself = false`, and `real_egress_enabled = false`.
+It does not authorize Discord, WhatsApp, SMS, phone, spend, provisioning,
+credential, memory, file, or external-message egress.
+
 ## Milestone 4: Local Deployment Evidence
 
 Prove the three KAME roles on the selected local runtime, with one DGX Spark as

@@ -216,6 +216,7 @@ EXPECTED_PACKAGE_ARTIFACTS = (
     "voiceops-voice-operator/current/voice-operator-readiness.md",
 )
 OPTIONAL_PACKAGE_ARTIFACTS = (
+    "voiceops-channel-policy/current/operator-channel-policy-review-decision.json",
     "voiceops-provisioning/current/approval-decisions.json",
     "voiceops-provisioning/current/approval-decisions/provision-voip-provider.json",
     "voiceops-provisioning/current/post-approval-receipts.json",
@@ -1632,8 +1633,13 @@ def _audit_review_actions(label: str, actions: Any, issues: list[str]) -> None:
     if not isinstance(action, Mapping):
         issues.append(f"{label}:missing_channel_policy_review_action")
         return
-    if action.get("status") != "pending_human_review":
-        issues.append(f"{label}:channel_policy_review_status_not_pending")
+    status = action.get("status")
+    if status not in {"pending_human_review", "operator_review_accepted"}:
+        issues.append(f"{label}:channel_policy_review_status_invalid")
+    if status == "operator_review_accepted" and action.get("decision_status") != "accepted":
+        issues.append(f"{label}:channel_policy_review_decision_not_accepted")
+    if status == "operator_review_accepted" and not str(action.get("decision_artifact") or ""):
+        issues.append(f"{label}:channel_policy_review_decision_artifact_missing")
     if action.get("changes_readiness_by_itself") is not False:
         issues.append(f"{label}:channel_policy_review_changes_readiness")
     if action.get("changes_policy_by_itself") is not False:

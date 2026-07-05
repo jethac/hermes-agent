@@ -881,6 +881,63 @@ def build_review_decision_scaffold(
     return scaffold
 
 
+def build_operator_review_decision(
+    review: Mapping[str, Any],
+    *,
+    decision: str = "approve_dry_run_only",
+    decision_by: str = "headless-operator-review",
+    decided_at: str | None = None,
+    review_artifact_sha256: str = "",
+) -> dict[str, Any]:
+    """Build a separate non-mutating operator decision for the review packet."""
+
+    exact_sha = review_artifact_sha256 if re.fullmatch(r"[0-9a-f]{64}", review_artifact_sha256) else ""
+    required_signoffs = [
+        signoff for signoff in review.get("required_signoffs", []) if isinstance(signoff, Mapping)
+    ]
+    timestamp = decided_at or _utc_now()
+    payload: dict[str, Any] = {
+        "schema_version": REVIEW_DECISION_SCHEMA_VERSION,
+        "artifact_id": REVIEW_DECISION_ARTIFACT_ID,
+        "milestone": review.get("milestone"),
+        "policy_id": review.get("policy_id"),
+        "policy_version": review.get("policy_version"),
+        "review_artifact_ref": "channel-policy-review.json",
+        "review_artifact_stable_sha256": stable_review_sha256(review),
+        "decision": decision,
+        "review_status": "approved",
+        "artifact_only": True,
+        "changes_policy": False,
+        "changes_readiness_by_itself": False,
+        "real_egress_enabled": False,
+        "kame_action_evidence_gate": {
+            "gate_id": (review.get("kame_action_evidence_gate") or {}).get("gate_id"),
+            "design_reference": (review.get("kame_action_evidence_gate") or {}).get(
+                "design_reference"
+            ),
+            "required_interpreter_profile": (review.get("kame_action_evidence_gate") or {}).get(
+                "required_interpreter_profile"
+            ),
+            "raw_transcript_text_allowed_in_channel_egress": False,
+            "unpromoted_witness_may_enter_payloads": False,
+        },
+        "acknowledged_operator_must_not": list(review.get("operator_must_not") or []),
+        "signoffs": [
+            {
+                "role": signoff.get("role"),
+                "approved": True,
+                "decision_by": f"{decision_by}:{signoff.get('role')}",
+                "decided_at": timestamp,
+                "reason": signoff.get("reason"),
+            }
+            for signoff in required_signoffs
+        ],
+    }
+    if exact_sha:
+        payload["review_artifact_sha256"] = exact_sha
+    return payload
+
+
 def validate_channel_policy_review_decision(
     decision: Mapping[str, Any],
     *,
@@ -1455,6 +1512,28 @@ def write_channel_policy(output_dir: Path, policy: dict[str, Any]) -> dict[str, 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--write-operator-decision",
+        type=Path,
+        default=None,
+        help="Write a separate non-mutating operator review decision artifact.",
+    )
+    parser.add_argument(
+        "--operator-decision",
+        default="approve_dry_run_only",
+        choices=sorted(REVIEW_DECISIONS_THAT_CLOSE_REVIEW),
+        help="Review-closing decision to write with --write-operator-decision.",
+    )
+    parser.add_argument(
+        "--decision-by",
+        default="headless-operator-review",
+        help="Redacted operator/reviewer identifier prefix for generated signoffs.",
+    )
+    parser.add_argument(
+        "--decided-at",
+        default=None,
+        help="UTC ISO-8601 decision timestamp. Defaults to current UTC time.",
+    )
     return parser.parse_args(argv)
 
 
@@ -1463,6 +1542,25 @@ def main(argv: list[str] | None = None) -> int:
     policy = build_channel_policy()
     issues = validate_policy(policy)
     paths = write_channel_policy(args.output_dir, policy)
+    review_path = Path(paths["review_json"])
+    review = load_channel_policy_review_decision(review_path)
+    if args.write_operator_decision is not None:
+        decision = build_operator_review_decision(
+            review,
+            decision=args.operator_decision,
+            decision_by=args.decision_by,
+            decided_at=args.decided_at,
+        )
+        decision_issues = validate_channel_policy_review_decision(
+            decision,
+            review=review,
+            review_path=review_path,
+        )
+        if decision_issues:
+            issues.extend(f"operator_decision:{issue}" for issue in decision_issues)
+        args.write_operator_decision.parent.mkdir(parents=True, exist_ok=True)
+        _write_json(args.write_operator_decision, decision)
+        paths["operator_decision_json"] = str(args.write_operator_decision)
     print(
         json.dumps(
             {

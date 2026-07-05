@@ -774,6 +774,14 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "and closure_status is complete and package_audit.status is pass"
     )
     assert "--package-audit" in handoff["final_reindex_command"]
+    assert (
+        "artifacts/voiceops-channel-policy/current/operator-channel-policy-review-decision.json"
+        in handoff["final_reindex_command"]
+    )
+    assert (
+        "--channel-policy-operator-decision artifacts/voiceops-channel-policy/current/channel-policy-review-decision.json"
+        not in handoff["final_reindex_command"]
+    )
     next_actions = summary["closure_index"]["next_actions"]
     assert summary["next_actions"] == next_actions
     review_actions = summary["closure_index"]["review_actions"]
@@ -2400,6 +2408,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "--post-approval-receipts" in provisioning_gate["rerun_commands"]["plan_index_post_approval_receipts"]
     assert "--post-approval-receipts" in handoff_payload["final_reindex_command"]
     assert "--channel-policy-operator-decision" in handoff_payload["final_reindex_command"]
+    assert (
+        "artifacts/voiceops-channel-policy/current/operator-channel-policy-review-decision.json"
+        in handoff_payload["final_reindex_command"]
+    )
     spark_gate = next(gate for gate in closure["gates"] if gate["gate_id"] == "local_spark_stack_matrix")
     assert spark_gate["closure_plan"].endswith("spark-matrix-closure-plan.json")
     assert spark_gate["closure_artifact"].endswith("spark-matrix-closure-plan.md")
