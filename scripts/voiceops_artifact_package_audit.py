@@ -103,6 +103,7 @@ VALID_WITNESS_ARRIVAL_PHASES = {
     "with_raw_audio",
     "after_interpreter_start",
 }
+EXPECTED_PROVIDER_TEXT_ALIAS_KEYS = ("stt", "caption", "transcript", "query", "user_text")
 SECRET_SCAN_PATTERNS = (
     ("openai_or_stripe_secret_key", re.compile(r"\bsk_(?:live|test|car)_[A-Za-z0-9_-]{12,}\b")),
     ("openai_project_key", re.compile(r"\bsk-proj-[A-Za-z0-9_-]{12,}\b")),
@@ -2202,6 +2203,11 @@ def _audit_voice_operator_async_oracle_plan_projection(
     details = _voice_operator_plan_details(plan_run)
     projected = details.get("async_oracle_smoke") if isinstance(details.get("async_oracle_smoke"), Mapping) else {}
     _audit_plan_projection_witness_text_redacted(projected=projected, issues=issues)
+    _audit_provider_text_alias_normalization(
+        async_smoke=projected,
+        prefix="plan_run:voice_operator.async_oracle_smoke",
+        issues=issues,
+    )
     _audit_promoted_request_summary_contract(
         proof.get("external_frontend_promoted_request_summary"),
         label=(
@@ -2795,6 +2801,27 @@ def _audit_witness_assisted_action_sinks(
             )
 
 
+def _audit_provider_text_alias_normalization(
+    *,
+    async_smoke: Mapping[str, Any],
+    prefix: str,
+    issues: list[str],
+) -> None:
+    expected = list(EXPECTED_PROVIDER_TEXT_ALIAS_KEYS)
+    if async_smoke.get("provider_text_alias_normalization_smoke_ok") is not True:
+        issues.append(f"{prefix}.provider_text_alias_normalization_smoke_not_ok")
+    if async_smoke.get("provider_text_alias_keys_expected") != expected:
+        issues.append(f"{prefix}.provider_text_alias_keys_expected_mismatch")
+    if async_smoke.get("provider_text_alias_keys_observed") != expected:
+        issues.append(f"{prefix}.provider_text_alias_keys_observed_mismatch")
+    if async_smoke.get("provider_text_alias_hypothesis_count") != len(expected):
+        issues.append(f"{prefix}.provider_text_alias_hypothesis_count_mismatch")
+    if async_smoke.get("provider_text_alias_hypothesis_contract_ok") is not True:
+        issues.append(f"{prefix}.provider_text_alias_hypothesis_contract_not_ok")
+    if async_smoke.get("provider_text_alias_no_oracle_text_leak") is not True:
+        issues.append(f"{prefix}.provider_text_alias_oracle_text_leak")
+
+
 def _audit_witness_fusion_multi_speaker_binding(
     *,
     async_smoke: Mapping[str, Any],
@@ -2919,6 +2946,11 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
     elif async_unpromoted_sink_values:
         issues.append("voice_operator_readiness:async_oracle_smoke.unpromoted_hypothesis_action_sink_values_not_empty")
     _audit_witness_assisted_action_sinks(async_smoke=async_smoke, issues=issues)
+    _audit_provider_text_alias_normalization(
+        async_smoke=async_smoke,
+        prefix="voice_operator_readiness:async_oracle_smoke",
+        issues=issues,
+    )
     _audit_witness_fusion_multi_speaker_binding(async_smoke=async_smoke, issues=issues)
     external_frontend_transcript_hypotheses = async_smoke.get(
         "external_frontend_transcript_hypotheses"

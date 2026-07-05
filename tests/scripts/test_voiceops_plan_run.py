@@ -1701,6 +1701,21 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_placeholder"].startswith(
         "Accepted job one"
     )
+    assert voice_result["details"]["async_oracle_smoke"]["provider_text_alias_normalization_smoke_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["provider_text_alias_keys_expected"] == [
+        "stt",
+        "caption",
+        "transcript",
+        "query",
+        "user_text",
+    ]
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["provider_text_alias_keys_observed"]
+        == voice_result["details"]["async_oracle_smoke"]["provider_text_alias_keys_expected"]
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["provider_text_alias_hypothesis_count"] == 5
+    assert voice_result["details"]["async_oracle_smoke"]["provider_text_alias_hypothesis_contract_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["provider_text_alias_no_oracle_text_leak"] is True
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_evidence_merge_key"].startswith(
         "kame-merge-"
     )

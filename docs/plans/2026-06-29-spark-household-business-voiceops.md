@@ -99,6 +99,14 @@ degraded compatibility. If the waveform is present, the Gemma interpreter must
 adjudicate the witness before any spoken content reaches durable history,
 Stripe, NemoClaw, phone, memory, files, external messages, or tools.
 
+The adapter may preserve the original field name only as
+`provider_alias_key` provenance. The hackathon package should prove that `stt`,
+`caption`, `transcript`, `query`, and `user_text` all enter the same
+`transcript_hypotheses[]` authority model, and that none can become
+`oracle_text`, spend rationale, provider choice, phone script, memory/file
+content, external message text, durable history, or tool arguments before
+Gemma or the active Hermes `/model` promotes the wording.
+
 Latest clarification: we are not adding a separate Gemma-ASR lane beside the
 reflex. We are feeding a bounded speech cut to a Gemma direct-audio interpreter
 and attaching every same-cut transcript-looking signal as witness evidence.
@@ -226,6 +234,9 @@ Target KAME layout:
   such as `stt`, `caption`, `transcript`, `query`, or `user_text`, but those
   names do not carry authority. With raw audio present, normalize them into
   `transcript_hypotheses[]`; without raw audio, mark degraded compatibility.
+  Preserve the original alias only as bounded `provider_alias_key` provenance,
+  and make package audit reject missing aliases, contract drift, or any
+  `oracle_text`/action-sink leak.
 - Witness-assisted direct audio: when the same turn has raw audio plus a Moshi
   or equivalent transcript, the interpreter packet must declare the
   `witness_assisted_direct_audio` profile and keep `witness_adjudications`

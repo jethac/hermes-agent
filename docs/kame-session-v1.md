@@ -110,6 +110,17 @@ wrong-speaker, wrong-channel, stale, low-energy, hallucinated, or contradicted
 by the waveform. Until that decision creates `interpreter_promoted` or
 `oracle_promoted` evidence, the original witness text is audit context only.
 
+Adapter-edge vocabulary is intentionally lossy. The provider may name the text
+field `stt`, `caption`, `transcript`, `query`, or `user_text`, but those names
+are normalized away before Hermes builds durable state. The normalized row must
+record `provider_alias_key` only as provenance and must still carry
+`role = "witness_context"`, `authority = "hypothesis"`,
+`promotion_required = "interpreter_promoted_or_oracle_promoted"`, and
+`tool_authority = false`. Package audits should reject any implementation where
+those aliases bypass `transcript_hypotheses[]`, appear in `oracle_text`, or
+populate Stripe, NemoClaw, phone, file, memory, message, durable-history, or
+tool sinks before promotion.
+
 Implementation rule: prefer submitting the raw-audio interpreter packet over
 waiting for Moshi/Open-S2S text. Witness text is valuable context, but it is not
 the critical path for acknowledgement or interpreter scheduling. The adapter may

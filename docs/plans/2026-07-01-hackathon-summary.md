@@ -391,6 +391,12 @@ The final voice architecture should separate low-latency conversational reflexes
   bundle, not a parallel conversation. It must not become `oracle_text`, a spend
   reason, a call payload, or durable user text unless interpreter/oracle judgment
   promotes it.
+- Provider text field names such as `stt`, `caption`, `transcript`, `query`,
+  and `user_text` are adapter vocabulary only. The artifact should show those
+  aliases normalized into `transcript_hypotheses[]` with `provider_alias_key`
+  provenance, witness/hypothesis authority, and no leak into `oracle_text`,
+  Stripe, NemoClaw, phone, memory, file, message, durable history, or tool
+  payloads before promotion.
 - The interpreter prompt must explicitly tell Gemma that raw audio is primary
   and that witness transcripts are clues about what the frontend believed it
   heard, not authoritative user messages.
@@ -575,5 +581,8 @@ closed by external evidence gates:
 13. Add one degraded compatibility artifact where a text-only Moshi/Open-S2S
    witness is preserved for audit but fails full-KAME and high-risk action
    gates because no raw audio is available.
-14. Implement the phone call handoff with context transfer from the Discord session.
-15. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.
+14. Prove provider alias normalization for `stt`, `caption`, `transcript`,
+   `query`, and `user_text`, including package-audit rejection if any alias
+   bypasses `transcript_hypotheses[]` or leaks into oracle/action sinks.
+15. Implement the phone call handoff with context transfer from the Discord session.
+16. Add a preflight command that checks PGX endpoints, sidecar health, Stripe readiness, voice provider config, and Discord gateway state.

@@ -4374,6 +4374,9 @@ def _copy_witness_hypothesis_audit_fields(
         if value:
             target["arrival_phase"] = value[:80]
             break
+    alias_key = str(source.get("provider_alias_key") or "").strip()
+    if alias_key:
+        target["provider_alias_key"] = alias_key[:80]
 
 
 def _queued_interpreter_evidence_bundle(job: OracleJob) -> Mapping[str, Any]:

@@ -27,8 +27,10 @@ from agent.realtime_voice_kame import (
     INTERPRETER_PROMPT_POLICY,
     INTERPRETER_PROMPT_POLICY_VERSION,
     KAME_INTERPRETER_PROFILE_WITNESS_ASSISTED_DIRECT_AUDIO,
+    KAME_PROVIDER_TEXT_ALIAS_KEYS,
     KameOracleRequest,
     KameRoute,
+    kame_external_brain_request_to_oracle_request,
     kame_evidence_merge_key,
 )
 from agent.realtime_voice_oracle_jobs import OracleJobManager
@@ -2107,6 +2109,106 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and completed_observed
         and "prepare an external came hand off" not in json.dumps(durable_records, sort_keys=True).lower()
     )
+    provider_alias_texts = {
+        "stt": "provider alias stt should stay a hypothesis",
+        "caption": "provider alias caption should stay a hypothesis",
+        "transcript": "provider alias transcript should stay a hypothesis",
+        "query": "provider alias query should stay a hypothesis",
+        "user_text": "provider alias user text should stay a hypothesis",
+    }
+    provider_alias_request = kame_external_brain_request_to_oracle_request(
+        {
+            "protocol": "kame_session_v1",
+            "tool": "ask_brain",
+            "tool_call_id": "voiceclaw-alias-normalization-1",
+            "provider": "voiceclaw",
+            "turn_id": "voice-smoke-external-frontend:alias-normalization",
+            "user_id": "jetha",
+            "text": "canonical alias normalization request",
+            "intent": "canonical alias normalization request",
+            "audio_segment_ref": "artifact://voiceclaw/alias-normalization.wav",
+            "audio_time_range_ms": [300, 1500],
+            "speaker": {
+                "platform": "discord",
+                "channel_user_id": "jetha-redacted",
+                "display_name": "jetha",
+                "is_bot": False,
+            },
+            "channel": {
+                "transport": "discord_voice",
+                "guild_id": "guild-redacted",
+                "channel_id": "general-redacted",
+                "surface": "desk_voice",
+            },
+            "stt_source": "classic_asr",
+            "stt_confidence": 0.64,
+            "stt_latency_ms": 64,
+            "stt_arrival_phase": "with_raw_audio",
+            "caption_source": "voiceclaw_caption",
+            "caption_confidence": 0.72,
+            "caption_latency_ms": 48,
+            "caption_arrival_phase": "with_raw_audio",
+            "transcript_source": "voiceclaw_transcript",
+            "transcript_confidence": 0.73,
+            "transcript_latency_ms": 49,
+            "transcript_arrival_phase": "with_raw_audio",
+            "query_source": "voiceclaw_query",
+            "query_confidence": 0.71,
+            "query_latency_ms": 52,
+            "query_arrival_phase": "with_raw_audio",
+            "user_text_source": "voiceclaw_user_text",
+            "user_text_confidence": 0.7,
+            "user_text_latency_ms": 55,
+            "user_text_arrival_phase": "with_raw_audio",
+            **provider_alias_texts,
+        },
+        session_id="voice-smoke-external-frontend",
+        turn_id="voice-smoke-external-frontend:alias-normalization",
+        source="voiceclaw",
+        user_id="jetha",
+    )
+    provider_alias_hypotheses = [
+        dict(item)
+        for item in provider_alias_request.auxiliary_transcript_hypotheses
+        if isinstance(item, Mapping) and item.get("provider_alias_key")
+    ]
+    provider_alias_key_set = {
+        str(item.get("provider_alias_key") or "")
+        for item in provider_alias_hypotheses
+        if item.get("provider_alias_key")
+    }
+    provider_alias_keys_expected = [
+        key for key in KAME_PROVIDER_TEXT_ALIAS_KEYS if key in provider_alias_texts
+    ]
+    provider_alias_keys_observed = [
+        key for key in provider_alias_keys_expected if key in provider_alias_key_set
+    ]
+    provider_alias_contract_ok = all(
+        item.get("authority") == "hypothesis"
+        and item.get("role") == "witness_context"
+        and item.get("promotion_required") == "interpreter_promoted_or_oracle_promoted"
+        and item.get("tool_authority") is False
+        and item.get("arrival_phase") == "with_raw_audio"
+        for item in provider_alias_hypotheses
+    )
+    provider_alias_text_values = tuple(provider_alias_texts.values())
+    provider_alias_oracle_text = " ".join(
+        str(value or "")
+        for value in (
+            provider_alias_request.oracle_text,
+            provider_alias_request.intent,
+            provider_alias_request.transcript,
+        )
+    ).lower()
+    provider_alias_no_oracle_text_leak = all(
+        text.lower() not in provider_alias_oracle_text for text in provider_alias_text_values
+    )
+    provider_alias_normalization_ok = (
+        provider_alias_keys_observed == provider_alias_keys_expected
+        and len(provider_alias_hypotheses) == len(provider_alias_keys_expected)
+        and provider_alias_contract_ok
+        and provider_alias_no_oracle_text_leak
+    )
     return {
         "ok": bool(job_id)
         and tool_result.payload.get("accepted") is True
@@ -2126,6 +2228,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and audit_id_continuity_observed
         and not direct_tool_authority_exposed
         and direct_tool_rejected
+        and provider_alias_normalization_ok
         and external_frontend_tool_result_safe
         and external_frontend_reflex_status_safe
         and external_frontend_placeholder_safe
@@ -2230,6 +2333,12 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         "external_frontend_reflex_status_forbidden_paths": reflex_status_forbidden_paths,
         "external_frontend_placeholder": placeholder_text,
         "external_frontend_placeholder_forbidden_paths": placeholder_forbidden_paths,
+        "provider_text_alias_normalization_smoke_ok": provider_alias_normalization_ok,
+        "provider_text_alias_keys_expected": provider_alias_keys_expected,
+        "provider_text_alias_keys_observed": provider_alias_keys_observed,
+        "provider_text_alias_hypothesis_count": len(provider_alias_hypotheses),
+        "provider_text_alias_hypothesis_contract_ok": provider_alias_contract_ok,
+        "provider_text_alias_no_oracle_text_leak": provider_alias_no_oracle_text_leak,
         "external_frontend_metadata_keys": sorted(str(key) for key in metadata),
         "external_frontend_event_counts": {
             event_type.value: sum(event.type == event_type for event in recorder.events)
@@ -5795,6 +5904,24 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "external_frontend_placeholder_forbidden_paths": external_frontend_bridge_smoke[
             "external_frontend_placeholder_forbidden_paths"
+        ],
+        "provider_text_alias_normalization_smoke_ok": external_frontend_bridge_smoke[
+            "provider_text_alias_normalization_smoke_ok"
+        ],
+        "provider_text_alias_keys_expected": external_frontend_bridge_smoke[
+            "provider_text_alias_keys_expected"
+        ],
+        "provider_text_alias_keys_observed": external_frontend_bridge_smoke[
+            "provider_text_alias_keys_observed"
+        ],
+        "provider_text_alias_hypothesis_count": external_frontend_bridge_smoke[
+            "provider_text_alias_hypothesis_count"
+        ],
+        "provider_text_alias_hypothesis_contract_ok": external_frontend_bridge_smoke[
+            "provider_text_alias_hypothesis_contract_ok"
+        ],
+        "provider_text_alias_no_oracle_text_leak": external_frontend_bridge_smoke[
+            "provider_text_alias_no_oracle_text_leak"
         ],
         "external_frontend_event_counts": external_frontend_bridge_smoke[
             "external_frontend_event_counts"

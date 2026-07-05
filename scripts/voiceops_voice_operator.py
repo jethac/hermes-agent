@@ -4267,6 +4267,24 @@ def build_voice_operator_report(
             "witness_assisted_voiceops_action_promoted_text_present": bool(
                 async_oracle_smoke.get("witness_assisted_voiceops_action_promoted_text_present")
             ),
+            "provider_text_alias_normalization_smoke_ok": bool(
+                async_oracle_smoke.get("provider_text_alias_normalization_smoke_ok")
+            ),
+            "provider_text_alias_keys_expected": list(
+                async_oracle_smoke.get("provider_text_alias_keys_expected") or []
+            ),
+            "provider_text_alias_keys_observed": list(
+                async_oracle_smoke.get("provider_text_alias_keys_observed") or []
+            ),
+            "provider_text_alias_hypothesis_count": async_oracle_smoke.get(
+                "provider_text_alias_hypothesis_count"
+            ),
+            "provider_text_alias_hypothesis_contract_ok": bool(
+                async_oracle_smoke.get("provider_text_alias_hypothesis_contract_ok")
+            ),
+            "provider_text_alias_no_oracle_text_leak": bool(
+                async_oracle_smoke.get("provider_text_alias_no_oracle_text_leak")
+            ),
             "audit_scalar_smoke_ok": bool(async_oracle_smoke.get("audit_scalar_smoke_ok")),
             "audit_scalar_payload_redacted": bool(async_oracle_smoke.get("audit_scalar_payload_redacted")),
             "audit_scalar_secret_canary_checked": bool(

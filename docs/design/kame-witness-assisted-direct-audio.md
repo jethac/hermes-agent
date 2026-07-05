@@ -239,6 +239,14 @@ Provider field names do not carry authority. Adapter-edge names such as `stt`,
 turn is degraded text-only compatibility and cannot satisfy full-KAME or
 high-risk action gates.
 
+The normalizer must preserve only bounded provenance for those adapter-edge
+names. A `provider_alias_key` such as `stt`, `caption`, `transcript`, `query`,
+or `user_text` may appear on the hypothesis row and in compact audit output,
+but it is never an authority label. The headless package should prove every
+alias enters `transcript_hypotheses[]`, carries witness/hypothesis metadata,
+and remains absent from `oracle_text` and all action sinks until
+`interpreter_promoted` or `oracle_promoted` evidence exists.
+
 ## Gemma Interpreter Output
 
 Gemma is prompted as an evidence adjudicator, not as a sibling ASR service. It
@@ -320,6 +328,10 @@ The next implementation pass should prove:
     witness-assisted action sink value, or if a sink value lacks an
     `interpreter_promoted` or `oracle_promoted` source, even when summary
     booleans claim the sinks are clean.
+11. Provider aliases `stt`, `caption`, `transcript`, `query`, and `user_text`
+    all normalize into `transcript_hypotheses[]` with `provider_alias_key`
+    provenance and fail package audit if they leak into `oracle_text` or any
+    action sink.
 
 The headless proof must include at least three witness timing cases for the
 same contract: witness before raw audio, witness with raw audio, and witness

@@ -1986,6 +1986,9 @@ def _compact_auxiliary_transcript_hypotheses(
         latency_ms = _compact_nonnegative_int(value.get("latency_ms"))
         if latency_ms is not None:
             item["latency_ms"] = latency_ms
+        provider_alias_key = _compact_evidence_text(value.get("provider_alias_key"), limit=80)
+        if provider_alias_key:
+            item["provider_alias_key"] = provider_alias_key
         arrival_phase = _compact_witness_arrival_phase(value) or _compact_witness_arrival_phase(
             {"arrival_phase": default_arrival_phase}
         )

@@ -2249,6 +2249,28 @@ async def build_plan_run_async(
                         )
                         or []
                     ),
+                    "provider_text_alias_normalization_smoke_ok": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["provider_text_alias_normalization_smoke_ok"],
+                    "provider_text_alias_keys_expected": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "provider_text_alias_keys_expected"
+                        ]
+                    ),
+                    "provider_text_alias_keys_observed": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "provider_text_alias_keys_observed"
+                        ]
+                    ),
+                    "provider_text_alias_hypothesis_count": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["provider_text_alias_hypothesis_count"],
+                    "provider_text_alias_hypothesis_contract_ok": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["provider_text_alias_hypothesis_contract_ok"],
+                    "provider_text_alias_no_oracle_text_leak": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["provider_text_alias_no_oracle_text_leak"],
                     "durable_resume_contract_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
                         "durable_resume_contract_smoke_ok"
                     ],

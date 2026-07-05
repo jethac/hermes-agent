@@ -222,7 +222,7 @@ KAME_FRONTEND_BRAIN_BRIDGE_NAMES = frozenset(
         "openclaw_agent_consult",
     }
 )
-KAME_PROVIDER_TEXT_ALIAS_KEYS = ("stt", "stt_text", "caption", "query", "user_text")
+KAME_PROVIDER_TEXT_ALIAS_KEYS = ("stt", "stt_text", "caption", "transcript", "query", "user_text")
 KAME_BRIDGE_ARGUMENT_PROVIDER_TEXT_ALIAS_KEYS = ("stt", "stt_text", "caption", "user_text")
 
 
@@ -1186,6 +1186,7 @@ def kame_external_brain_request_to_oracle_request(
                 or source
                 or "external_frontend",
                 "text": transcript,
+                "provider_alias_key": "transcript",
                 "confidence": normalized.get("transcript_confidence"),
                 "authority": "hypothesis",
             }
@@ -1643,6 +1644,7 @@ def _provider_text_alias_hypotheses(
             "kind": _transcript_hypothesis_kind(source, default="frontend_witness_hypothesis"),
             "source": source,
             "text": text,
+            "provider_alias_key": key,
             "confidence": payload.get(f"{key}_confidence"),
             "latency_ms": payload.get(f"{key}_latency_ms"),
             "arrival_phase": payload.get(f"{key}_arrival_phase") or payload.get("arrival_phase"),
@@ -1709,6 +1711,9 @@ def _auxiliary_transcript_hypothesis(value: object) -> dict[str, Any]:
         source,
         default="s2s_transcript_hypothesis",
     )
+    provider_alias_key = _optional_text(value.get("provider_alias_key"))
+    if provider_alias_key:
+        hypothesis["provider_alias_key"] = provider_alias_key[:80]
     confidence = _confidence(value.get("confidence"))
     if confidence is not None:
         hypothesis["confidence"] = confidence

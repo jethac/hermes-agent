@@ -125,6 +125,9 @@ This changes the next implementation checks:
 - provider fields named `stt`, `caption`, `transcript`, `query`, or
   `user_text` must normalize into `transcript_hypotheses[]`, not `oracle_text`
   or durable user history
+- the normalized hypothesis must preserve the adapter-edge field name only as
+  bounded `provider_alias_key` provenance, never as authority, and package
+  audit must fail if any supported alias bypasses `transcript_hypotheses[]`
 - witness-before-cut, witness-with-cut, and witness-after-start updates must
   converge on one bundle and one oracle job
 - Gemma receives raw audio before witness text in the interpreter request
@@ -534,6 +537,17 @@ should expose and cross-check the observed external-frontend witness kind. A
 Moshi/OpenClaw/VoiceClaw bridge with ambiguous transcript-like text should fail
 the local package audit if that witness regresses from
 `frontend_witness_hypothesis` to the older `s2s_transcript_hypothesis` default.
+
+Headless evidence must also prove provider alias normalization. The same smoke,
+readiness, plan-run, and package-audit path should exercise `stt`, `caption`,
+`transcript`, `query`, and `user_text` as adapter-edge inputs. Passing evidence
+shows each alias became one `transcript_hypotheses[]` row with
+`provider_alias_key` provenance and the witness contract fields. Failing
+evidence includes any missing alias, duplicate durable user turn, `oracle_text`
+leak, action-sink leak, or hypothesis row that lacks
+`role = "witness_context"`, `authority = "hypothesis"`,
+`promotion_required = "interpreter_promoted_or_oracle_promoted"`, or
+`tool_authority = false`.
 
 Latest implementation target: include the Moshi/open-S2S witness in the Gemma
 interpreter context beside the raw voice, but never as a standalone scheduler.
