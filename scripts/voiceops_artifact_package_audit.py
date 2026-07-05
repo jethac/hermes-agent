@@ -1602,6 +1602,12 @@ def _audit_next_action_command_order(label: str, actions: Any, issues: list[str]
     if isinstance(live, Mapping):
         live_safe = str(live.get("first_safe_command") or "")
         live_evidence = str(live.get("first_evidence_command") or "")
+        live_primary = str(live.get("primary_next_command") or "")
+        live_primary_evidence = str(live.get("primary_evidence_command") or "")
+        if live_primary != live_safe:
+            issues.append(f"{label}:live_discord_voice_operator:primary_next_command_mismatch")
+        if live_primary_evidence != live_evidence:
+            issues.append(f"{label}:live_discord_voice_operator:primary_evidence_command_mismatch")
         if "--audit-only" not in live_safe:
             issues.append(f"{label}:live_discord_voice_operator:first_safe_command_not_no_write_audit")
         if "--run-doctor-report" not in live_evidence:
@@ -1612,6 +1618,12 @@ def _audit_next_action_command_order(label: str, actions: Any, issues: list[str]
     if isinstance(spark, Mapping):
         spark_safe = str(spark.get("first_safe_command") or "")
         spark_evidence = str(spark.get("first_evidence_command") or "")
+        spark_primary = str(spark.get("primary_next_command") or "")
+        spark_primary_evidence = str(spark.get("primary_evidence_command") or "")
+        if spark_primary != spark_safe:
+            issues.append(f"{label}:local_spark_stack_matrix:primary_next_command_mismatch")
+        if spark_primary_evidence != spark_evidence:
+            issues.append(f"{label}:local_spark_stack_matrix:primary_evidence_command_mismatch")
         if "--lint-evidence" not in spark_safe:
             issues.append(f"{label}:local_spark_stack_matrix:first_safe_command_not_spark_lint")
         if "dgx_spark_gemma4_voice_eval" not in spark_evidence:

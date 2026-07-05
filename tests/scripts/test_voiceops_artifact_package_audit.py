@@ -2673,8 +2673,10 @@ def test_package_audit_rejects_handoff_safe_command_order_drift(tmp_path):
     for payload in (closure, plan_run["closure_index"]):
         live_action = payload["next_actions"][0]
         live_action["first_safe_command"] = live_action["first_evidence_command"]
+        live_action["primary_next_command"] = "uv run python scripts/voiceops_plan_run.py --dry-audit"
         spark_action = payload["next_actions"][2]
         spark_action["first_safe_command"] = spark_action["first_evidence_command"]
+        spark_action.pop("primary_evidence_command", None)
     plan_run["next_actions"] = plan_run["closure_index"]["next_actions"]
 
     _write_json(plan_run_path, plan_run)
@@ -2692,7 +2694,11 @@ def test_package_audit_rejects_handoff_safe_command_order_drift(tmp_path):
     assert "demo_handoff:live_discord_voice:first_safe_command_not_no_write_audit" in report["issues"]
     assert "demo_handoff:local_spark_stack:first_safe_command_not_spark_lint" in report["issues"]
     assert "plan_run:live_discord_voice_operator:first_safe_command_not_no_write_audit" in report["issues"]
+    assert "plan_run:live_discord_voice_operator:primary_next_command_mismatch" in report["issues"]
     assert "plan_run:local_spark_stack_matrix:first_safe_command_not_spark_lint" in report["issues"]
+    assert "plan_run:local_spark_stack_matrix:primary_evidence_command_mismatch" in report["issues"]
+    assert "plan_closure:live_discord_voice_operator:primary_next_command_mismatch" in report["issues"]
+    assert "plan_closure:local_spark_stack_matrix:primary_evidence_command_mismatch" in report["issues"]
 
 
 def test_package_audit_rejects_handoff_validation_command_without_safety_label(tmp_path):
