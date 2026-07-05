@@ -89,6 +89,26 @@ def _witness_context_contract() -> dict[str, object]:
     }
 
 
+def _assert_witness_hypothesis(
+    hypothesis: dict,
+    *,
+    kind: str,
+    source: str,
+    text: str,
+    **expected: object,
+) -> None:
+    assert hypothesis["kind"] == kind
+    assert hypothesis["source"] == source
+    assert hypothesis["text"] == text
+    assert hypothesis["text_digest"].startswith("sha256:")
+    assert hypothesis["role"] == "witness_context"
+    assert hypothesis["authority"] == "hypothesis"
+    assert hypothesis["promotion_required"] == "interpreter_promoted_or_oracle_promoted"
+    assert hypothesis["tool_authority"] is False
+    for key, value in expected.items():
+        assert hypothesis[key] == value
+
+
 class FakeSidecar:
     def __init__(self):
         self.started = False
@@ -14509,23 +14529,20 @@ def test_external_kame_ask_brain_bridge_becomes_oracle_request():
     assert metadata["kame_degraded_reason"] == "degraded_text_only"
     assert metadata["kame_reflex_transcript_hypothesis"] == "use my Stripe budget to prepare a VoIP provisioning plan"
     assert metadata["kame_reflex_transcript_source"] == "reflex_audio"
-    assert metadata["kame_transcript_hypotheses"] == (
-        {
-            "kind": "reflex_transcript_hypothesis",
-            "source": "reflex_audio",
-            "text": "use my Stripe budget to prepare a VoIP provisioning plan",
-            **_witness_context_contract(),
-            "authority": "hypothesis",
-            "tool_authority": False,
-        },
-        {
-            "kind": "s2s_transcript_hypothesis",
-            "source": "s2s",
-            "text": "use my stripe budget to prepare a voip provisioning plan",
-            **_witness_context_contract(),
-            "authority": "hypothesis",
-            "tool_authority": False,
-        },
+    assert len(metadata["kame_transcript_hypotheses"]) == 2
+    assert metadata["kame_transcript_hypotheses"][0] == {
+        "kind": "reflex_transcript_hypothesis",
+        "source": "reflex_audio",
+        "text": "use my Stripe budget to prepare a VoIP provisioning plan",
+        **_witness_context_contract(),
+        "authority": "hypothesis",
+        "tool_authority": False,
+    }
+    _assert_witness_hypothesis(
+        metadata["kame_transcript_hypotheses"][1],
+        kind="s2s_transcript_hypothesis",
+        source="s2s",
+        text="use my stripe budget to prepare a voip provisioning plan",
     )
     assert metadata["kame_evidence_authority"] == {
         "intent": "reflex_hypothesis",
@@ -14637,57 +14654,46 @@ def test_external_kame_canonical_transcript_hypotheses_are_ingested():
         "channels": 1,
         "vad": {"speech_start_ms": 120, "speech_end_ms": 1840},
     }
-    assert request.auxiliary_transcript_hypotheses == (
-        {
-            "source": "moshi",
-            "text": "prepare phone handoff",
-            **_witness_context_contract(),
-            "authority": "hypothesis",
-            "tool_authority": False,
-            "kind": "frontend_witness_hypothesis",
-            "confidence": 0.74,
-            "latency_ms": 132,
-        },
-        {
-            "source": "asr",
-            "text": "prepare the phone hand off",
-            **_witness_context_contract(),
-            "authority": "hypothesis",
-            "tool_authority": False,
-            "kind": "classic_asr_hypothesis",
-            "confidence": 0.69,
-        },
-    )
-    assert metadata["kame_transcript_hypotheses"] == (
-        {
-            "kind": "reflex_transcript_hypothesis",
-            "source": "moshi-reflex",
-            "text": "prepare the phone handoff",
-            **_witness_context_contract(),
-            "authority": "hypothesis",
-            "tool_authority": False,
-            "confidence": 0.81,
-        },
-        {
-            "kind": "frontend_witness_hypothesis",
-            "source": "moshi",
-            "text": "prepare phone handoff",
-            **_witness_context_contract(),
-            "authority": "hypothesis",
-            "tool_authority": False,
-            "confidence": 0.74,
-            "latency_ms": 132,
-        },
-        {
-            "kind": "classic_asr_hypothesis",
-            "source": "asr",
-            "text": "prepare the phone hand off",
-            **_witness_context_contract(),
-            "authority": "hypothesis",
-            "tool_authority": False,
-            "confidence": 0.69,
-        },
-    )
+    assert len(request.auxiliary_transcript_hypotheses) == 2
+    moshi_hypothesis, asr_hypothesis = request.auxiliary_transcript_hypotheses
+    assert {
+        "source": moshi_hypothesis["source"],
+        "text": moshi_hypothesis["text"],
+        "kind": moshi_hypothesis["kind"],
+        "role": moshi_hypothesis["role"],
+        "authority": moshi_hypothesis["authority"],
+        "promotion_required": moshi_hypothesis["promotion_required"],
+        "tool_authority": moshi_hypothesis["tool_authority"],
+        "confidence": moshi_hypothesis["confidence"],
+        "latency_ms": moshi_hypothesis["latency_ms"],
+        "speaker_or_actor_ref": moshi_hypothesis["speaker_or_actor_ref"],
+        "channel_or_surface_ref": moshi_hypothesis["channel_or_surface_ref"],
+    } == {
+        "source": "moshi",
+        "text": "prepare phone handoff",
+        "kind": "frontend_witness_hypothesis",
+        **_witness_context_contract(),
+        "authority": "hypothesis",
+        "tool_authority": False,
+        "confidence": 0.74,
+        "latency_ms": 132,
+        "speaker_or_actor_ref": "discord:user:42",
+        "channel_or_surface_ref": "discord_voice:guild:guild-1:channel:general",
+    }
+    assert moshi_hypothesis["text_digest"].startswith("sha256:")
+    assert asr_hypothesis["kind"] == "classic_asr_hypothesis"
+    assert asr_hypothesis["source"] == "asr"
+    assert asr_hypothesis["text"] == "prepare the phone hand off"
+    assert asr_hypothesis["text_digest"].startswith("sha256:")
+    assert asr_hypothesis["speaker_or_actor_ref"] == "discord:user:42"
+    assert asr_hypothesis["channel_or_surface_ref"] == "discord_voice:guild:guild-1:channel:general"
+    transcript_hypotheses = metadata["kame_transcript_hypotheses"]
+    assert len(transcript_hypotheses) == 3
+    assert transcript_hypotheses[0]["kind"] == "reflex_transcript_hypothesis"
+    assert transcript_hypotheses[0]["source"] == "moshi-reflex"
+    assert transcript_hypotheses[0]["text"] == "prepare the phone handoff"
+    assert transcript_hypotheses[0]["confidence"] == 0.81
+    assert transcript_hypotheses[1:] == request.auxiliary_transcript_hypotheses
     assert metadata["kame_audio"] == request.audio_metadata
     assert metadata["kame_raw_audio_available"] is True
     assert metadata["kame_evidence_bundle_status"] == "primary_audio"
@@ -14791,34 +14797,34 @@ def test_external_kame_transcript_hypotheses_preserve_binding_metadata_and_ambig
         user_id="jetha",
     )
 
-    expected_hypothesis = {
-        "source": "moshi",
-        "text": "spend two hundred dollars",
-        **_witness_context_contract(),
-        "authority": "hypothesis",
-        "tool_authority": False,
-        "kind": "frontend_witness_hypothesis",
-        "partial": False,
-        "superseded_partial_texts": ("spend two hundred",),
-        "speaker": {
+    metadata = request.to_metadata()
+    assert len(request.auxiliary_transcript_hypotheses) == 1
+    hypothesis = request.auxiliary_transcript_hypotheses[0]
+    _assert_witness_hypothesis(
+        hypothesis,
+        kind="frontend_witness_hypothesis",
+        source="moshi",
+        text="spend two hundred dollars",
+        partial=False,
+        superseded_partial_texts=("spend two hundred",),
+        speaker={
             "platform": "discord",
             "channel_user_id": "other-user",
             "display_name": "guest",
             "ambiguous": True,
         },
-        "channel": {
+        speaker_or_actor_ref="discord:user:other-user",
+        channel={
             "transport": "discord_voice",
             "guild_id": "guild-1",
             "channel_id": "general",
         },
-        "audio_time_range_ms": (1250, 2550),
-        "adjudication": "rejected_or_diagnostic_only",
-        "rejection_reasons": ("ambiguous_speaker", "wrong_speaker"),
-    }
-
-    metadata = request.to_metadata()
-    assert request.auxiliary_transcript_hypotheses == (expected_hypothesis,)
-    assert metadata["kame_transcript_hypotheses"] == (expected_hypothesis,)
+        channel_or_surface_ref="discord_voice:guild:guild-1:channel:general",
+        audio_time_range_ms=(1250, 2550),
+        adjudication="rejected_or_diagnostic_only",
+        rejection_reasons=("ambiguous_speaker", "wrong_speaker"),
+    )
+    assert metadata["kame_transcript_hypotheses"] == (hypothesis,)
     assert request.oracle_text == "prepare the handoff"
     assert "spend two hundred dollars" not in request.oracle_text
 
@@ -14899,16 +14905,13 @@ def test_external_kame_s2s_hypothesis_does_not_overwrite_oracle_text():
     assert request.oracle_text_source == "reflex_audio"
     assert request.transcript == ""
     assert request.reflex_transcript_hypothesis == ""
-    assert request.auxiliary_transcript_hypotheses == (
-        {
-            "source": "s2s",
-            "text": "misheard handoff",
-            **_witness_context_contract(),
-            "authority": "hypothesis",
-            "tool_authority": False,
-            "kind": "s2s_transcript_hypothesis",
-            "confidence": 0.62,
-        },
+    assert len(request.auxiliary_transcript_hypotheses) == 1
+    _assert_witness_hypothesis(
+        request.auxiliary_transcript_hypotheses[0],
+        kind="s2s_transcript_hypothesis",
+        source="s2s",
+        text="misheard handoff",
+        confidence=0.62,
     )
 
 
@@ -14936,19 +14939,19 @@ def test_external_kame_plain_transcript_is_auxiliary_until_promoted():
     assert request.oracle_text_source == "reflex_audio"
     assert request.transcript == ""
     assert request.transcript_source == "none"
-    assert request.auxiliary_transcript_hypotheses == (
-        {
-            "kind": "frontend_witness_hypothesis",
-            "source": "voiceclaw",
-            "text": "misheard spend request",
-            **_witness_context_contract(),
-            "authority": "hypothesis",
-            "tool_authority": False,
-            "confidence": 0.58,
-            "adjudication": "rejected_or_diagnostic_only",
-            "rejection_reasons": ("wrong_speaker",),
-        },
-    )
+    assert len(request.auxiliary_transcript_hypotheses) == 1
+    hypothesis = request.auxiliary_transcript_hypotheses[0]
+    assert hypothesis["kind"] == "frontend_witness_hypothesis"
+    assert hypothesis["source"] == "voiceclaw"
+    assert hypothesis["text"] == "misheard spend request"
+    assert hypothesis["text_digest"].startswith("sha256:")
+    assert hypothesis["role"] == "witness_context"
+    assert hypothesis["authority"] == "hypothesis"
+    assert hypothesis["promotion_required"] == "interpreter_promoted_or_oracle_promoted"
+    assert hypothesis["tool_authority"] is False
+    assert hypothesis["confidence"] == 0.58
+    assert hypothesis["adjudication"] == "rejected_or_diagnostic_only"
+    assert hypothesis["rejection_reasons"] == ("wrong_speaker",)
 
 
 @pytest.mark.parametrize("frontend_source", ["moshi", "openclaw", "voiceclaw"])
@@ -14971,26 +14974,121 @@ def test_external_kame_ambiguous_frontend_transcript_is_witness_hypothesis(front
     metadata = request.to_metadata()
     assert request.oracle_text == "prepare the handoff"
     assert request.transcript == ""
-    assert request.auxiliary_transcript_hypotheses == (
+    assert len(request.auxiliary_transcript_hypotheses) == 1
+    hypothesis = request.auxiliary_transcript_hypotheses[0]
+    assert hypothesis["kind"] == "frontend_witness_hypothesis"
+    assert hypothesis["source"] == frontend_source
+    assert hypothesis["text"] == "misheard spend request"
+    assert hypothesis["text_digest"].startswith("sha256:")
+    assert hypothesis["role"] == "witness_context"
+    assert hypothesis["authority"] == "hypothesis"
+    assert hypothesis["promotion_required"] == "interpreter_promoted_or_oracle_promoted"
+    assert hypothesis["tool_authority"] is False
+    assert metadata["kame_transcript_hypotheses"] == request.auxiliary_transcript_hypotheses
+
+
+def test_external_kame_provider_text_aliases_become_witness_hypotheses_with_raw_audio():
+    request = kame_external_brain_request_to_oracle_request(
         {
-            "kind": "frontend_witness_hypothesis",
-            "source": frontend_source,
-            "text": "misheard spend request",
-            **_witness_context_contract(),
-            "authority": "hypothesis",
-            "tool_authority": False,
+            "tool_name": "ask_brain",
+            "provider": "moshi",
+            "source": "voiceclaw",
+            "arguments": {
+                "intent": "Prepare the verified phone handoff.",
+                "interface_already_said": "I'm preparing the handoff.",
+            },
+            "audio": {
+                "segment_ref": "artifact://voiceclaw/provider-aliases.wav",
+                "time_range_ms": [220, 1880],
+                "vad": {"speech_start_ms": 220, "speech_end_ms": 1880},
+            },
+            "speaker": {
+                "platform": "discord",
+                "channel_user_id": "42",
+            },
+            "channel": {
+                "transport": "discord_voice",
+                "guild_id": "guild-1",
+                "channel_id": "general",
+            },
+            "stt": "spend two hundred dollars",
+            "stt_confidence": 0.67,
+            "caption": "prepare phone handoff",
+            "caption_latency_ms": 94,
+            "query": "call my phone now",
+            "user_text": "prepare the phone handoff",
+            "user_text_arrival_phase": "with_raw_audio",
         },
+        session_id="external-kame-provider-aliases",
+        turn_id="external-kame-provider-aliases:1",
+        source="voiceclaw",
+        user_id="jetha",
     )
-    assert metadata["kame_transcript_hypotheses"] == (
+
+    metadata = request.to_metadata()
+    hypotheses = request.auxiliary_transcript_hypotheses
+    assert request.oracle_text == "Prepare the verified phone handoff."
+    assert request.oracle_text_source == "reflex_audio"
+    assert request.transcript == ""
+    assert request.audio_segment_ref == "artifact://voiceclaw/provider-aliases.wav"
+    assert request.interpreter_profile == "witness_assisted_direct_audio"
+    assert {item["text"] for item in hypotheses} == {
+        "spend two hundred dollars",
+        "prepare phone handoff",
+        "call my phone now",
+        "prepare the phone handoff",
+    }
+    assert all(item["role"] == "witness_context" for item in hypotheses)
+    assert all(item["authority"] == "hypothesis" for item in hypotheses)
+    assert all(item["tool_authority"] is False for item in hypotheses)
+    assert all(item["speaker_or_actor_ref"] == "discord:user:42" for item in hypotheses)
+    assert all(
+        item["channel_or_surface_ref"] == "discord_voice:guild:guild-1:channel:general"
+        for item in hypotheses
+    )
+    assert metadata["kame_transcript_hypotheses"] == hypotheses
+    assert "spend two hundred dollars" not in request.oracle_text
+    assert "call my phone now" not in request.oracle_text
+
+
+def test_external_kame_bridge_argument_provider_aliases_inherit_top_level_audio_binding():
+    request = kame_external_brain_request_to_oracle_request(
         {
-            "kind": "frontend_witness_hypothesis",
-            "source": frontend_source,
-            "text": "misheard spend request",
-            **_witness_context_contract(),
-            "authority": "hypothesis",
-            "tool_authority": False,
+            "tool_name": "ask_brain",
+            "provider": "voiceclaw",
+            "arguments": {
+                "query": "prepare the phone handoff",
+                "intent": "Prepare the phone handoff.",
+                "caption": "misheard spend authorization",
+                "caption_confidence": 0.54,
+                "user_text": "wrong room command",
+                "interface_already_said": "I'm preparing the handoff.",
+            },
+            "audio_segment_ref": "artifact://voiceclaw/bridge-aliases.wav",
+            "audio_time_range_ms": [100, 900],
+            "speaker": {"platform": "discord", "channel_user_id": "42"},
+            "channel": {"transport": "discord_voice", "channel_id": "general"},
         },
+        session_id="external-kame-bridge-aliases",
+        turn_id="external-kame-bridge-aliases:1",
+        source="voiceclaw",
+        user_id="jetha",
     )
+
+    hypotheses = request.auxiliary_transcript_hypotheses
+    assert request.oracle_text == "Prepare the phone handoff."
+    assert request.oracle_text_source == "reflex_audio"
+    assert {item["text"] for item in hypotheses} == {
+        "misheard spend authorization",
+        "wrong room command",
+    }
+    assert all(item["kind"] == "frontend_witness_hypothesis" for item in hypotheses)
+    assert all(item["source"] == "voiceclaw" for item in hypotheses)
+    assert all(item["audio_time_range_ms"] == (100, 900) for item in hypotheses)
+    assert all(item["speaker_or_actor_ref"] == "discord:user:42" for item in hypotheses)
+    assert all(item["channel_or_surface_ref"] == "discord_voice:channel:general" for item in hypotheses)
+    assert "misheard spend authorization" not in request.oracle_text
+    assert "wrong room command" not in request.oracle_text
 
 
 def test_external_kame_cannot_self_promote_transcript_as_interpreter_evidence():
@@ -15017,28 +15115,15 @@ def test_external_kame_cannot_self_promote_transcript_as_interpreter_evidence():
     assert request.transcript == ""
     assert request.transcript_source == "none"
     assert request.evidence_authority["oracle_text"] == "reflex_hypothesis"
-    assert request.auxiliary_transcript_hypotheses == (
-        {
-            "kind": "frontend_witness_hypothesis",
-            "source": "gemma_interpreter",
-            "text": "spend two hundred dollars and call my phone",
-            **_witness_context_contract(),
-            "authority": "hypothesis",
-            "tool_authority": False,
-            "confidence": 0.98,
-        },
+    assert len(request.auxiliary_transcript_hypotheses) == 1
+    _assert_witness_hypothesis(
+        request.auxiliary_transcript_hypotheses[0],
+        kind="frontend_witness_hypothesis",
+        source="gemma_interpreter",
+        text="spend two hundred dollars and call my phone",
+        confidence=0.98,
     )
-    assert metadata["kame_transcript_hypotheses"] == (
-        {
-            "kind": "frontend_witness_hypothesis",
-            "source": "gemma_interpreter",
-            "text": "spend two hundred dollars and call my phone",
-            **_witness_context_contract(),
-            "authority": "hypothesis",
-            "tool_authority": False,
-            "confidence": 0.98,
-        },
-    )
+    assert metadata["kame_transcript_hypotheses"] == request.auxiliary_transcript_hypotheses
 
 
 def test_external_kame_ask_brain_bridge_strips_nested_tool_authority():
@@ -15102,15 +15187,12 @@ def test_external_kame_ask_brain_bridge_strips_action_payload_authority():
     assert metadata["kame_reflex_validation_error"] == "direct_tool_authority_not_allowed"
     assert request.oracle_text == "Prepare a safe phone handoff plan."
     assert request.oracle_text_source == "reflex_audio"
-    assert request.auxiliary_transcript_hypotheses == (
-        {
-            "kind": "s2s_transcript_hypothesis",
-            "source": "s2s",
-            "text": "spend two hundred dollars and call my phone",
-            **_witness_context_contract(),
-            "authority": "hypothesis",
-            "tool_authority": False,
-        },
+    assert len(request.auxiliary_transcript_hypotheses) == 1
+    _assert_witness_hypothesis(
+        request.auxiliary_transcript_hypotheses[0],
+        kind="s2s_transcript_hypothesis",
+        source="s2s",
+        text="spend two hundred dollars and call my phone",
     )
     assert "+15551234567" not in metadata_blob
     assert "misheard direct spend authorization" not in metadata_blob

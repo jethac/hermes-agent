@@ -222,6 +222,8 @@ KAME_FRONTEND_BRAIN_BRIDGE_NAMES = frozenset(
         "openclaw_agent_consult",
     }
 )
+KAME_PROVIDER_TEXT_ALIAS_KEYS = ("stt", "stt_text", "caption", "query", "user_text")
+KAME_BRIDGE_ARGUMENT_PROVIDER_TEXT_ALIAS_KEYS = ("stt", "stt_text", "caption", "user_text")
 
 
 def kame_reflex_decision_json_schema() -> dict[str, Any]:
@@ -1106,6 +1108,30 @@ def kame_external_brain_request_to_oracle_request(
         normalized["speaker"] = raw["speaker"]
     if "channel" not in normalized and isinstance(raw.get("channel"), Mapping):
         normalized["channel"] = raw["channel"]
+    _append_provider_text_alias_hypotheses(normalized, raw)
+    bridge_alias_payload = dict(bridge_arguments)
+    for key in (
+        "audio",
+        "audio_segment_ref",
+        "audio_ref",
+        "clipped_audio_ref",
+        "audio_artifact_ref",
+        "audio_time_range_ms",
+        "speaker",
+        "channel",
+        "provider",
+        "frontend_provider",
+        "source",
+    ):
+        if key not in bridge_alias_payload:
+            value = normalized.get(key) if normalized.get(key) is not None else raw.get(key)
+            if value is not None:
+                bridge_alias_payload[key] = value
+    _append_provider_text_alias_hypotheses(
+        normalized,
+        bridge_alias_payload,
+        alias_keys=KAME_BRIDGE_ARGUMENT_PROVIDER_TEXT_ALIAS_KEYS,
+    )
     for key in ("audit_id", "source_audit_id", "parent_audit_id", "inbound_audit_id", "origin_audit_id"):
         if key not in normalized and raw.get(key) is not None:
             normalized[key] = raw[key]
@@ -1166,6 +1192,8 @@ def kame_external_brain_request_to_oracle_request(
             _append_auxiliary_transcript_hypothesis(normalized, witness_hypothesis)
     if text:
         normalized["text"] = text
+        if bridge_name:
+            normalized.pop("query", None)
     if intent:
         normalized["intent"] = intent
     normalized["route"] = _external_brain_route(normalized.get("route")).value
@@ -1537,6 +1565,8 @@ def _auxiliary_transcript_hypotheses(payload: Mapping[str, Any]) -> tuple[Mappin
             continue
         raw_items.append(hypothesis)
 
+    raw_items.extend(_provider_text_alias_hypotheses(payload))
+
     for source, key in (
         ("moshi", "moshi_transcript_hypothesis"),
         ("s2s", "s2s_transcript_hypothesis"),
@@ -1567,6 +1597,75 @@ def _auxiliary_transcript_hypotheses(payload: Mapping[str, Any]) -> tuple[Mappin
         if len(hypotheses) >= 5:
             break
     return tuple(hypotheses)
+
+
+def _append_provider_text_alias_hypotheses(
+    target: dict[str, Any],
+    payload: Mapping[str, Any],
+    *,
+    alias_keys: Sequence[str] = KAME_PROVIDER_TEXT_ALIAS_KEYS,
+) -> None:
+    for hypothesis in _provider_text_alias_hypotheses(payload, alias_keys=alias_keys):
+        _append_auxiliary_transcript_hypothesis(target, hypothesis)
+
+
+def _provider_text_alias_hypotheses(
+    payload: Mapping[str, Any],
+    *,
+    alias_keys: Sequence[str] = KAME_PROVIDER_TEXT_ALIAS_KEYS,
+) -> tuple[dict[str, Any], ...]:
+    if not _payload_has_audio_evidence(payload):
+        return ()
+    provider = (
+        _optional_text(payload.get("provider"))
+        or _optional_text(payload.get("frontend_provider"))
+        or _optional_text(payload.get("source"))
+        or "external_frontend"
+    )
+    hypotheses: list[dict[str, Any]] = []
+    seen_texts: set[str] = set()
+    for key in alias_keys:
+        text = _optional_text(payload.get(key))
+        if not text or text in seen_texts:
+            continue
+        seen_texts.add(text)
+        source = (
+            _optional_text(payload.get(f"{key}_source"))
+            or ("classic_asr" if key in {"stt", "stt_text"} else provider)
+        )
+        hypothesis: dict[str, Any] = {
+            "kind": _transcript_hypothesis_kind(source, default="frontend_witness_hypothesis"),
+            "source": source,
+            "text": text,
+            "confidence": payload.get(f"{key}_confidence"),
+            "latency_ms": payload.get(f"{key}_latency_ms"),
+            "arrival_phase": payload.get(f"{key}_arrival_phase") or payload.get("arrival_phase"),
+            "authority": "hypothesis",
+        }
+        audio_time_range_ms = (
+            payload.get(f"{key}_audio_time_range_ms")
+            if payload.get(f"{key}_audio_time_range_ms") is not None
+            else payload.get("audio_time_range_ms")
+        )
+        if audio_time_range_ms is not None:
+            hypothesis["audio_time_range_ms"] = audio_time_range_ms
+        for metadata_key in ("speaker", "speaker_guess", "channel", "channel_guess"):
+            if isinstance(payload.get(metadata_key), Mapping):
+                hypothesis[metadata_key] = payload[metadata_key]
+        hypotheses.append(hypothesis)
+    return tuple(hypotheses)
+
+
+def _payload_has_audio_evidence(payload: Mapping[str, Any]) -> bool:
+    if _optional_text(
+        payload.get("audio_segment_ref")
+        or payload.get("audio_ref")
+        or payload.get("clipped_audio_ref")
+        or payload.get("audio_artifact_ref")
+    ):
+        return True
+    audio = _canonical_audio_payload(payload)
+    return bool(_canonical_audio_segment_ref(audio) or _canonical_audio_time_range_ms(audio))
 
 
 def _auxiliary_transcript_hypothesis(value: object) -> dict[str, Any]:
