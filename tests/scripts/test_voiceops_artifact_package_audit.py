@@ -2746,7 +2746,10 @@ def test_package_audit_rejects_next_action_handoff_summary_drift(tmp_path):
     closure = json.loads(closure_path.read_text(encoding="utf-8"))
 
     for payload in (closure, plan_run["closure_index"]):
+        payload["next_actions"][0]["can_run_here_now"] = True
         payload["next_actions"][0]["expected_artifacts"] = payload["next_actions"][0]["expected_artifacts"][:-1]
+        payload["next_actions"][0]["blocked_by_current_environment"]["needs_external_live_probe"] = False
+        payload["next_actions"][1]["status"] = "ready"
         payload["next_actions"][1]["success_check"] = "done when the operator says so"
         payload["next_actions"][2]["secret_policy"] = "redact when convenient"
         payload["next_actions"][2]["operator_step"] = ""
@@ -2758,8 +2761,14 @@ def test_package_audit_rejects_next_action_handoff_summary_drift(tmp_path):
     report = audit_package(artifact_root)
 
     assert report["ok"] is False
+    assert "operator_handoff:live_discord_voice_operator:can_run_here_now_mismatch_with_phase" in report["issues"]
+    assert (
+        "operator_handoff:live_discord_voice_operator:blocked_by_current_environment_mismatch:needs_external_live_probe"
+        in report["issues"]
+    )
     assert "operator_handoff:live_discord_voice_operator:expected_artifacts_mismatch_with_phase" in report["issues"]
     assert "demo_handoff:live_discord_voice_operator:expected_artifacts_mismatch_with_phase" in report["issues"]
+    assert "operator_handoff:spend_and_provisioning_preflight:status_mismatch_with_phase" in report["issues"]
     assert "operator_handoff:spend_and_provisioning_preflight:success_check_mismatch_with_phase" in report["issues"]
     assert "operator_handoff:local_spark_stack_matrix:secret_policy_missing_no_secret_rule" in report["issues"]
     assert "operator_handoff:local_spark_stack_matrix:operator_step_missing" in report["issues"]

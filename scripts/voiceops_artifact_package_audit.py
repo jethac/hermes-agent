@@ -1563,6 +1563,21 @@ def _audit_handoff_validation_command_safety(
         if not isinstance(command_safety, Mapping):
             issues.append(f"{label}:{gate_id}:missing_command_safety")
             continue
+        for field in ("status", "can_run_here_now"):
+            if action.get(field) != phase.get(field):
+                issues.append(f"{label}:{gate_id}:{field}_mismatch_with_phase")
+        action_blockers = action.get("blocked_by_current_environment")
+        phase_blockers = phase.get("blocked_by_current_environment")
+        if not isinstance(action_blockers, Mapping):
+            issues.append(f"{label}:{gate_id}:blocked_by_current_environment_not_object")
+        elif not isinstance(phase_blockers, Mapping):
+            issues.append(f"{label}:{gate_id}:phase_blocked_by_current_environment_not_object")
+        else:
+            for blocker_key, blocker_value in action_blockers.items():
+                if phase_blockers.get(blocker_key) != blocker_value:
+                    issues.append(
+                        f"{label}:{gate_id}:blocked_by_current_environment_mismatch:{blocker_key}"
+                    )
         for field in (
             "expected_artifacts",
             "optional_artifacts",
