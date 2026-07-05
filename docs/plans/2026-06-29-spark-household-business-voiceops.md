@@ -910,7 +910,18 @@ Voice turns must not carry the full Hermes tool surface by default. The normal D
 - the ephemeral router must not perform real tool calls and must not persist its own transcript into the user conversation
 - actual tool invocation still happens in the real Hermes oracle session, so approvals, guardrails, NemoClaw checks, audit logging, and session state remain authoritative
 
-The first implementation target is a conservative feature flag: `tools.tool_search.defer_core: all`, used with `tools.tool_search.enabled: 'on'`. This collapses core Hermes tools behind the same bridge used for MCP/plugin progressive disclosure. A later VoiceOps milestone should add the separate ephemeral router so the main oracle sees only the selected small tool surface for that turn, instead of needing to call `tool_search` itself.
+The first implementation target is a conservative feature flag:
+`tools.tool_search.defer_core: all`, used with `tools.tool_search.enabled:
+'on'`. This collapses core Hermes tools behind the same bridge used for
+MCP/plugin progressive disclosure. The current headless VoiceOps package also
+proves the separate ephemeral tool router shape: the router runs without
+provider network calls, without a model call in the fixture, without tool-call
+authority, without persisting router transcript/user messages, and with memory
+and context files skipped. It can choose a compact `voiceops` toolset or
+`no_tools` for a turn, while the main oracle keeps the broad core tool surface
+deferred behind bridge tools. Live deployment still needs to wire that router
+policy into the production voice oracle path before claiming reduced context
+pressure in real Discord/phone sessions.
 
 For realtime voice, tool exposure should also carry voice UX metadata:
 

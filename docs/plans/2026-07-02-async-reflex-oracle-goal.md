@@ -337,11 +337,18 @@ immediately. Moshi/open-S2S/classic-ASR text can attach before, with, or after
 the packet as labeled evidence, but any durable wording or high-risk action text
 must come from `interpreter_promoted` or `oracle_promoted` fields.
 
-The next gap is runtime behavior. The reflex and oracle are not yet truly async.
-The user should be able to keep talking to the reflex while one or more oracle
-jobs continue in the background. The reflex should stay conversational,
-interruptible, and aware of background work state instead of becoming a modal
-front door that waits for every oracle turn to finish.
+Current headless status: runtime behavior is proved in the in-memory async
+oracle smoke and projected into the VoiceOps package. The user-facing reflex can
+continue local/status turns while oracle jobs run in the background, queued
+jobs can be updated or cancelled, late cancelled output is dropped, and status
+surfaces expose active, queued, waiting-for-approval, failed, cancelled, and
+completed work without treating the reflex as a modal front door.
+
+The remaining gap is not the local async contract; it is live and deployment
+evidence. A real Discord `/voice join` probe still has to prove the same KAME
+lineage with production sidecar evidence, and the DGX/Spark target still has to
+prove the configured `max_concurrent` and latency/memory behavior against the
+actual local oracle endpoint.
 
 Target behavior:
 
