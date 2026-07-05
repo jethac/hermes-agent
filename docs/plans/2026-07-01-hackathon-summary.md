@@ -473,6 +473,13 @@ closed by external evidence gates:
 
 - generate the Milestone 0 package headlessly
 - run `scripts/voiceops_plan_run.py --dry-audit --package-audit`
+- include a `witness_assisted_direct_audio` artifact where raw audio and a
+  Moshi/Open-S2S transcript hypothesis enter the same Gemma interpreter bundle
+  and only `interpreter_promoted` or `oracle_promoted` fields reach the active
+  Hermes `/model`
+- include a negative artifact where text-only or conflicting Moshi/Open-S2S
+  output is retained as degraded/diagnostic witness context and fails high-risk
+  action gates
 - validate the `docs/kame-session-v1.md` implementation checklist for any
   Discord, phone, WhatsApp, VoiceClaw/OpenClaw, or Moshi/Open-S2S adapter used
   in the demo

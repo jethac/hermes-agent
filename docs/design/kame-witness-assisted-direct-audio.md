@@ -25,6 +25,39 @@ That text is a witness claim about what a frontend believed it heard. It is not
 the transcript of record, not a second Hermes user turn, not `oracle_text`, not
 a spend reason, and not tool authority.
 
+## Moshi Transcript Context Lock
+
+The current design explicitly allows a Moshi/Open-S2S transcript to be sent to
+Gemma beside the raw voice, but only as same-cut interpreter context. The useful
+operation is:
+
+```text
+accepted raw audio
+  + timing/speaker/channel/energy metadata
+  + reflex acknowledgement and provisional route
+  + Moshi/Open-S2S transcript hypothesis
+  -> Gemma direct-audio interpreter
+```
+
+This is the preferred way to use Moshi-style "STT" output. It gives Gemma a
+fast witness report of what the live frontend believed it heard while keeping
+the waveform as primary evidence. It is not a parallel ASR control path and it
+does not create a fourth model tier.
+
+The adapter must therefore preserve provider text under
+`transcript_hypotheses[]` with the same `turn_id`, `audio_segment_ref`,
+`evidence_bundle_id`, and `evidence_merge_key` as the waveform. The row must
+remain `role = "witness_context"`, `authority = "hypothesis"`, and
+`tool_authority = false` until Gemma emits `interpreter_promoted` fields or the
+Hermes oracle emits `oracle_promoted` fields.
+
+Headless acceptance should prove both sides of the rule: one passing
+`witness_assisted_direct_audio` case where Moshi/Open-S2S text improves or
+supports Gemma's promoted interpretation, and one negative case where text-only
+or conflicting Moshi/Open-S2S output remains degraded or diagnostic-only and
+cannot reach Stripe, NemoClaw, phone, memory, file, message, durable history,
+or tool sinks.
+
 ## Current Architecture Choice
 
 The practical design choice is:

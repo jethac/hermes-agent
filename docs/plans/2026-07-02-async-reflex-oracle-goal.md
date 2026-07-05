@@ -1286,6 +1286,17 @@ instead of adding a second hidden agent path.
 - Hermes active model selection remains the oracle selection path.
 - Existing prompt caching and message-role invariants are not broken.
 - Legacy one-shot voice and non-KAME realtime voice paths continue to work.
+- Moshi/Open-S2S transcript output is accepted only as same-cut interpreter
+  context beside raw audio, not as a parallel ASR conversation, durable user
+  message, `oracle_text`, or action-authority source.
+- The normal proof path is `witness_assisted_direct_audio`: raw audio first,
+  metadata second, reflex state third, and Moshi/Open-S2S/reflex/classic-ASR
+  hypotheses last. The Gemma interpreter must adjudicate each witness before
+  any wording can reach Hermes' active `/model` or downstream action sinks.
+- A text-only Moshi/Open-S2S packet is degraded compatibility. It may support
+  captions or clarification, but it cannot close full-KAME readiness and cannot
+  release Stripe, NemoClaw, phone, file, memory, message, durable-history, or
+  tool gates.
 
 ## Test Plan
 

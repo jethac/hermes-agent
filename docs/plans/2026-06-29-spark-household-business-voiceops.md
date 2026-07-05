@@ -126,6 +126,13 @@ audio first, witness hypotheses last, Gemma `witness_adjudications`, Gemma
 `interpreter_promoted` fields, and Hermes' active `/model` receiving only
 promoted wording plus compact audit metadata.
 
+Design amendment, 2026-07-05: a Moshi/Open-S2S transcript can be supplied to
+Gemma with the raw voice, and that is now the preferred open-S2S integration
+shape. The transcript is a same-cut witness row, not an ASR control path. The
+headless package must include a passing raw-audio-plus-Moshi-witness case and a
+negative degraded/conflicting-witness case so the demo proves both the useful
+context path and the fail-closed authority boundary.
+
 Implementation priority, 2026-07-05: optimize the first user-visible response
 around the reflex, not around ASR completion. The reflex should acknowledge
 immediately after a valid energy-gated cut and narrate the concise thing it is
