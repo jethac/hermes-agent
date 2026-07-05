@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -3585,6 +3586,18 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert example_shapes["live_turn"]["example_only"] is True
     assert example_shapes["live_turn"]["source_artifact"] == "sections/live-turn-source.json"
     assert example_shapes["live_turn"]["collector_attestation"]["example_only"] is True
+    example_witness = example_shapes["live_turn"]["transcript_hypotheses"][0]
+    assert "text" not in example_witness
+    assert example_witness["text_redacted"] is True
+    assert re.fullmatch(r"[0-9a-f]{64}", example_witness["text_digest"])
+    assert example_witness["role"] == "witness_context"
+    assert example_witness["authority"] == "hypothesis"
+    assert example_witness["promotion_required"] == "interpreter_promoted_or_oracle_promoted"
+    assert example_witness["tool_authority"] is False
+    assert example_witness["latency_ms"] == 140
+    assert example_witness["confidence"] == 0.78
+    assert example_witness["speaker_or_actor_ref"] == "discord:user:jetha-redacted"
+    assert example_witness["channel_or_surface_ref"] == "discord_voice:guild-redacted:general-redacted"
     example_shape_validation = validate_live_probe_evidence(
         {
             "schema_version": "voiceops.milestone1.live_voice_evidence.v1",
@@ -3631,6 +3644,14 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert "raw transcript text" in closure_markdown
     assert "hand-edit manifest.json" in closure_markdown
     assert "example_only" in closure_markdown
+    live_example_witness = live_example["live_turn"]["transcript_hypotheses"][0]
+    assert "text" not in live_example_witness
+    assert live_example_witness["text_redacted"] is True
+    assert re.fullmatch(r"[0-9a-f]{64}", live_example_witness["text_digest"])
+    assert live_example_witness["role"] == "witness_context"
+    assert live_example_witness["authority"] == "hypothesis"
+    assert live_example_witness["promotion_required"] == "interpreter_promoted_or_oracle_promoted"
+    assert live_example_witness["tool_authority"] is False
 
 
 def test_live_evidence_classifies_partial_discord_probe_without_inbound():
@@ -3666,10 +3687,16 @@ def test_live_evidence_classifies_partial_discord_probe_without_inbound():
 
 
 def test_live_evidence_example_is_not_accepted_as_proof():
-    result = validate_live_probe_evidence(build_live_probe_evidence_example())
+    example = build_live_probe_evidence_example()
+    witness = example["live_turn"]["transcript_hypotheses"][0]
+
+    result = validate_live_probe_evidence(example)
 
     assert result["overall_status"] == "partial_live_evidence"
     assert "example_only_evidence_not_accepted" in result["issues"]
+    assert "text" not in witness
+    assert witness["text_redacted"] is True
+    assert re.fullmatch(r"[0-9a-f]{64}", witness["text_digest"])
 
 
 def test_voice_operator_accepts_complete_supplied_live_evidence_without_changing_safety_mode(tmp_path):
