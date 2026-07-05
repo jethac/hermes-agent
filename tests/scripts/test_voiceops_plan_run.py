@@ -15,6 +15,10 @@ from toolsets import _HERMES_CORE_TOOLS
 GOAL_DOC = Path(__file__).resolve().parents[2] / "docs" / "plans" / "2026-06-29-spark-household-business-voiceops.md"
 
 
+def _text_digest(value: str) -> str:
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 def _write_json(path: Path, payload: dict) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -1524,14 +1528,16 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     )
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_provisional_request_summary"] == {
         "text": "Prepare external KAME handoff",
+        "source": "gemma_interpreter",
+        "authority": "interpreter_promoted",
+        "tool_authority": False,
+    }
+    assert voice_result["details"]["async_oracle_smoke"]["external_frontend_status_provisional_request_summary"] == {
+        "text": "Prepare external KAME handoff",
         "source": "reflex_audio",
         "authority": "reflex_hypothesis",
         "tool_authority": False,
     }
-    assert (
-        voice_result["details"]["async_oracle_smoke"]["external_frontend_status_provisional_request_summary"]
-        == voice_result["details"]["async_oracle_smoke"]["external_frontend_provisional_request_summary"]
-    )
     assert (
         voice_result["details"]["async_oracle_smoke"][
             "external_frontend_provisional_request_summary_non_authoritative"
@@ -1654,6 +1660,57 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_file_write"] is True
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_message_payload"] is True
     assert voice_result["details"]["async_oracle_smoke"]["unpromoted_hypothesis_not_durable_history"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["witness_assisted_voiceops_action_smoke_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["witness_assisted_voiceops_action_gate_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["witness_assisted_voiceops_action_gate_authorities"] == [
+        "interpreter_promoted"
+    ]
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "witness_assisted_voiceops_action_consumed_before_action"
+        ]
+        is True
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["witness_assisted_voiceops_action_single_bundle"] is True
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "witness_assisted_voiceops_action_witness_authority"
+        ]
+        == "hypothesis"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "witness_assisted_voiceops_action_witness_role_context"
+        ]
+        is True
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "witness_assisted_voiceops_action_witness_tool_authority_false"
+        ]
+        is True
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "witness_assisted_voiceops_action_witness_adjudication"
+        ]
+        == "corrected_by_audio"
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "witness_assisted_voiceops_action_promoted_authorities"
+        ]
+        == ["interpreter_promoted"]
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["witness_assisted_voiceops_action_sinks_clean"] is True
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["witness_assisted_voiceops_action_raw_witness_absent"]
+        is True
+    )
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["witness_assisted_voiceops_action_promoted_text_present"]
+        is True
+    )
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_timing_smoke_ok"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_arrival_phases"] == [
         "before_raw_audio",
@@ -1890,6 +1947,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "source": "moshi",
         "kind": "frontend_witness_hypothesis",
         "text": "what is three to the power of seventeen",
+        "text_digest": _text_digest("what is three to the power of seventeen"),
         "role": "witness_context",
         "authority": "hypothesis",
         "promotion_required": "interpreter_promoted_or_oracle_promoted",

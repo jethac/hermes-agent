@@ -378,6 +378,26 @@ waveform first, then metadata, reflex state, and transcript hypotheses. The
 Moshi text should help the interpreter compare, recover, and explain; it should
 not replace the waveform or short-circuit interpretation.
 
+## Raw-Audio Promotion Enforcement
+
+For raw-audio or witness-assisted direct-audio turns, promotion is not a field
+the frontend can self-attest. A request may carry `source`,
+`intent_source`, `transcript_source`, or `oracle_text_source` values that look
+like `gemma_interpreter`, `interpreter_promoted`, or `oracle_promoted`, but
+those labels are advisory until Hermes has a job-owned interpreter or oracle
+evidence record for the same `turn_id`, `audio_segment_ref`,
+`evidence_bundle_id`, and `evidence_merge_key`.
+
+The scheduler may accept the job and expose it to the reflex immediately, but it
+must keep the Hermes `/model` runner out of durable/actionable work until
+promoted evidence is attached and consumed. Hypothesis-only packets, including
+Moshi/Open-S2S text, VoiceClaw/OpenClaw text, reflex captions, and classic ASR
+text, can update the bundle but cannot unlock oracle execution by naming
+themselves as promoted. This rule is what keeps external frontends useful as
+hearing witnesses without letting a fast caption become a spend reason, phone
+payload, tool argument, memory/file write, external message, or durable user
+turn.
+
 Only when the frontend genuinely lacks the waveform should Hermes enter
 degraded text-only compatibility mode. That mode may ask clarifying questions,
 show captions, or create a provisional audit trail, but it cannot claim full

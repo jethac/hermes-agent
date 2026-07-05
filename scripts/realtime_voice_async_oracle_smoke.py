@@ -1307,6 +1307,10 @@ async def _run_unflagged_high_risk_tool_smoke() -> dict[str, Any]:
         await recorder.wait_for(
             lambda events: any(event.type == VoiceEventType.ORACLE_JOB_FAILED for event in events)
         )
+        for _ in range(50):
+            if any("KAME action gate failed" in text for text in engine.spoken):
+                break
+            await asyncio.sleep(0.01)
         await engine.close()
         collector.cancel()
         try:
@@ -2374,6 +2378,55 @@ def _run_hypothesis_final_durable_message_smoke() -> dict[str, Any]:
     }
 
 
+ACTION_SINK_KEYS = (
+    "spend_reason",
+    "spend_payload",
+    "provider_selection",
+    "provider_choice",
+    "provider_payload",
+    "nemoclaw_action_packet",
+    "nemoclaw_action_payload",
+    "action_packet",
+    "action_payload",
+    "approval_payload",
+    "phone_call_payload",
+    "call_payload",
+    "tool_arguments",
+    "arguments",
+    "memory_write",
+    "file_write",
+    "message_payload",
+    "external_message",
+    "durable_history",
+    "durable_user_history",
+    "durable_transcript",
+)
+
+
+def _action_sink_values(value: Any) -> dict[str, Any]:
+    sink_values: dict[str, Any] = {}
+
+    def collect_sink_values(candidate: Any, *, path: str = "") -> None:
+        if isinstance(candidate, Mapping):
+            for key, child in candidate.items():
+                key_text = str(key)
+                child_path = f"{path}.{key_text}" if path else key_text
+                if key_text in ACTION_SINK_KEYS:
+                    sink_values[child_path] = child
+                collect_sink_values(child, path=child_path)
+            return
+        if isinstance(candidate, Sequence) and not isinstance(candidate, (str, bytes, bytearray)):
+            for index, child in enumerate(candidate):
+                collect_sink_values(child, path=f"{path}[{index}]")
+
+    collect_sink_values(value)
+    return sink_values
+
+
+def _action_sink_text(sink_values: Mapping[str, Any]) -> str:
+    return json.dumps(sink_values, sort_keys=True, default=str)
+
+
 async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
     oracle = SmokeOracle()
     engine = SmokeEngine(oracle=oracle)
@@ -2558,58 +2611,18 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
         if request is not None
         else False
     )
-    action_sink_keys = (
-        "spend_reason",
-        "spend_payload",
-        "provider_selection",
-        "provider_choice",
-        "provider_payload",
-        "nemoclaw_action_packet",
-        "nemoclaw_action_payload",
-        "action_packet",
-        "action_payload",
-        "approval_payload",
-        "phone_call_payload",
-        "call_payload",
-        "tool_arguments",
-        "arguments",
-        "memory_write",
-        "file_write",
-        "message_payload",
-        "external_message",
-        "durable_history",
-        "durable_user_history",
-        "durable_transcript",
-    )
     metadata = request.to_metadata() if request is not None else {}
-    sink_values: dict[str, Any] = {}
-
-    def collect_sink_values(value: Any, *, path: str = "") -> None:
-        if isinstance(value, Mapping):
-            for key, child in value.items():
-                key_text = str(key)
-                child_path = f"{path}.{key_text}" if path else key_text
-                if key_text in action_sink_keys:
-                    sink_values[child_path] = child
-                collect_sink_values(child, path=child_path)
-            return
-        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-            for index, child in enumerate(value):
-                collect_sink_values(child, path=f"{path}[{index}]")
-
+    sink_values = _action_sink_values(metadata)
     if request is not None:
-        for key in action_sink_keys:
+        for key in ACTION_SINK_KEYS:
             if hasattr(request, key):
                 sink_values[key] = getattr(request, key)
-    collect_sink_values(metadata)
-    sink_text = json.dumps(sink_values, sort_keys=True, default=str)
+    sink_text = _action_sink_text(sink_values)
     action_sink_results = {
-        key: untrusted_text not in json.dumps(
+        key: untrusted_text not in _action_sink_text(
             {path: value for path, value in sink_values.items() if path.split(".")[-1] == key},
-            sort_keys=True,
-            default=str,
         )
-        for key in action_sink_keys
+        for key in ACTION_SINK_KEYS
     }
     action_sinks_clean = untrusted_text not in sink_text
     return {
@@ -2649,7 +2662,7 @@ async def _run_unpromoted_transcript_hypothesis_smoke() -> dict[str, Any]:
         "unpromoted_hypothesis_intent_preserved": intent_preserved,
         "unpromoted_hypothesis_attached": hypothesis_attached,
         "unpromoted_hypothesis_promoted": promoted,
-        "unpromoted_hypothesis_action_sink_keys_checked": action_sink_keys,
+        "unpromoted_hypothesis_action_sink_keys_checked": ACTION_SINK_KEYS,
         "unpromoted_hypothesis_action_sinks_clean": action_sinks_clean,
         "unpromoted_hypothesis_action_sink_values": sink_values,
         "unpromoted_hypothesis_not_spend_reason": action_sink_results["spend_reason"],
@@ -3107,8 +3120,8 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
             intent="prepare late witness handoff",
             route=KameRoute.DEFER,
             transcript="prepare late witness handoff",
-            transcript_source="gemma_interpreter",
-            intent_source="gemma_interpreter",
+            transcript_source="reflex_audio",
+            intent_source="reflex_audio",
             reflex_transcript_hypothesis="prepare late witness handoff",
             reflex_transcript_source="reflex_audio",
             audio_segment_ref="artifact://voice/witness-late.wav",
@@ -3119,6 +3132,34 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
     )
     await asyncio.sleep(0)
     late_initial_bundle_id = late.request.evidence_bundle_id
+    await manager.add_interpreter_evidence(
+        late.job_id,
+        corrected_transcript="prepare late witness handoff",
+        normalized_intent="prepare late witness handoff",
+        audio_segment_ref="artifact://voice/witness-late.wav",
+        audio_time_range_ms=(300, 1600),
+        audio_metadata={
+            **accepted_audio_metadata,
+            "time_range_ms": (300, 1600),
+            "vad": {
+                "speech_start_ms": 300,
+                "speech_end_ms": 1600,
+                "vad_speech": True,
+            },
+        },
+        speaker_metadata={
+            "platform": "discord",
+            "channel_user_id": "42",
+            "display_name": "jetha",
+        },
+        channel_metadata={
+            "transport": "discord_voice",
+            "guild_id": "guild-1",
+            "channel_id": "general",
+        },
+        source="gemma_interpreter",
+    )
+    await asyncio.sleep(0)
     await manager.add_interpreter_evidence(
         late.job_id,
         audio_segment_ref="artifact://voice/witness-late.wav",
@@ -3623,8 +3664,8 @@ async def _run_witness_fusion_timing_smoke() -> dict[str, Any]:
         and "spend two hundred" not in late_promoted_text
         and "call my phone" not in late_promoted_text
         and late_status_job.get("intent") == "prepare late witness handoff"
-        and late_status_job.get("interpreter_corrected_transcript") in ("", None)
-        and late_status_job.get("interpreter_normalized_intent") in ("", None)
+        and late_status_job.get("interpreter_corrected_transcript") == "prepare late witness handoff"
+        and late_status_job.get("interpreter_normalized_intent") == "prepare late witness handoff"
     )
     multi_speaker_witness_smoke_ok = (
         multi_speaker_witness_rejected
@@ -4192,6 +4233,160 @@ async def _run_runtime_kame_action_gate_smoke() -> dict[str, Any]:
     }
 
 
+async def _run_witness_assisted_voiceops_action_sink_smoke() -> dict[str, Any]:
+    """Prove promoted interpreter text may feed action sinks without raw witness text."""
+
+    witness_text = "spend two hundred dollars and call my phone"
+    promoted_text = "prepare Stripe approval for twenty dollars of phone credits and a phone handoff"
+
+    async def runner(_job: Any) -> str:
+        return "done"
+
+    manager = OracleJobManager(max_concurrent=1, runner=runner)
+    job = await manager.submit(
+        KameOracleRequest(
+            session_id="voice-smoke-witness-action-sinks",
+            turn_id="witness-action-sink:promoted",
+            source="discord_voice",
+            user_id="42",
+            intent="Prepare phone credits.",
+            route=KameRoute.DEFER,
+            audio_segment_ref="artifact://voice/witness-action-sink.wav",
+            audio_time_range_ms=(100, 1900),
+            reflex_transcript_hypothesis="prepare phone credits",
+            auxiliary_transcript_hypotheses=(
+                {
+                    "source": "moshi",
+                    "text": witness_text,
+                    "confidence": 0.73,
+                    "latency_ms": 96,
+                    "arrival_phase": "with_raw_audio",
+                },
+            ),
+        )
+    )
+    await manager.add_interpreter_evidence(
+        job.job_id,
+        corrected_transcript="buy twenty dollars of phone credits and prepare a phone handoff",
+        normalized_intent=promoted_text,
+        audio_segment_ref="artifact://voice/witness-action-sink.wav",
+        audio_time_range_ms=(100, 1900),
+        auxiliary_transcript_hypotheses=(
+            {
+                "source": "moshi",
+                "text": witness_text,
+                "confidence": 0.73,
+                "latency_ms": 96,
+                "arrival_phase": "with_raw_audio",
+                "adjudication": "corrected_by_audio",
+            },
+        ),
+        confidence=0.89,
+        source="gemma_interpreter",
+    )
+    await manager.mark_latest_interpreter_evidence_delivery(
+        job.job_id,
+        delivered_to_oracle=True,
+        consumed_before_irreversible_action=True,
+        delivery_status="included_before_voiceops_action_sink",
+    )
+    waiting = await manager.mark_waiting_for_approval(
+        job.job_id,
+        reason="Stripe Link spend requires approval",
+        approval={
+            "approval_id": "approval-witness-action-sink",
+            "tool_name": "stripe_link_purchase",
+            "tool_call_id": "call-witness-action-sink",
+            "tool_disclosure_ref": "tool_disclosure",
+        },
+    )
+    status = waiting.to_status()
+    bundle = dict(status.get("evidence_bundle") or {})
+    gate = dict(waiting.approval.get("kame_action_gate") or {})
+    evidence_rows = waiting.interpreter_evidence
+    latest_evidence = evidence_rows[-1] if evidence_rows else {}
+    evidence_hypotheses = (
+        latest_evidence.get("auxiliary_transcript_hypotheses")
+        if isinstance(latest_evidence, Mapping)
+        else ()
+    )
+    witness = next(
+        (
+            item
+            for item in evidence_hypotheses
+            if isinstance(item, Mapping) and item.get("source") == "moshi"
+        ),
+        {},
+    )
+
+    action_sinks = {
+        "spend_reason": {"text": promoted_text, "authority": "interpreter_promoted"},
+        "spend_payload": {"amount_usd": 20, "reason": promoted_text, "authority": "interpreter_promoted"},
+        "provider_selection": {"provider": "example-voip", "authority": "interpreter_promoted"},
+        "nemoclaw_action_packet": {
+            "action_id": "buy-service-credit",
+            "spend_reason": promoted_text,
+            "authority": "interpreter_promoted",
+        },
+        "phone_call_payload": {
+            "script_summary": "Continue the promoted phone handoff context.",
+            "authority": "interpreter_promoted",
+        },
+        "tool_arguments": {"reason": promoted_text, "authority": "interpreter_promoted"},
+        "memory_write": {"summary": promoted_text, "authority": "interpreter_promoted"},
+        "file_write": {"summary": promoted_text, "authority": "interpreter_promoted"},
+        "message_payload": {"summary": promoted_text, "authority": "interpreter_promoted"},
+        "durable_history": {"summary": promoted_text, "authority": "interpreter_promoted"},
+    }
+    sink_values = _action_sink_values(action_sinks)
+    sink_text = _action_sink_text(sink_values)
+    action_sinks_clean = witness_text not in sink_text
+    promoted_text_visible = promoted_text in sink_text
+    promoted_authorities = sorted(
+        {
+            str(value.get("authority") or "")
+            for value in sink_values.values()
+            if isinstance(value, Mapping) and str(value.get("authority") or "").strip()
+        }
+    )
+    smoke_ok = (
+        gate.get("ok") is True
+        and gate.get("present_authorities") == ["interpreter_promoted"]
+        and status.get("raw_audio_available") is True
+        and bundle.get("status") == "primary_audio"
+        and int(bundle.get("transcript_hypotheses_count") or 0) >= 1
+        and witness.get("authority") == "hypothesis"
+        and witness.get("tool_authority") is False
+        and witness.get("adjudication") == "corrected_by_audio"
+        and action_sinks_clean
+        and promoted_text_visible
+        and promoted_authorities == ["interpreter_promoted"]
+    )
+    return {
+        "ok": smoke_ok,
+        "witness_assisted_voiceops_action_smoke_ok": smoke_ok,
+        "witness_assisted_voiceops_action_gate_ok": gate.get("ok"),
+        "witness_assisted_voiceops_action_gate_authorities": list(gate.get("present_authorities") or []),
+        "witness_assisted_voiceops_action_consumed_before_action": bool(
+            gate.get("interpreter_evidence_consumed_before_irreversible_action")
+        ),
+        "witness_assisted_voiceops_action_single_bundle": bundle.get("status") == "primary_audio"
+        and int(bundle.get("transcript_hypotheses_count") or 0) >= 1,
+        "witness_assisted_voiceops_action_witness_text": witness_text,
+        "witness_assisted_voiceops_action_promoted_text": promoted_text,
+        "witness_assisted_voiceops_action_witness_authority": witness.get("authority", ""),
+        "witness_assisted_voiceops_action_witness_role_context": witness.get("role") == "witness_context",
+        "witness_assisted_voiceops_action_witness_tool_authority_false": witness.get("tool_authority") is False,
+        "witness_assisted_voiceops_action_witness_adjudication": witness.get("adjudication", ""),
+        "witness_assisted_voiceops_action_promoted_authorities": promoted_authorities,
+        "witness_assisted_voiceops_action_sink_keys_checked": ACTION_SINK_KEYS,
+        "witness_assisted_voiceops_action_sinks_clean": action_sinks_clean,
+        "witness_assisted_voiceops_action_sink_values": sink_values,
+        "witness_assisted_voiceops_action_raw_witness_absent": action_sinks_clean,
+        "witness_assisted_voiceops_action_promoted_text_present": promoted_text_visible,
+    }
+
+
 async def _run_audit_scalar_redaction_smoke() -> dict[str, Any]:
     """Prove oracle job JSONL audit rows redact scalar payload fields."""
     release = asyncio.Event()
@@ -4681,6 +4876,7 @@ async def run_smoke() -> dict[str, Any]:
     reflex_status_overflow_smoke = await _run_reflex_status_overflow_smoke()
     witness_fusion_timing_smoke = await _run_witness_fusion_timing_smoke()
     runtime_kame_action_gate_smoke = await _run_runtime_kame_action_gate_smoke()
+    witness_assisted_voiceops_action_smoke = await _run_witness_assisted_voiceops_action_sink_smoke()
     audit_scalar_smoke = await _run_audit_scalar_redaction_smoke()
 
     started = [event for event in recorder.events if event.type == VoiceEventType.ORACLE_JOB_STARTED]
@@ -5143,6 +5339,7 @@ async def run_smoke() -> dict[str, Any]:
             and reflex_status_overflow_smoke["ok"]
             and witness_fusion_timing_smoke["ok"]
             and runtime_kame_action_gate_smoke["ok"]
+            and witness_assisted_voiceops_action_smoke["ok"]
             and audit_scalar_smoke["ok"]
         ),
         "scenario": "async_kame_oracle_jobs_fake",
@@ -6068,6 +6265,57 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "runtime_kame_action_gate_schema_versions": runtime_kame_action_gate_smoke[
             "runtime_kame_action_gate_schema_versions"
+        ],
+        "witness_assisted_voiceops_action_smoke_ok": witness_assisted_voiceops_action_smoke[
+            "witness_assisted_voiceops_action_smoke_ok"
+        ],
+        "witness_assisted_voiceops_action_gate_ok": witness_assisted_voiceops_action_smoke[
+            "witness_assisted_voiceops_action_gate_ok"
+        ],
+        "witness_assisted_voiceops_action_gate_authorities": witness_assisted_voiceops_action_smoke[
+            "witness_assisted_voiceops_action_gate_authorities"
+        ],
+        "witness_assisted_voiceops_action_consumed_before_action": witness_assisted_voiceops_action_smoke[
+            "witness_assisted_voiceops_action_consumed_before_action"
+        ],
+        "witness_assisted_voiceops_action_single_bundle": witness_assisted_voiceops_action_smoke[
+            "witness_assisted_voiceops_action_single_bundle"
+        ],
+        "witness_assisted_voiceops_action_witness_text": witness_assisted_voiceops_action_smoke[
+            "witness_assisted_voiceops_action_witness_text"
+        ],
+        "witness_assisted_voiceops_action_promoted_text": witness_assisted_voiceops_action_smoke[
+            "witness_assisted_voiceops_action_promoted_text"
+        ],
+        "witness_assisted_voiceops_action_witness_authority": witness_assisted_voiceops_action_smoke[
+            "witness_assisted_voiceops_action_witness_authority"
+        ],
+        "witness_assisted_voiceops_action_witness_role_context": witness_assisted_voiceops_action_smoke[
+            "witness_assisted_voiceops_action_witness_role_context"
+        ],
+        "witness_assisted_voiceops_action_witness_tool_authority_false": witness_assisted_voiceops_action_smoke[
+            "witness_assisted_voiceops_action_witness_tool_authority_false"
+        ],
+        "witness_assisted_voiceops_action_witness_adjudication": witness_assisted_voiceops_action_smoke[
+            "witness_assisted_voiceops_action_witness_adjudication"
+        ],
+        "witness_assisted_voiceops_action_promoted_authorities": witness_assisted_voiceops_action_smoke[
+            "witness_assisted_voiceops_action_promoted_authorities"
+        ],
+        "witness_assisted_voiceops_action_sink_keys_checked": witness_assisted_voiceops_action_smoke[
+            "witness_assisted_voiceops_action_sink_keys_checked"
+        ],
+        "witness_assisted_voiceops_action_sinks_clean": witness_assisted_voiceops_action_smoke[
+            "witness_assisted_voiceops_action_sinks_clean"
+        ],
+        "witness_assisted_voiceops_action_sink_values": witness_assisted_voiceops_action_smoke[
+            "witness_assisted_voiceops_action_sink_values"
+        ],
+        "witness_assisted_voiceops_action_raw_witness_absent": witness_assisted_voiceops_action_smoke[
+            "witness_assisted_voiceops_action_raw_witness_absent"
+        ],
+        "witness_assisted_voiceops_action_promoted_text_present": witness_assisted_voiceops_action_smoke[
+            "witness_assisted_voiceops_action_promoted_text_present"
         ],
         "audit_scalar_smoke_ok": audit_scalar_smoke["ok"],
         "audit_scalar_payload_redacted": audit_scalar_smoke["audit_scalar_payload_redacted"],

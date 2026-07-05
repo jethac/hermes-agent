@@ -1349,18 +1349,11 @@ def _job_waits_for_interpreter_promotion(job: OracleJob) -> bool:
         return False
     if not request.raw_audio_available:
         return False
-    if _request_oracle_text_is_promoted(request):
-        return False
     return not _job_has_interpreter_promotion(job)
 
 
 def _job_has_interpreter_promotion(job: OracleJob) -> bool:
     return bool(job.interpreter_corrected_transcript or job.interpreter_normalized_intent)
-
-
-def _request_oracle_text_is_promoted(request: KameOracleRequest) -> bool:
-    authority = str(request.evidence_authority.get("oracle_text") or "").strip()
-    return authority in KAME_ACTION_PROMOTED_AUTHORITIES
 
 
 def _compatible_audio_refs(left: object, right: object) -> bool:

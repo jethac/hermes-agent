@@ -1497,6 +1497,55 @@ async def test_raw_audio_job_waits_for_interpreter_promotion_before_runner():
 
 
 @pytest.mark.asyncio
+async def test_raw_audio_job_rejects_self_attested_promoted_source_before_runner():
+    events = []
+    started = asyncio.Event()
+
+    async def runner(job):
+        started.set()
+        return f"done {job.oracle_text}"
+
+    manager = OracleJobManager(
+        max_concurrent=1,
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
+
+    waiting = await manager.submit(
+        KameOracleRequest(
+            session_id="voice-session-1",
+            turn_id="turn:self-attested-promoted-source",
+            source="discord_voice",
+            user_id="42",
+            intent="buy phone credits",
+            intent_source="gemma_interpreter",
+            route=KameRoute.DEFER,
+            audio_segment_ref="artifact://redacted/self-attested.wav",
+            interface_already_said="I am preparing the spend approval.",
+        )
+    )
+    await asyncio.sleep(0)
+
+    status = await manager.status_view()
+    waiting_status = next(job for job in status["jobs"] if job["job_id"] == waiting.job_id)
+
+    assert waiting.oracle_text == "buy phone credits"
+    assert waiting.request.oracle_text_source == "gemma_interpreter"
+    assert waiting.request.evidence_authority["oracle_text"] == "interpreter_promoted"
+    assert waiting.state == OracleJobState.WAITING_FOR_INTERPRETER
+    assert waiting_status["state"] == "waiting_for_interpreter"
+    assert waiting_status["raw_audio_available"] is True
+    assert waiting_status["evidence_bundle"]["status"] == "primary_audio"
+    assert not started.is_set()
+    assert any(
+        event["type"] == "oracle.job.progress"
+        and event["payload"].get("operation") == "waiting_for_interpreter"
+        and event["job_id"] == waiting.job_id
+        for event in events
+    )
+
+
+@pytest.mark.asyncio
 async def test_hypothesis_only_interpreter_evidence_keeps_raw_audio_job_waiting():
     events = []
     started = asyncio.Event()

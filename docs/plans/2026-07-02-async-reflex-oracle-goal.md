@@ -87,6 +87,11 @@ reflex immediately, but the Hermes `/model` runner must wait for
 `interpreter_promoted` or `oracle_promoted` wording before durable oracle work
 starts. Hypothesis-only evidence keeps the job in a waiting/interpreter-pending
 state; promoted Gemma evidence patches the job into executable oracle text.
+The scheduler must not trust request self-attestation for this transition:
+`oracle_text_source`, `transcript_source`, or `intent_source` values that claim
+promotion are not sufficient for raw-audio jobs. Only job-owned promoted
+evidence attached to the same speech cut can release the oracle runner or any
+Stripe/NemoClaw/phone/memory/file/message/tool action sink.
 
 Implementation pivot: the runtime should stop treating provider STT as the
 primary voice path. The normal path is raw audio plus optional witness context

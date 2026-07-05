@@ -76,6 +76,15 @@ transcript-looking fields as `transcript_hypotheses[]`, explicit witness
 adjudication, and only promoted interpreter/oracle fields reaching Hermes'
 active `/model` or any action sink.
 
+Runtime enforcement follows the same authority model. A raw-audio job cannot
+become executable just because the incoming request labels its text as
+`interpreter_promoted`, `oracle_promoted`, `gemma_interpreter`, or any similar
+trusted-looking source. For full KAME turns, promotion is a job-owned evidence
+transition: Hermes must observe interpreter/oracle evidence attached to the
+same speech cut and then patch the queued job. Until that happens, the job may
+be visible to the reflex but the Hermes `/model` runner and every irreversible
+action sink stay gated.
+
 The interpreter should emit two different classes of output:
 
 - `witness_adjudications`: per-hypothesis decisions such as

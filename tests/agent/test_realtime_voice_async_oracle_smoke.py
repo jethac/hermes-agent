@@ -740,6 +740,34 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
         "voiceops.runtime_kame_action_gate.v1",
         "voiceops.runtime_kame_action_gate.v1",
     ]
+    assert report["witness_assisted_voiceops_action_smoke_ok"] is True
+    assert report["witness_assisted_voiceops_action_gate_ok"] is True
+    assert report["witness_assisted_voiceops_action_gate_authorities"] == [
+        "interpreter_promoted"
+    ]
+    assert report["witness_assisted_voiceops_action_consumed_before_action"] is True
+    assert report["witness_assisted_voiceops_action_single_bundle"] is True
+    assert report["witness_assisted_voiceops_action_witness_authority"] == "hypothesis"
+    assert report["witness_assisted_voiceops_action_witness_role_context"] is True
+    assert report["witness_assisted_voiceops_action_witness_tool_authority_false"] is True
+    assert (
+        report["witness_assisted_voiceops_action_witness_adjudication"]
+        == "corrected_by_audio"
+    )
+    assert report["witness_assisted_voiceops_action_promoted_authorities"] == [
+        "interpreter_promoted"
+    ]
+    assert report["witness_assisted_voiceops_action_sinks_clean"] is True
+    assert report["witness_assisted_voiceops_action_raw_witness_absent"] is True
+    assert report["witness_assisted_voiceops_action_promoted_text_present"] is True
+    assert (
+        report["witness_assisted_voiceops_action_witness_text"]
+        not in str(report["witness_assisted_voiceops_action_sink_values"])
+    )
+    assert (
+        report["witness_assisted_voiceops_action_promoted_text"]
+        in str(report["witness_assisted_voiceops_action_sink_values"])
+    )
     assert report["event_counts"]["interface.oracle.update"] >= 2
     assert report["event_counts"]["oracle.job.progress"] >= 1
     assert report["event_counts"]["oracle.job.result_suppressed"] >= 1

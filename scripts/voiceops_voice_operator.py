@@ -4210,6 +4210,57 @@ def build_voice_operator_report(
             "runtime_kame_action_gate_schema_versions": list(
                 async_oracle_smoke.get("runtime_kame_action_gate_schema_versions") or []
             ),
+            "witness_assisted_voiceops_action_smoke_ok": bool(
+                async_oracle_smoke.get("witness_assisted_voiceops_action_smoke_ok")
+            ),
+            "witness_assisted_voiceops_action_gate_ok": bool(
+                async_oracle_smoke.get("witness_assisted_voiceops_action_gate_ok")
+            ),
+            "witness_assisted_voiceops_action_gate_authorities": list(
+                async_oracle_smoke.get("witness_assisted_voiceops_action_gate_authorities") or []
+            ),
+            "witness_assisted_voiceops_action_consumed_before_action": bool(
+                async_oracle_smoke.get("witness_assisted_voiceops_action_consumed_before_action")
+            ),
+            "witness_assisted_voiceops_action_single_bundle": bool(
+                async_oracle_smoke.get("witness_assisted_voiceops_action_single_bundle")
+            ),
+            "witness_assisted_voiceops_action_witness_text": async_oracle_smoke.get(
+                "witness_assisted_voiceops_action_witness_text"
+            ),
+            "witness_assisted_voiceops_action_promoted_text": async_oracle_smoke.get(
+                "witness_assisted_voiceops_action_promoted_text"
+            ),
+            "witness_assisted_voiceops_action_witness_authority": async_oracle_smoke.get(
+                "witness_assisted_voiceops_action_witness_authority"
+            ),
+            "witness_assisted_voiceops_action_witness_role_context": bool(
+                async_oracle_smoke.get("witness_assisted_voiceops_action_witness_role_context")
+            ),
+            "witness_assisted_voiceops_action_witness_tool_authority_false": bool(
+                async_oracle_smoke.get("witness_assisted_voiceops_action_witness_tool_authority_false")
+            ),
+            "witness_assisted_voiceops_action_witness_adjudication": async_oracle_smoke.get(
+                "witness_assisted_voiceops_action_witness_adjudication"
+            ),
+            "witness_assisted_voiceops_action_promoted_authorities": list(
+                async_oracle_smoke.get("witness_assisted_voiceops_action_promoted_authorities") or []
+            ),
+            "witness_assisted_voiceops_action_sink_keys_checked": tuple(
+                async_oracle_smoke.get("witness_assisted_voiceops_action_sink_keys_checked") or ()
+            ),
+            "witness_assisted_voiceops_action_sinks_clean": bool(
+                async_oracle_smoke.get("witness_assisted_voiceops_action_sinks_clean")
+            ),
+            "witness_assisted_voiceops_action_sink_values": dict(
+                async_oracle_smoke.get("witness_assisted_voiceops_action_sink_values") or {}
+            ),
+            "witness_assisted_voiceops_action_raw_witness_absent": bool(
+                async_oracle_smoke.get("witness_assisted_voiceops_action_raw_witness_absent")
+            ),
+            "witness_assisted_voiceops_action_promoted_text_present": bool(
+                async_oracle_smoke.get("witness_assisted_voiceops_action_promoted_text_present")
+            ),
             "audit_scalar_smoke_ok": bool(async_oracle_smoke.get("audit_scalar_smoke_ok")),
             "audit_scalar_payload_redacted": bool(async_oracle_smoke.get("audit_scalar_payload_redacted")),
             "audit_scalar_secret_canary_checked": bool(

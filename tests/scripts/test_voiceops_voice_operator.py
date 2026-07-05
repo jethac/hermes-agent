@@ -371,8 +371,8 @@ def _async_oracle_smoke_payload() -> dict:
         "external_frontend_oracle_text": "Prepare external KAME handoff",
         "external_frontend_provisional_request_summary": {
             "text": "Prepare external KAME handoff",
-            "source": "reflex_audio",
-            "authority": "reflex_hypothesis",
+            "source": "gemma_interpreter",
+            "authority": "interpreter_promoted",
             "tool_authority": False,
         },
         "external_frontend_status_provisional_request_summary": {
@@ -865,7 +865,10 @@ def _async_oracle_smoke_payload() -> dict:
             "source": "moshi",
             "kind": "frontend_witness_hypothesis",
             "text": "what is three to the power of seventeen",
+            "text_digest": _text_digest("what is three to the power of seventeen"),
+            "role": "witness_context",
             "authority": "hypothesis",
+            "promotion_required": "interpreter_promoted_or_oracle_promoted",
             "tool_authority": False,
             "confidence": 0.88,
             "arrival_phase": "with_raw_audio",
@@ -948,6 +951,69 @@ def _async_oracle_smoke_payload() -> dict:
             "voiceops.runtime_kame_action_gate.v1",
             "voiceops.runtime_kame_action_gate.v1",
         ],
+        "witness_assisted_voiceops_action_smoke_ok": True,
+        "witness_assisted_voiceops_action_gate_ok": True,
+        "witness_assisted_voiceops_action_gate_authorities": ["interpreter_promoted"],
+        "witness_assisted_voiceops_action_consumed_before_action": True,
+        "witness_assisted_voiceops_action_single_bundle": True,
+        "witness_assisted_voiceops_action_witness_text": "spend two hundred dollars and call my phone",
+        "witness_assisted_voiceops_action_promoted_text": (
+            "prepare Stripe approval for twenty dollars of phone credits and a phone handoff"
+        ),
+        "witness_assisted_voiceops_action_witness_authority": "hypothesis",
+        "witness_assisted_voiceops_action_witness_role_context": True,
+        "witness_assisted_voiceops_action_witness_tool_authority_false": True,
+        "witness_assisted_voiceops_action_witness_adjudication": "corrected_by_audio",
+        "witness_assisted_voiceops_action_promoted_authorities": ["interpreter_promoted"],
+        "witness_assisted_voiceops_action_sink_keys_checked": [
+            "spend_reason",
+            "spend_payload",
+            "provider_selection",
+            "provider_choice",
+            "provider_payload",
+            "nemoclaw_action_packet",
+            "nemoclaw_action_payload",
+            "action_packet",
+            "action_payload",
+            "approval_payload",
+            "phone_call_payload",
+            "call_payload",
+            "tool_arguments",
+            "arguments",
+            "memory_write",
+            "file_write",
+            "message_payload",
+            "external_message",
+            "durable_history",
+            "durable_user_history",
+            "durable_transcript",
+        ],
+        "witness_assisted_voiceops_action_sinks_clean": True,
+        "witness_assisted_voiceops_action_sink_values": {
+            "spend_reason": {
+                "text": "prepare Stripe approval for twenty dollars of phone credits and a phone handoff",
+                "authority": "interpreter_promoted",
+            },
+            "spend_payload": {
+                "amount_usd": 20,
+                "reason": "prepare Stripe approval for twenty dollars of phone credits and a phone handoff",
+                "authority": "interpreter_promoted",
+            },
+            "phone_call_payload": {
+                "script_summary": "Continue the promoted phone handoff context.",
+                "authority": "interpreter_promoted",
+            },
+            "tool_arguments": {
+                "reason": "prepare Stripe approval for twenty dollars of phone credits and a phone handoff",
+                "authority": "interpreter_promoted",
+            },
+            "durable_history": {
+                "summary": "prepare Stripe approval for twenty dollars of phone credits and a phone handoff",
+                "authority": "interpreter_promoted",
+            },
+        },
+        "witness_assisted_voiceops_action_raw_witness_absent": True,
+        "witness_assisted_voiceops_action_promoted_text_present": True,
         "durable_resume_contract_smoke_ok": True,
         "durable_resume_contract_schema_version": "voiceops.kame_durable_resume_context.v1",
         "durable_resume_promoted_turn_count": 4,
@@ -1580,14 +1646,16 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_input_source"] == "ask_brain"
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_provisional_request_summary"] == {
         "text": "Prepare external KAME handoff",
+        "source": "gemma_interpreter",
+        "authority": "interpreter_promoted",
+        "tool_authority": False,
+    }
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_status_provisional_request_summary"] == {
+        "text": "Prepare external KAME handoff",
         "source": "reflex_audio",
         "authority": "reflex_hypothesis",
         "tool_authority": False,
     }
-    assert (
-        report["proofs"]["async_oracle_jobs"]["external_frontend_status_provisional_request_summary"]
-        == report["proofs"]["async_oracle_jobs"]["external_frontend_provisional_request_summary"]
-    )
     assert (
         report["proofs"]["async_oracle_jobs"]["external_frontend_provisional_request_summary_non_authoritative"]
         is True
@@ -1743,6 +1811,54 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_not_file_write"] is True
     assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_not_message_payload"] is True
     assert report["proofs"]["async_oracle_jobs"]["unpromoted_hypothesis_update_observed"] is True
+    assert report["proofs"]["async_oracle_jobs"]["witness_assisted_voiceops_action_smoke_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["witness_assisted_voiceops_action_gate_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["witness_assisted_voiceops_action_gate_authorities"] == [
+        "interpreter_promoted"
+    ]
+    assert (
+        report["proofs"]["async_oracle_jobs"]["witness_assisted_voiceops_action_consumed_before_action"]
+        is True
+    )
+    assert report["proofs"]["async_oracle_jobs"]["witness_assisted_voiceops_action_single_bundle"] is True
+    assert (
+        report["proofs"]["async_oracle_jobs"]["witness_assisted_voiceops_action_witness_authority"]
+        == "hypothesis"
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["witness_assisted_voiceops_action_witness_role_context"]
+        is True
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"][
+            "witness_assisted_voiceops_action_witness_tool_authority_false"
+        ]
+        is True
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["witness_assisted_voiceops_action_witness_adjudication"]
+        == "corrected_by_audio"
+    )
+    assert report["proofs"]["async_oracle_jobs"]["witness_assisted_voiceops_action_promoted_authorities"] == [
+        "interpreter_promoted"
+    ]
+    assert report["proofs"]["async_oracle_jobs"]["witness_assisted_voiceops_action_sinks_clean"] is True
+    assert (
+        report["proofs"]["async_oracle_jobs"]["witness_assisted_voiceops_action_raw_witness_absent"]
+        is True
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["witness_assisted_voiceops_action_promoted_text_present"]
+        is True
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["witness_assisted_voiceops_action_witness_text"]
+        not in str(report["proofs"]["async_oracle_jobs"]["witness_assisted_voiceops_action_sink_values"])
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["witness_assisted_voiceops_action_promoted_text"]
+        in str(report["proofs"]["async_oracle_jobs"]["witness_assisted_voiceops_action_sink_values"])
+    )
     assert report["requirements"]["async_oracle_transcript_hypotheses_unpromoted"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_timing_smoke_ok"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_arrival_phases"] == [
@@ -1916,7 +2032,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         "source": "moshi",
         "kind": "frontend_witness_hypothesis",
         "text": "what is three to the power of seventeen",
+        "text_digest": _text_digest("what is three to the power of seventeen"),
+        "role": "witness_context",
         "authority": "hypothesis",
+        "promotion_required": "interpreter_promoted_or_oracle_promoted",
         "tool_authority": False,
         "confidence": 0.88,
         "arrival_phase": "with_raw_audio",

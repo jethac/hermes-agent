@@ -2281,6 +2281,49 @@ async def build_plan_run_async(
                     "unpromoted_hypothesis_not_durable_history": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["unpromoted_hypothesis_not_durable_history"],
+                    "witness_assisted_voiceops_action_smoke_ok": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_assisted_voiceops_action_smoke_ok"],
+                    "witness_assisted_voiceops_action_gate_ok": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_assisted_voiceops_action_gate_ok"],
+                    "witness_assisted_voiceops_action_gate_authorities": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "witness_assisted_voiceops_action_gate_authorities"
+                        ]
+                    ),
+                    "witness_assisted_voiceops_action_consumed_before_action": voice_operator[
+                        "proofs"
+                    ]["async_oracle_jobs"]["witness_assisted_voiceops_action_consumed_before_action"],
+                    "witness_assisted_voiceops_action_single_bundle": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_assisted_voiceops_action_single_bundle"],
+                    "witness_assisted_voiceops_action_witness_authority": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_assisted_voiceops_action_witness_authority"],
+                    "witness_assisted_voiceops_action_witness_role_context": voice_operator[
+                        "proofs"
+                    ]["async_oracle_jobs"]["witness_assisted_voiceops_action_witness_role_context"],
+                    "witness_assisted_voiceops_action_witness_tool_authority_false": voice_operator[
+                        "proofs"
+                    ]["async_oracle_jobs"]["witness_assisted_voiceops_action_witness_tool_authority_false"],
+                    "witness_assisted_voiceops_action_witness_adjudication": voice_operator[
+                        "proofs"
+                    ]["async_oracle_jobs"]["witness_assisted_voiceops_action_witness_adjudication"],
+                    "witness_assisted_voiceops_action_promoted_authorities": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "witness_assisted_voiceops_action_promoted_authorities"
+                        ]
+                    ),
+                    "witness_assisted_voiceops_action_sinks_clean": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_assisted_voiceops_action_sinks_clean"],
+                    "witness_assisted_voiceops_action_raw_witness_absent": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["witness_assisted_voiceops_action_raw_witness_absent"],
+                    "witness_assisted_voiceops_action_promoted_text_present": voice_operator[
+                        "proofs"
+                    ]["async_oracle_jobs"]["witness_assisted_voiceops_action_promoted_text_present"],
                     "witness_fusion_timing_smoke_ok": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_timing_smoke_ok"
                     ],
