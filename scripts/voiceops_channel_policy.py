@@ -205,6 +205,43 @@ REVIEW_DECISIONS_THAT_CLOSE_REVIEW = {
     "approve_dry_run_only",
     "approve_live_egress_after_external_credentials_are_bound",
 }
+REVIEW_DECISION_EFFECTS = {
+    "approve_artifact_for_demo_recording": {
+        "closes_review_gap": True,
+        "permits_real_egress_now": False,
+        "requires_runtime_credential_binding": False,
+        "requires_separate_runtime_approval": True,
+        "allowed_use": "demo_recording_artifacts_only",
+    },
+    "approve_dry_run_only": {
+        "closes_review_gap": True,
+        "permits_real_egress_now": False,
+        "requires_runtime_credential_binding": False,
+        "requires_separate_runtime_approval": True,
+        "allowed_use": "dry_run_artifacts_only",
+    },
+    "approve_live_egress_after_external_credentials_are_bound": {
+        "closes_review_gap": True,
+        "permits_real_egress_now": False,
+        "requires_runtime_credential_binding": True,
+        "requires_separate_runtime_approval": True,
+        "allowed_use": "review_prerequisite_only_not_runtime_egress",
+    },
+    "request_changes": {
+        "closes_review_gap": False,
+        "permits_real_egress_now": False,
+        "requires_runtime_credential_binding": False,
+        "requires_separate_runtime_approval": True,
+        "allowed_use": "review_not_approved",
+    },
+    "deny": {
+        "closes_review_gap": False,
+        "permits_real_egress_now": False,
+        "requires_runtime_credential_binding": False,
+        "requires_separate_runtime_approval": True,
+        "allowed_use": "review_denied",
+    },
+}
 
 
 def default_approval_route_map() -> dict[str, dict[str, str]]:
@@ -769,6 +806,7 @@ def build_review_packet(policy: dict[str, Any]) -> dict[str, Any]:
             "request_changes",
             "deny",
         ],
+        "decision_effects": REVIEW_DECISION_EFFECTS,
         "required_signoffs": [
             {
                 "role": "business_owner",
@@ -844,6 +882,7 @@ def build_review_decision_scaffold(
         "review_artifact_stable_sha256": stable_review_sha256(review),
         "decision": "pending_operator_review",
         "decision_options": list(review.get("decision_options") or []),
+        "decision_effects": dict(review.get("decision_effects") or {}),
         "review_status": "pending_human_review",
         "artifact_only": True,
         "changes_policy": False,
@@ -873,8 +912,10 @@ def build_review_decision_scaffold(
         ],
         "operator_instructions": [
             "Fill one explicit review-closing decision from decision_options.",
+            "Copy the selected effect into selected_decision_effect before treating the decision as complete.",
             "Set review_status to approved only after every required signoff is approved.",
             "Keep artifact_only=true, changes_policy=false, changes_readiness_by_itself=false, and real_egress_enabled=false.",
+            "Do not treat approve_live_egress_after_external_credentials_are_bound as runtime egress approval.",
             "Run voiceops_plan_run.py with --channel-policy-operator-decision after completing this file.",
         ],
     }
@@ -905,6 +946,9 @@ def build_operator_review_decision(
         "review_artifact_ref": "channel-policy-review.json",
         "review_artifact_stable_sha256": stable_review_sha256(review),
         "decision": decision,
+        "selected_decision_effect": dict(
+            (review.get("decision_effects") or REVIEW_DECISION_EFFECTS).get(decision, {})
+        ),
         "review_status": "approved",
         "artifact_only": True,
         "changes_policy": False,
@@ -976,6 +1020,25 @@ def validate_channel_policy_review_decision(
         issues.append("decision_not_in_review_options")
     if decision_value not in REVIEW_DECISIONS_THAT_CLOSE_REVIEW:
         issues.append("decision_not_review_closing")
+    decision_effects = review.get("decision_effects") if isinstance(review.get("decision_effects"), Mapping) else {}
+    expected_effect = decision_effects.get(decision_value) if isinstance(decision_effects, Mapping) else None
+    selected_effect = (
+        decision.get("selected_decision_effect")
+        if isinstance(decision.get("selected_decision_effect"), Mapping)
+        else None
+    )
+    if decision_value in REVIEW_DECISIONS_THAT_CLOSE_REVIEW:
+        if not isinstance(expected_effect, Mapping):
+            issues.append("decision_effect_missing_from_review")
+        elif selected_effect != expected_effect:
+            issues.append("decision_selected_effect_mismatch")
+        if isinstance(selected_effect, Mapping):
+            if selected_effect.get("closes_review_gap") is not True:
+                issues.append("decision_effect_does_not_close_review")
+            if selected_effect.get("permits_real_egress_now") is not False:
+                issues.append("decision_effect_permits_real_egress_now")
+            if selected_effect.get("requires_separate_runtime_approval") is not True:
+                issues.append("decision_effect_missing_separate_runtime_approval")
     if decision.get("review_status") != "approved":
         issues.append("decision_review_status_not_approved")
     if decision.get("artifact_only") is not True:

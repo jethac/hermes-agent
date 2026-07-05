@@ -2089,6 +2089,26 @@ def _audit_channel_policy(
         issues.append("channel_policy_review_decision_scaffold:decision_not_pending")
     if decision_scaffold.get("review_status") != "pending_human_review":
         issues.append("channel_policy_review_decision_scaffold:review_status_not_pending")
+    review_decision_effects = (
+        review.get("decision_effects") if isinstance(review.get("decision_effects"), Mapping) else {}
+    )
+    scaffold_decision_effects = (
+        decision_scaffold.get("decision_effects")
+        if isinstance(decision_scaffold.get("decision_effects"), Mapping)
+        else {}
+    )
+    if scaffold_decision_effects != review_decision_effects:
+        issues.append("channel_policy_review_decision_scaffold:decision_effects_mismatch")
+    live_effect = scaffold_decision_effects.get("approve_live_egress_after_external_credentials_are_bound")
+    if not isinstance(live_effect, Mapping):
+        issues.append("channel_policy_review_decision_scaffold:live_egress_effect_missing")
+    else:
+        if live_effect.get("permits_real_egress_now") is not False:
+            issues.append("channel_policy_review_decision_scaffold:live_egress_effect_permits_egress")
+        if live_effect.get("requires_runtime_credential_binding") is not True:
+            issues.append("channel_policy_review_decision_scaffold:live_egress_effect_missing_credential_binding")
+        if live_effect.get("requires_separate_runtime_approval") is not True:
+            issues.append("channel_policy_review_decision_scaffold:live_egress_effect_missing_runtime_approval")
     if decision_scaffold.get("artifact_only") is not True:
         issues.append("channel_policy_review_decision_scaffold:artifact_only_not_true")
     if decision_scaffold.get("changes_policy") is not False:

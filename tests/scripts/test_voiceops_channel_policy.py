@@ -9,6 +9,7 @@ from pathlib import Path
 from scripts.voiceops_channel_policy import (
     DEFAULT_OUTPUT_DIR,
     REVIEW_DECISION_ARTIFACT_ID,
+    REVIEW_DECISION_EFFECTS,
     REVIEW_DECISION_SCHEMA_VERSION,
     REQUIRED_KAME_DESIGN_REFERENCE,
     REQUIRED_KAME_INTERPRETER_PROFILE,
@@ -571,6 +572,13 @@ def test_write_channel_policy_artifacts(tmp_path):
     )
     assert review_payload["kame_action_evidence_gate"]["raw_transcript_text_allowed_in_channel_egress"] is False
     assert "approve_live_egress_after_external_credentials_are_bound" in review_payload["decision_options"]
+    assert review_payload["decision_effects"]["approve_live_egress_after_external_credentials_are_bound"] == {
+        "allowed_use": "review_prerequisite_only_not_runtime_egress",
+        "closes_review_gap": True,
+        "permits_real_egress_now": False,
+        "requires_runtime_credential_binding": True,
+        "requires_separate_runtime_approval": True,
+    }
     assert {signoff["role"] for signoff in review_payload["required_signoffs"]} == {
         "business_owner",
         "channel_owner",
@@ -623,6 +631,7 @@ def test_review_decision_scaffold_is_non_approving_until_filled():
 
     assert decision["decision"] == "pending_operator_review"
     assert decision["review_status"] == "pending_human_review"
+    assert decision["decision_effects"] == REVIEW_DECISION_EFFECTS
     assert decision["real_egress_enabled"] is False
     assert decision["changes_policy"] is False
     assert decision["changes_readiness_by_itself"] is False
@@ -665,6 +674,7 @@ def _valid_review_decision(review: dict) -> dict:
         "review_artifact_ref": "channel-policy-review.json",
         "review_artifact_stable_sha256": stable_review_sha256(review),
         "decision": "approve_dry_run_only",
+        "selected_decision_effect": review["decision_effects"]["approve_dry_run_only"],
         "review_status": "approved",
         "artifact_only": True,
         "changes_policy": False,
@@ -708,6 +718,9 @@ def test_build_operator_review_decision_is_non_mutating_and_review_closing():
     )
 
     assert decision["decision"] == "approve_dry_run_only"
+    assert decision["selected_decision_effect"] == review["decision_effects"]["approve_dry_run_only"]
+    assert decision["selected_decision_effect"]["permits_real_egress_now"] is False
+    assert decision["selected_decision_effect"]["requires_separate_runtime_approval"] is True
     assert decision["review_status"] == "approved"
     assert decision["artifact_only"] is True
     assert decision["changes_policy"] is False
@@ -734,9 +747,13 @@ def test_channel_policy_review_decision_rejects_mutating_or_incomplete_approval(
     decision["signoffs"] = decision["signoffs"][:1]
     decision["kame_action_evidence_gate"]["required_interpreter_profile"] = "text_oracle_fallback"
     decision["acknowledged_operator_must_not"] = []
+    decision["selected_decision_effect"] = review["decision_effects"][
+        "approve_live_egress_after_external_credentials_are_bound"
+    ]
 
     assert validate_channel_policy_review_decision(decision, review=review) == [
         "decision_review_artifact_stable_sha256_mismatch",
+        "decision_selected_effect_mismatch",
         "decision_changes_policy_not_false",
         "decision_real_egress_enabled_not_false",
         "decision_missing_required_signoffs:channel_owner,privacy_reviewer,security_owner",
@@ -792,6 +809,7 @@ def test_channel_policy_cli_writes_separate_operator_decision(tmp_path):
     assert payload["validation_issues"] == []
     assert payload["artifacts"]["operator_decision_json"] == str(decision_path)
     assert decision["decision"] == "approve_dry_run_only"
+    assert decision["selected_decision_effect"] == review["decision_effects"]["approve_dry_run_only"]
     assert decision["real_egress_enabled"] is False
     assert validate_channel_policy_review_decision(
         decision,

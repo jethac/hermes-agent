@@ -3347,6 +3347,28 @@ def test_package_audit_rejects_channel_policy_review_decision_scaffold_approval_
     assert "channel_policy_review_decision_scaffold:unexpectedly_approved" in report["issues"]
 
 
+def test_package_audit_rejects_channel_policy_review_decision_effect_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    decision_path = artifact_root / "voiceops-channel-policy" / "current" / "channel-policy-review-decision.json"
+    decision = json.loads(decision_path.read_text(encoding="utf-8"))
+    live_effect = decision["decision_effects"]["approve_live_egress_after_external_credentials_are_bound"]
+    live_effect["permits_real_egress_now"] = True
+    live_effect["requires_runtime_credential_binding"] = False
+    live_effect["requires_separate_runtime_approval"] = False
+    _write_json(decision_path, decision)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "channel_policy_review_decision_scaffold:decision_effects_mismatch" in report["issues"]
+    assert "channel_policy_review_decision_scaffold:live_egress_effect_permits_egress" in report["issues"]
+    assert (
+        "channel_policy_review_decision_scaffold:live_egress_effect_missing_credential_binding"
+        in report["issues"]
+    )
+    assert "channel_policy_review_decision_scaffold:live_egress_effect_missing_runtime_approval" in report["issues"]
+
+
 def test_package_audit_rejects_channel_policy_review_identity_and_artifact_drift(tmp_path):
     artifact_root = _generate_package(tmp_path)
     review_path = artifact_root / "voiceops-channel-policy" / "current" / "channel-policy-review.json"
