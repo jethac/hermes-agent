@@ -34,6 +34,7 @@ from scripts.voiceops_provisioning_probe import (
     write_probe_artifacts,
     _validate_safe_probe_command,
     _validate_readonly_discovery_command,
+    _readonly_discovery_subprocess_runner,
 )
 
 
@@ -474,6 +475,26 @@ def test_readonly_discovery_reports_timeouts_without_granting_readiness(tmp_path
     assert "probe timed out" in stripe_probe["stderr_excerpt"]
     assert "read_only_discovery_passed" in report["required_failures"]
     assert report["ready"] is False
+
+
+def test_real_readonly_runner_refuses_stripe_projects_auto_install(monkeypatch):
+    def fail_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("stripe projects discovery must not reach subprocess auto-install path")
+
+    monkeypatch.setattr(
+        "scripts.voiceops_provisioning_probe.subprocess.run",
+        fail_run,
+    )
+
+    result = _readonly_discovery_subprocess_runner(
+        ["stripe", "projects", "list", "--limit", "10"],
+        20,
+    )
+
+    assert result.exit_code == 126
+    assert result.timed_out is False
+    assert "auto-installs" in result.stderr
+    assert "isolated HOME" in result.stderr
 
 
 def test_readonly_discovery_timeout_can_be_overridden_independently(tmp_path):

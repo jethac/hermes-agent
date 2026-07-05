@@ -1508,6 +1508,14 @@ def _isolated_subprocess_runner(
     validator: Callable[[Sequence[str]], None],
 ) -> CommandResult:
     validator(argv)
+    if list(argv) == ["stripe", "projects", "list", "--limit", "10"]:
+        return CommandResult(
+            exit_code=126,
+            stderr=(
+                "refusing read-only Stripe Projects probe because the CLI auto-installs "
+                "the projects plugin into isolated HOME before listing"
+            ),
+        )
     with tempfile.TemporaryDirectory(prefix="voiceops-probe-home-") as home:
         env = {
             "PATH": os.environ.get("PATH", ""),
