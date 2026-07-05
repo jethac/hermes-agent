@@ -65,6 +65,42 @@ correct, or reject the witness.
 This is not a parallel STT architecture. The accepted speech cut is the unit of
 work. All sensor text attaches to that unit.
 
+## Three-Tier Sensor Fan-In
+
+The current design should be read as three tiers, not as an ASR pipeline with
+extra steps:
+
+| Tier | Latency Role | Authority |
+| --- | --- | --- |
+| Reflex | Detect speech, reject noise, handle barge-in, and acknowledge immediately after a valid cut. | Provisional only; may explain what it is asking the oracle to do. |
+| Gemma interpreter | Consume the bounded raw-audio cut plus same-cut Moshi/Open-S2S/reflex/classic-ASR witnesses. | Can promote corrected transcript, intent, entities, confidence, and compact audit metadata. |
+| Hermes active `/model` | Perform durable reasoning, tools, memory, spend, calls, files, and external messages. | Full oracle authority through the normal Hermes model selection path. |
+
+This means Gemma is not a sibling "multilingual ASR" job running beside the
+reflex. Gemma is the promotion gate for the accepted cut. Moshi/Open-S2S text
+is still useful, and in practice should be sent to Gemma with the raw voice, but
+only as a witness claim. The runtime should optimize for:
+
+```text
+valid speech cut -> immediate reflex acknowledgement
+valid speech cut -> raw-audio interpreter packet
+same-cut Moshi/Open-S2S text -> transcript_hypotheses[] on that packet
+Gemma promotion -> Hermes active /model oracle work
+```
+
+If a future reflex model is strong enough to emit useful multilingual text, its
+text follows the same rule. It is `reflex_transcript_hypothesis`, not durable
+truth. If a Moshi/Open-S2S model emits the text, it is
+`frontend_witness_hypothesis` or `s2s_transcript_hypothesis`, not the prompt.
+If classic ASR emits the text, it is `classic_asr_hypothesis`, not a release
+condition for high-risk action gates.
+
+The practical reason is reliability. The reflex is optimized for timing, not
+legal/financial/action authority. Moshi-style text can be clipped or
+hallucinated. Classic ASR can mis-handle code-switches, names, and low-quality
+Discord audio. Gemma gets all of those claims beside the waveform and decides
+what, if anything, becomes promoted evidence.
+
 ## Packet Contract
 
 The interpreter packet order is fixed:
@@ -170,6 +206,18 @@ The next implementation pass should prove:
 6. Latency metrics distinguish speech-end-to-reflex-ack, audio-cut-to-Gemma
    submission, witness arrival, Gemma promotion, oracle start, oracle first
    token, TTS first audio, and playback completion.
+
+7. A Moshi/Open-S2S witness can improve Gemma's promoted wording without
+   appearing verbatim in `oracle_text` or any action sink before promotion.
+8. A conflicting Moshi/Open-S2S witness is rejected or kept diagnostic-only
+   while the raw-audio-grounded promoted wording continues to the oracle.
+9. A text-only Moshi/Open-S2S packet is visibly degraded compatibility and does
+   not satisfy full-KAME, Stripe, NemoClaw, phone, file, memory, message, or
+   tool readiness.
+10. The final package audit fails closed if witness text appears in any
+    witness-assisted action sink value, or if a sink value lacks an
+    `interpreter_promoted` or `oracle_promoted` source, even when summary
+    booleans claim the sinks are clean.
 
 The headless proof must include at least three witness timing cases for the
 same contract: witness before raw audio, witness with raw audio, and witness

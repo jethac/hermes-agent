@@ -46,6 +46,13 @@ raw audio + timing + speaker/channel + reflex route + Moshi/Open-S2S witness
 That packet is the hackathon proof that the voice interface is fast without
 letting a quick transcript hallucination spend money or place a call.
 
+If the video has room, show two witness cases. In the first, Moshi/Open-S2S or
+reflex text agrees with the waveform and helps Gemma promote a concise request.
+In the second, a conflicting or text-only witness is rejected or held
+diagnostic-only. That makes the claim concrete: Hermes can use fast frontend
+text without letting it become the spend reason, provisioning payload, phone
+script, memory/file write, external message, or tool argument.
+
 For implementation and demo narration, the important verb is "attach." The
 frontend attaches Moshi/Open-S2S text to the same raw-audio cut as a witness
 hypothesis. Hermes does not translate that text into the user prompt, does not
@@ -88,6 +95,10 @@ We are building a voice-first operations layer for Hermes Agent:
   reflex captions, and classic ASR output can help Gemma recover clipped starts,
   names, numbers, and code-switched terms, but only
   `interpreter_promoted`/`oracle_promoted` fields become durable or actionable.
+- **Three-tier sensor fan-in rather than STT-first routing:** the reflex is the
+  timing layer, Gemma is the raw-audio promotion layer, and Hermes' active
+  `/model` is the business oracle. Transcript-looking frontend text is context
+  for Gemma, not an independent authority lane.
 - **Local model serving on PGX/Spark-class hardware** using vLLM containers for reproducible iteration.
 - **Hermes-native oracle selection** where `/model` and the existing Hermes model configuration remain authoritative.
 - **Stripe-enabled spending and provisioning** so Hermes can pay for tools and services under explicit user-granted limits.
@@ -151,6 +162,14 @@ against the waveform. The demo must keep those fields separate in logs and
 prompts: raw audio is primary interpreter evidence, Moshi/S2S and ASR text are
 labeled hypotheses, and only interpreter/oracle judgment can promote wording
 into a durable user request or tool-critical argument.
+
+The implementation should optimize two separate latencies. Reflex
+acknowledgement should happen immediately after a valid speech cut, even if
+Moshi/Open-S2S or classic ASR text has not arrived. Oracle completion may take
+longer, but it must start from promoted interpreter evidence rather than raw
+witness text. This is the product distinction: the user hears the system
+respond quickly while irreversible business actions wait for the promotion
+boundary.
 
 The current implementation target should be described as evidence-bundle KAME,
 not "Moshi STT" and not "Gemma ASR." The user-facing reflex is allowed to be an

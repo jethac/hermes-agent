@@ -22,6 +22,12 @@ after the interpreter request. Raw audio is the primary
 interpreter input; transcript hypotheses are optional context, or
 fallback/diagnostic context only in explicitly degraded mode.
 
+The revised implementation target is **fast reflex plus witness-assisted Gemma
+interpretation**, not "Gemma ASR in parallel." The reflex should answer the
+floor as soon as the energy/noise gate accepts a speech cut. Gemma should then
+receive the cut as raw audio, with Moshi/Open-S2S/reflex/classic-ASR text
+attached only as witness context. The oracle remains Hermes' active `/model`.
+
 Current decision: implement this as three-tier sensor fan-in. The reflex owns
 floor control and may emit a Moshi/open-S2S-style witness transcript. The Gemma
 interpreter receives the clipped waveform, VAD/energy timing, speaker/channel
@@ -132,6 +138,14 @@ This changes the next implementation checks:
   `low_energy_non_speech`, `waveform_conflict`, or `provider_conflict`
 - degraded text-only fallback must remain visible and fail full-KAME/action
   gates
+- Moshi/Open-S2S text that agrees with the waveform may improve
+  `interpreter_promoted` wording, but the witness text itself must remain
+  absent from `oracle_text` and action sinks until promotion
+- Moshi/Open-S2S text that conflicts with waveform, energy, speaker, channel,
+  or timing metadata must be rejected or kept diagnostic-only, with a typed
+  reason
+- the runtime should not require ASR evidence to acknowledge the user or create
+  an interpreter packet when raw audio and reflex state are available
 
 The latest implementation posture is stricter than "keep STT in parallel." The
 runtime may collect multiple hearing observations for one speech cut, but those
@@ -257,6 +271,27 @@ rejected `tool.result`, remain visible in audit, and create no oracle job. This
 keeps VoiceClaw/OpenClaw/Moshi-style frontends useful as reflex/witness
 surfaces without letting them bypass Hermes' active `/model`, approvals,
 NemoClaw policy, Stripe spend controls, or durable tool audit.
+
+## Current Next Implementation Shape
+
+Implement the runtime and headless proof around four explicit cases:
+
+1. **Raw audio only:** valid energy-gated cut produces an immediate reflex
+   acknowledgement, a direct-audio Gemma interpreter packet, and promoted
+   evidence for Hermes' active `/model`.
+2. **Raw audio plus agreeing witness:** Moshi/Open-S2S or reflex text is
+   attached under `transcript_hypotheses[]`; Gemma may use it to promote better
+   wording, but the original witness string remains non-authoritative.
+3. **Raw audio plus conflicting witness:** Gemma rejects or corrects the
+   witness with typed reasons such as `waveform_conflict`, `wrong_speaker`, or
+   `timing_conflict`; action sinks see only promoted wording.
+4. **Witness-only degraded mode:** text without raw audio may support captions
+   or clarification, but cannot close full-KAME, Stripe, NemoClaw, phone, file,
+   memory, message, or tool gates.
+
+The latency report for those cases should break out speech-end-to-reflex-ack,
+audio-cut-to-interpreter-submit, witness-arrival timing, interpreter promotion,
+oracle start, oracle first token, TTS first audio, and playback completion.
 
 The Moshi transcript is useful context, not control. It should help Gemma detect
 clipped prefixes, names, numbers, code-switching, and hallucinated commands,
