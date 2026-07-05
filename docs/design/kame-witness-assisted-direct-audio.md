@@ -223,6 +223,16 @@ Every witness hypothesis must also carry:
 - `tool_authority = false`
 - source, kind, digest, latency when available, and confidence when available
 
+The Gemma interpreter may receive the raw witness string in its ephemeral
+interpreter prompt because the point is to compare the frontend's claimed text
+against the waveform. That raw string is still not durable/actionable evidence.
+Persisted artifacts, status packets, oracle prompts, memory, files, Stripe,
+NemoClaw, phone, message, and tool sinks should carry only the witness source,
+timing, digest, confidence, arrival phase, speaker/channel binding,
+adjudication, and any later promoted wording. If promoted wording is needed,
+Gemma must emit it under `interpreter_promoted`, or the Hermes oracle must emit
+it under `oracle_promoted`.
+
 Provider field names do not carry authority. Adapter-edge names such as `stt`,
 `stt_text`, `caption`, `transcript`, `query`, or `user_text` normalize into
 `transcript_hypotheses[]` when raw audio exists. If raw audio is missing, the

@@ -262,10 +262,18 @@ message first:
 }
 ```
 
-The raw text may be present inside a redacted, access-controlled source artifact
-for audit, but normal Hermes prompts, egress messages, Stripe/NemoClaw reasons,
-phone payloads, memory writes, file writes, and tool arguments should carry only
-the digest, source/timing metadata, adjudication outcome, and promoted wording.
+The raw witness string may be present in the ephemeral Gemma interpreter request
+and in a redacted, access-controlled source artifact for audit. That is the
+only place raw Moshi/Open-S2S text is allowed before promotion: the interpreter
+needs the literal string so it can compare what the frontend believed it heard
+against the waveform. Normal Hermes oracle prompts, egress messages,
+Stripe/NemoClaw reasons, phone payloads, memory writes, file writes, durable
+history, and tool arguments should carry only the digest, source/timing
+metadata, adjudication outcome, and promoted wording.
+
+This distinction is mandatory for the witness-assisted design. The interpreter
+can see raw witness text; the rest of Hermes sees redacted witness metadata
+until `interpreter_promoted` or `oracle_promoted` wording exists.
 
 ### Three-Tier Runtime Acceptance
 

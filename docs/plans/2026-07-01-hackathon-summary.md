@@ -84,6 +84,12 @@ arrival phase, and adjudication outcome. The useful moment for judges is not
 Gemma compared it to raw audio, and only promoted evidence reached Stripe,
 NemoClaw, the phone payload, or durable Hermes history."
 
+The demo can still say that Gemma received the literal Moshi/Open-S2S transcript
+as context. The boundary is where that literal text may live: it is allowed
+inside the ephemeral interpreter request, and otherwise appears only as a
+digest/redacted witness record until Gemma or the Hermes oracle promotes
+wording. The artifact should make that redaction boundary visible.
+
 The design should not be described as a parallel STT race. The useful
 three-tier description is: the reflex controls the live floor, Gemma interprets
 the accepted raw-audio cut with any frontend transcript hypotheses attached,

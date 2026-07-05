@@ -668,6 +668,13 @@ belongs in the interpreter prompt. The oracle prompt should receive promoted
 wording and labeled evidence, not raw witness text masquerading as verified
 user speech.
 
+That means raw Moshi/Open-S2S witness text has one pre-promotion exception:
+Gemma may see it inside the ephemeral interpreter request so it can compare the
+literal claim against the audio. Durable Hermes history, oracle prompts,
+Stripe/NemoClaw reasons, phone scripts, files, memory, messages, status
+packets, and tool arguments must keep only digest/redacted witness metadata
+until `interpreter_promoted` or `oracle_promoted` wording exists.
+
 The normalized interpreter request should also make this trust order explicit
 with `interpreter_input_order = ["raw_audio", "metadata", "reflex", "transcript_hypotheses"]`.
 If raw audio is missing, the order and mode must say so and the turn is
