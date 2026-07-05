@@ -43,7 +43,7 @@ def test_package_audit_accepts_generated_headless_package(tmp_path):
     assert report["readiness_claim"] is False
     assert report["readiness_scope"] == "static_package_consistency_only"
     assert "does not satisfy live Discord" in report["readiness_note"]
-    assert report["checked_artifact_count"] == 97
+    assert report["checked_artifact_count"] == 98
     assert str(artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.json") in report[
         "checked_artifacts"
     ]
@@ -64,6 +64,9 @@ def test_package_audit_accepts_generated_headless_package(tmp_path):
     assert str(artifact_root / "voiceops-channel-policy" / "current" / "channel-policy-review.md") in report[
         "checked_artifacts"
     ]
+    assert str(
+        artifact_root / "voiceops-channel-policy" / "current" / "channel-policy-review-decision.json"
+    ) in report["checked_artifacts"]
     assert str(artifact_root / "voiceops-voice-operator" / "current" / "live-voice-evidence-scaffold" / "manifest.json") in report[
         "checked_artifacts"
     ]
@@ -1652,7 +1655,7 @@ def test_package_audit_rejects_stale_embedded_package_audit_summary(tmp_path):
         "ok": True,
         "status": "pass",
         "issues": [],
-        "checked_artifact_count": 97,
+        "checked_artifact_count": 98,
     }
     _write_json(plan_run_path, plan_run)
     assert audit_package(artifact_root)["ok"] is True
@@ -2431,6 +2434,30 @@ def test_package_audit_rejects_channel_policy_review_approval_claim(tmp_path):
     assert "channel_policy_review:real_egress_enabled_not_false" in report["issues"]
     assert "channel_policy_review:plan_run_command_missing_package_audit" in report["issues"]
     assert "channel_policy_review:missing_package_audit_review_command" in report["issues"]
+
+
+def test_package_audit_rejects_channel_policy_review_decision_scaffold_approval_claim(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    decision_path = artifact_root / "voiceops-channel-policy" / "current" / "channel-policy-review-decision.json"
+    decision = json.loads(decision_path.read_text(encoding="utf-8"))
+    decision["decision"] = "approve_dry_run_only"
+    decision["review_status"] = "approved"
+    decision["real_egress_enabled"] = True
+    for signoff in decision["signoffs"]:
+        signoff["approved"] = True
+        signoff["decision_by"] = f"{signoff['role']}-ref"
+        signoff["decided_at"] = "2026-07-05T00:00:00Z"
+    decision["acknowledged_operator_must_not"] = ["partial"]
+    _write_json(decision_path, decision)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "channel_policy_review_decision_scaffold:decision_not_pending" in report["issues"]
+    assert "channel_policy_review_decision_scaffold:review_status_not_pending" in report["issues"]
+    assert "channel_policy_review_decision_scaffold:real_egress_enabled_not_false" in report["issues"]
+    assert "channel_policy_review_decision_scaffold:signoff_preapproved" in report["issues"]
+    assert "channel_policy_review_decision_scaffold:unexpectedly_approved" in report["issues"]
 
 
 def test_package_audit_rejects_channel_policy_review_identity_and_artifact_drift(tmp_path):

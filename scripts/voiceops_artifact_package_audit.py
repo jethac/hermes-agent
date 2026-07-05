@@ -24,6 +24,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.voiceops_channel_policy import (
     CHANNEL_IDS,
+    REVIEW_DECISION_ARTIFACT_ID,
+    REVIEW_DECISION_SCHEMA_VERSION,
     REQUIRED_KAME_DESIGN_REFERENCE,
     REQUIRED_KAME_INPUT_ORDER,
     REQUIRED_KAME_INTERPRETER_PROFILE,
@@ -32,6 +34,8 @@ from scripts.voiceops_channel_policy import (
     REQUIRED_TRANSCRIPT_HYPOTHESIS_CONTRACT,
     REQUIRED_TRANSCRIPT_HYPOTHESIS_FIELDS,
     REQUIRED_UNPROMOTED_WITNESS_SINK_CHECKS,
+    stable_review_sha256,
+    validate_channel_policy_review_decision,
     validate_policy,
 )
 from scripts.voiceops_operator_state import validate_operator_state
@@ -129,6 +133,7 @@ EXPECTED_PACKAGE_ARTIFACTS = (
     "hackathon-voiceops-demo/current/voiceops-demo.md",
     "voiceops-channel-policy/current/channel-policy-review.json",
     "voiceops-channel-policy/current/channel-policy-review.md",
+    "voiceops-channel-policy/current/channel-policy-review-decision.json",
     "voiceops-channel-policy/current/channel-policy.json",
     "voiceops-channel-policy/current/channel-policy.md",
     "voiceops-operator-state/current/operator-state-events.jsonl",
@@ -1654,7 +1659,14 @@ def _audit_ordered_handoff_command(
         issues.append(f"{label}:{phase_id}:{issue_suffix}")
 
 
-def _audit_channel_policy(policy: Mapping[str, Any], review: Mapping[str, Any], issues: list[str]) -> None:
+def _audit_channel_policy(
+    policy: Mapping[str, Any],
+    review: Mapping[str, Any],
+    decision_scaffold: Mapping[str, Any],
+    *,
+    review_path: Path,
+    issues: list[str],
+) -> None:
     for issue in validate_policy(dict(policy)):
         issues.append(f"channel_policy:validation:{issue}")
 
@@ -1820,6 +1832,68 @@ def _audit_channel_policy(policy: Mapping[str, Any], review: Mapping[str, Any], 
                 issues.append("channel_policy_review:plan_run_command_missing_package_audit")
     if not has_package_audit_review_command:
         issues.append("channel_policy_review:missing_package_audit_review_command")
+
+    if decision_scaffold.get("schema_version") != REVIEW_DECISION_SCHEMA_VERSION:
+        issues.append("channel_policy_review_decision_scaffold:schema_version_mismatch")
+    if decision_scaffold.get("artifact_id") != REVIEW_DECISION_ARTIFACT_ID:
+        issues.append("channel_policy_review_decision_scaffold:artifact_id_mismatch")
+    for key in ("milestone", "policy_id", "policy_version"):
+        if decision_scaffold.get(key) != review.get(key):
+            issues.append(f"channel_policy_review_decision_scaffold:{key}_mismatch")
+    if decision_scaffold.get("review_artifact_ref") != "channel-policy-review.json":
+        issues.append("channel_policy_review_decision_scaffold:review_artifact_ref_mismatch")
+    if decision_scaffold.get("review_artifact_sha256") != hashlib.sha256(
+        review_path.read_bytes()
+    ).hexdigest():
+        issues.append("channel_policy_review_decision_scaffold:review_artifact_sha256_mismatch")
+    if decision_scaffold.get("review_artifact_stable_sha256") != stable_review_sha256(review):
+        issues.append("channel_policy_review_decision_scaffold:review_artifact_stable_sha256_mismatch")
+    if decision_scaffold.get("decision") != "pending_operator_review":
+        issues.append("channel_policy_review_decision_scaffold:decision_not_pending")
+    if decision_scaffold.get("review_status") != "pending_human_review":
+        issues.append("channel_policy_review_decision_scaffold:review_status_not_pending")
+    if decision_scaffold.get("artifact_only") is not True:
+        issues.append("channel_policy_review_decision_scaffold:artifact_only_not_true")
+    if decision_scaffold.get("changes_policy") is not False:
+        issues.append("channel_policy_review_decision_scaffold:changes_policy_not_false")
+    if decision_scaffold.get("changes_readiness_by_itself") is not False:
+        issues.append("channel_policy_review_decision_scaffold:changes_readiness_by_itself_not_false")
+    if decision_scaffold.get("real_egress_enabled") is not False:
+        issues.append("channel_policy_review_decision_scaffold:real_egress_enabled_not_false")
+    scaffold_gate = (
+        decision_scaffold.get("kame_action_evidence_gate")
+        if isinstance(decision_scaffold.get("kame_action_evidence_gate"), Mapping)
+        else {}
+    )
+    for key in ("gate_id", "design_reference", "required_interpreter_profile"):
+        if scaffold_gate.get(key) != review_kame_gate.get(key):
+            issues.append(f"channel_policy_review_decision_scaffold:kame_gate_{key}_mismatch")
+    if scaffold_gate.get("raw_transcript_text_allowed_in_channel_egress") is not False:
+        issues.append("channel_policy_review_decision_scaffold:kame_gate_allows_raw_transcript_text")
+    if scaffold_gate.get("unpromoted_witness_may_enter_payloads") is not False:
+        issues.append("channel_policy_review_decision_scaffold:kame_gate_allows_unpromoted_witness")
+    signoffs = decision_scaffold.get("signoffs")
+    if not isinstance(signoffs, list):
+        issues.append("channel_policy_review_decision_scaffold:signoffs_not_list")
+    else:
+        scaffold_roles = {
+            str(signoff.get("role"))
+            for signoff in signoffs
+            if isinstance(signoff, Mapping) and str(signoff.get("role") or "").strip()
+        }
+        if scaffold_roles != required_signoff_roles:
+            issues.append("channel_policy_review_decision_scaffold:signoff_roles_mismatch")
+        if any(isinstance(signoff, Mapping) and signoff.get("approved") is True for signoff in signoffs):
+            issues.append("channel_policy_review_decision_scaffold:signoff_preapproved")
+    scaffold_validation = validate_channel_policy_review_decision(
+        decision_scaffold,
+        review=review,
+        review_path=review_path,
+    )
+    if "decision_not_review_closing" not in scaffold_validation:
+        issues.append("channel_policy_review_decision_scaffold:unexpectedly_review_closing")
+    if "decision_review_status_not_approved" not in scaffold_validation:
+        issues.append("channel_policy_review_decision_scaffold:unexpectedly_approved")
 
 
 def _resolve_package_artifact_path(artifact_root: Path, path_text: str) -> Path:
@@ -3704,7 +3778,13 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     }
     spark_matrix = _read_json(spark_dir / "spark-model-matrix.json", issues, "spark_matrix")
     channel_policy = _read_json(channel_dir / "channel-policy.json", issues, "channel_policy")
-    channel_review = _read_json(channel_dir / "channel-policy-review.json", issues, "channel_policy_review")
+    channel_review_path = channel_dir / "channel-policy-review.json"
+    channel_review = _read_json(channel_review_path, issues, "channel_policy_review")
+    channel_review_decision_scaffold = _read_json(
+        channel_dir / "channel-policy-review-decision.json",
+        issues,
+        "channel_policy_review_decision_scaffold",
+    )
     channel_policy_markdown = _read_text(channel_dir / "channel-policy.md", issues, "channel_policy_markdown")
     channel_review_markdown = _read_text(
         channel_dir / "channel-policy-review.md",
@@ -3774,7 +3854,13 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         checked_artifacts=checked_artifacts,
         issues=issues,
     )
-    _audit_channel_policy(channel_policy, channel_review, issues)
+    _audit_channel_policy(
+        channel_policy,
+        channel_review,
+        channel_review_decision_scaffold,
+        review_path=channel_review_path,
+        issues=issues,
+    )
     _audit_execution_plan_contracts(execution_plan, issues)
     _audit_execution_plan_approval_surfaces(
         execution_plan=execution_plan,

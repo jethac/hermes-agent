@@ -16,6 +16,7 @@ from scripts.voiceops_channel_policy import (
     REQUIRED_TRANSCRIPT_HYPOTHESIS_CONTRACT,
     REQUIRED_TRANSCRIPT_HYPOTHESIS_FIELDS,
     apply_redactions,
+    build_review_decision_scaffold,
     build_channel_policy,
     build_review_packet,
     parse_args,
@@ -507,9 +508,16 @@ def test_write_channel_policy_artifacts(tmp_path):
     policy = build_channel_policy()
     paths = write_channel_policy(tmp_path, policy)
 
-    assert set(paths) == {"json", "markdown", "review_json", "review_markdown"}
+    assert set(paths) == {
+        "json",
+        "markdown",
+        "review_json",
+        "review_markdown",
+        "review_decision_json",
+    }
     payload = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
     review_payload = json.loads(Path(paths["review_json"]).read_text(encoding="utf-8"))
+    decision_payload = json.loads(Path(paths["review_decision_json"]).read_text(encoding="utf-8"))
     markdown = Path(paths["markdown"]).read_text(encoding="utf-8")
     review_markdown = Path(paths["review_markdown"]).read_text(encoding="utf-8")
     assert payload["scope"]["default_output_dir"] == str(DEFAULT_OUTPUT_DIR)
@@ -520,6 +528,29 @@ def test_write_channel_policy_artifacts(tmp_path):
     assert review_payload["review_status"] == "pending_human_review"
     assert review_payload["real_egress_enabled"] is False
     assert review_payload["changes_policy"] is False
+    assert decision_payload["schema_version"] == REVIEW_DECISION_SCHEMA_VERSION
+    assert decision_payload["artifact_id"] == REVIEW_DECISION_ARTIFACT_ID
+    assert decision_payload["review_artifact_ref"] == "channel-policy-review.json"
+    assert re.fullmatch(r"[0-9a-f]{64}", decision_payload["review_artifact_sha256"])
+    assert decision_payload["review_artifact_stable_sha256"] == stable_review_sha256(review_payload)
+    assert decision_payload["decision"] == "pending_operator_review"
+    assert decision_payload["review_status"] == "pending_human_review"
+    assert decision_payload["artifact_only"] is True
+    assert decision_payload["changes_policy"] is False
+    assert decision_payload["changes_readiness_by_itself"] is False
+    assert decision_payload["real_egress_enabled"] is False
+    assert {signoff["role"] for signoff in decision_payload["signoffs"]} == {
+        "business_owner",
+        "channel_owner",
+        "privacy_reviewer",
+        "security_owner",
+    }
+    assert not any(signoff["approved"] for signoff in decision_payload["signoffs"])
+    assert "decision_not_review_closing" in validate_channel_policy_review_decision(
+        decision_payload,
+        review=review_payload,
+        review_path=Path(paths["review_json"]),
+    )
     assert review_payload["kame_action_evidence_gate"]["gate_id"] == policy["kame_action_evidence_gate"]["gate_id"]
     assert review_payload["kame_action_evidence_gate"]["design_reference"] == REQUIRED_KAME_DESIGN_REFERENCE
     assert (
@@ -583,6 +614,23 @@ def test_write_channel_policy_artifacts(tmp_path):
     assert "Required transcript hypothesis fields" in review_markdown
     assert "Raw witness text is not allowed in channel egress" in review_markdown
     assert "Operator Must Not" in review_markdown
+
+
+def test_review_decision_scaffold_is_non_approving_until_filled():
+    review = build_review_packet(build_channel_policy())
+    decision = build_review_decision_scaffold(review)
+
+    assert decision["decision"] == "pending_operator_review"
+    assert decision["review_status"] == "pending_human_review"
+    assert decision["real_egress_enabled"] is False
+    assert decision["changes_policy"] is False
+    assert decision["changes_readiness_by_itself"] is False
+    assert decision["acknowledged_operator_must_not"] == []
+    assert not any(signoff["approved"] for signoff in decision["signoffs"])
+    issues = validate_channel_policy_review_decision(decision, review=review)
+    assert "decision_not_review_closing" in issues
+    assert "decision_review_status_not_approved" in issues
+    assert "decision_missing_operator_must_not_acknowledgements" in issues
 
 
 def test_channel_policy_review_packet_is_artifact_only_and_per_channel():

@@ -822,6 +822,65 @@ def load_channel_policy_review_decision(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def build_review_decision_scaffold(
+    review: Mapping[str, Any],
+    *,
+    review_artifact_sha256: str = "",
+) -> dict[str, Any]:
+    """Build a fill-in operator decision scaffold that does not approve egress."""
+
+    exact_sha = review_artifact_sha256 if re.fullmatch(r"[0-9a-f]{64}", review_artifact_sha256) else ""
+    required_signoffs = [
+        signoff for signoff in review.get("required_signoffs", []) if isinstance(signoff, Mapping)
+    ]
+    scaffold = {
+        "schema_version": REVIEW_DECISION_SCHEMA_VERSION,
+        "artifact_id": REVIEW_DECISION_ARTIFACT_ID,
+        "milestone": review.get("milestone"),
+        "policy_id": review.get("policy_id"),
+        "policy_version": review.get("policy_version"),
+        "review_artifact_ref": "channel-policy-review.json",
+        "review_artifact_sha256": exact_sha,
+        "review_artifact_stable_sha256": stable_review_sha256(review),
+        "decision": "pending_operator_review",
+        "decision_options": list(review.get("decision_options") or []),
+        "review_status": "pending_human_review",
+        "artifact_only": True,
+        "changes_policy": False,
+        "changes_readiness_by_itself": False,
+        "real_egress_enabled": False,
+        "kame_action_evidence_gate": {
+            "gate_id": (review.get("kame_action_evidence_gate") or {}).get("gate_id"),
+            "design_reference": (review.get("kame_action_evidence_gate") or {}).get(
+                "design_reference"
+            ),
+            "required_interpreter_profile": (review.get("kame_action_evidence_gate") or {}).get(
+                "required_interpreter_profile"
+            ),
+            "raw_transcript_text_allowed_in_channel_egress": False,
+            "unpromoted_witness_may_enter_payloads": False,
+        },
+        "acknowledged_operator_must_not": [],
+        "signoffs": [
+            {
+                "role": signoff.get("role"),
+                "approved": False,
+                "decision_by": "",
+                "decided_at": "",
+                "reason": signoff.get("reason"),
+            }
+            for signoff in required_signoffs
+        ],
+        "operator_instructions": [
+            "Fill one explicit review-closing decision from decision_options.",
+            "Set review_status to approved only after every required signoff is approved.",
+            "Keep artifact_only=true, changes_policy=false, changes_readiness_by_itself=false, and real_egress_enabled=false.",
+            "Run voiceops_plan_run.py with --channel-policy-operator-decision after completing this file.",
+        ],
+    }
+    return scaffold
+
+
 def validate_channel_policy_review_decision(
     decision: Mapping[str, Any],
     *,
@@ -1379,11 +1438,17 @@ def write_channel_policy(output_dir: Path, policy: dict[str, Any]) -> dict[str, 
         "markdown": output_dir / "channel-policy.md",
         "review_json": output_dir / "channel-policy-review.json",
         "review_markdown": output_dir / "channel-policy-review.md",
+        "review_decision_json": output_dir / "channel-policy-review-decision.json",
     }
     _write_json(paths["json"], policy)
     paths["markdown"].write_text(_markdown(policy), encoding="utf-8")
     _write_json(paths["review_json"], review)
     paths["review_markdown"].write_text(_review_markdown(review), encoding="utf-8")
+    decision_scaffold = build_review_decision_scaffold(
+        review,
+        review_artifact_sha256=_file_sha256(paths["review_json"]),
+    )
+    _write_json(paths["review_decision_json"], decision_scaffold)
     return {key: str(path) for key, path in paths.items()}
 
 
