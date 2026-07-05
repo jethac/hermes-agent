@@ -615,7 +615,6 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/tts-magpie-local-raw.json",
                     "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/sources/all-local-stack-smoke-raw.json",
                     "artifacts/voiceops-spark-matrix/current/spark-operator-runbook.md",
-                    SPARK_BENCHMARK_SCAFFOLD_EVIDENCE,
                     "artifacts/voiceops-spark-matrix/current/spark-model-matrix.json",
                 ],
                 "optional_artifacts": [

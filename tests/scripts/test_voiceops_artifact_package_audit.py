@@ -2701,6 +2701,42 @@ def test_package_audit_rejects_handoff_safe_command_order_drift(tmp_path):
     assert "plan_closure:local_spark_stack_matrix:primary_evidence_command_mismatch" in report["issues"]
 
 
+def test_package_audit_rejects_duplicate_closure_artifact_refs(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
+    closure_path = artifact_root / "voiceops-plan" / "current" / "readiness-closure-index.json"
+    handoff_path = artifact_root / "voiceops-plan" / "current" / "operator-handoff.json"
+    demo_handoff_path = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-handoff-preview.json"
+
+    plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
+    closure = json.loads(closure_path.read_text(encoding="utf-8"))
+    handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+    demo_handoff = json.loads(demo_handoff_path.read_text(encoding="utf-8"))
+
+    live_artifact = "artifacts/realtime-voice-evidence/live-current/manifest.json"
+    spark_artifact = "artifacts/voiceops-spark-matrix/current/spark-benchmark-scaffold/spark-benchmark-evidence.json"
+    for payload in (closure, plan_run["closure_index"]):
+        payload["next_actions"][0]["expected_artifacts"].append(live_artifact)
+        payload["next_actions"][2]["expected_artifacts"].append(spark_artifact)
+    plan_run["next_actions"] = plan_run["closure_index"]["next_actions"]
+    for payload in (handoff, demo_handoff, closure["operator_handoff"], plan_run["closure_index"]["operator_handoff"]):
+        payload["phases"][0]["expected_artifacts"].append(live_artifact)
+        payload["phases"][2]["expected_artifacts"].append(spark_artifact)
+
+    _write_json(plan_run_path, plan_run)
+    _write_json(closure_path, closure)
+    _write_json(handoff_path, handoff)
+    _write_json(demo_handoff_path, demo_handoff)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert f"plan_run:live_discord_voice_operator:expected_artifacts_duplicate:{live_artifact}" in report["issues"]
+    assert f"plan_closure:local_spark_stack_matrix:expected_artifacts_duplicate:{spark_artifact}" in report["issues"]
+    assert f"operator_handoff:live_discord_voice:expected_artifacts_duplicate:{live_artifact}" in report["issues"]
+    assert f"demo_handoff:local_spark_stack:expected_artifacts_duplicate:{spark_artifact}" in report["issues"]
+
+
 def test_package_audit_rejects_handoff_validation_command_without_safety_label(tmp_path):
     artifact_root = _generate_package(tmp_path)
     handoff_path = artifact_root / "voiceops-plan" / "current" / "operator-handoff.json"

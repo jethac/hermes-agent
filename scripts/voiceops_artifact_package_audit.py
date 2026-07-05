@@ -1411,6 +1411,8 @@ def _audit_handoff_phase_contract(label: str, handoff: Mapping[str, Any], issues
             continue
         if not isinstance(phase.get("blocked_by_current_environment"), Mapping):
             issues.append(f"{label}:{expected_phase_id}:missing_environment_blockers")
+        _audit_artifact_ref_list(label, f"{expected_phase_id}:expected_artifacts", phase.get("expected_artifacts"), issues)
+        _audit_artifact_ref_list(label, f"{expected_phase_id}:optional_artifacts", phase.get("optional_artifacts"), issues)
         _audit_handoff_command_order(label, expected_phase_id, phase, issues)
 
 
@@ -1598,6 +1600,9 @@ def _audit_next_action_command_order(label: str, actions: Any, issues: list[str]
         for action in actions
         if isinstance(action, Mapping)
     }
+    for gate_id, action in actions_by_gate.items():
+        _audit_artifact_ref_list(label, f"{gate_id}:expected_artifacts", action.get("expected_artifacts"), issues)
+        _audit_artifact_ref_list(label, f"{gate_id}:optional_artifacts", action.get("optional_artifacts"), issues)
     live = actions_by_gate.get("live_discord_voice_operator")
     if isinstance(live, Mapping):
         live_safe = str(live.get("first_safe_command") or "")
@@ -1661,6 +1666,18 @@ def _audit_review_actions(label: str, actions: Any, issues: list[str]) -> None:
     command = str(action.get("review_command") or "")
     if "voiceops_channel_policy.py" not in command:
         issues.append(f"{label}:channel_policy_review_command_invalid")
+
+
+def _audit_artifact_ref_list(label: str, field: str, value: Any, issues: list[str]) -> None:
+    if value is None:
+        return
+    if not isinstance(value, list):
+        issues.append(f"{label}:{field}_not_list")
+        return
+    normalized = [str(item) for item in value]
+    duplicates = sorted({item for item in normalized if normalized.count(item) > 1})
+    for duplicate in duplicates:
+        issues.append(f"{label}:{field}_duplicate:{duplicate}")
 
 
 def _audit_ordered_handoff_command(

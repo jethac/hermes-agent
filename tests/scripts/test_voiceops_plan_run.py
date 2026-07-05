@@ -859,6 +859,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         artifact.endswith("post-approval-receipts.json")
         for artifact in next_actions[1]["expected_artifacts"]
     )
+    for action in next_actions:
+        assert len(action["expected_artifacts"]) == len(set(action["expected_artifacts"]))
+        assert len(action["optional_artifacts"]) == len(set(action["optional_artifacts"]))
     assert next_actions[2]["blocked_by_current_environment"]["required_hardware"] == "1x NVIDIA DGX Spark"
     assert next_actions[2]["blocked_by_current_environment"]["needs_measured_spark_evidence"] is True
     assert next_actions[2]["primary_next_command"] == next_actions[2]["first_safe_command"]
@@ -981,6 +984,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "post-approval-receipts-scaffold/post-approval-receipts.json" in json.dumps(
         handoff["phases"][1]["expected_artifacts"]
     )
+    for phase in handoff["phases"]:
+        assert len(phase["expected_artifacts"]) == len(set(phase["expected_artifacts"]))
+        assert len(phase.get("optional_artifacts", [])) == len(set(phase.get("optional_artifacts", [])))
     assert handoff["phases"][2]["first_safe_command"] == next_actions[2]["first_safe_command"]
     assert handoff["phases"][2]["first_evidence_command"] == next_actions[2]["first_evidence_command"]
     assert handoff["phases"][2]["blocked_by_current_environment"] == {
