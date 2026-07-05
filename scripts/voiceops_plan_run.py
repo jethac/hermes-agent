@@ -861,6 +861,8 @@ def _build_next_actions(
                 **{
                     key: gate.get("collection_commands", {}).get(key)
                     for key in (
+                        "read_only_discovery",
+                        "ingest_read_only_discovery_evidence",
                         "validate_nemoclaw_action_packet",
                         "refresh_preflight_source_hashes",
                         "validate_post_approval_receipts",
@@ -868,6 +870,12 @@ def _build_next_actions(
                     )
                     if gate.get("collection_commands", {}).get(key)
                 },
+                "plan_index_read_only_discovery": gate.get("rerun_commands", {}).get(
+                    "plan_index_read_only_discovery"
+                ),
+                "plan_index_read_only_discovery_evidence": gate.get("rerun_commands", {}).get(
+                    "plan_index_read_only_discovery_evidence"
+                ),
             }
             validation_commands = {key: value for key, value in validation_commands.items() if value}
             operator_step = (

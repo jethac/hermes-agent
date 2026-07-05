@@ -843,6 +843,14 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "--package-audit" in next_actions[1]["first_safe_command"]
     assert "voiceops_provisioning_probe.py" in next_actions[1]["first_evidence_command"]
     assert "--run-readonly-discovery" not in next_actions[1]["first_evidence_command"]
+    assert "--run-readonly-discovery" in next_actions[1]["validation_commands"]["read_only_discovery"]
+    assert "--run-readonly-discovery" in next_actions[1]["validation_commands"]["plan_index_read_only_discovery"]
+    assert "--read-only-discovery-evidence" in next_actions[1]["validation_commands"][
+        "ingest_read_only_discovery_evidence"
+    ]
+    assert "--read-only-discovery-evidence" in next_actions[1]["validation_commands"][
+        "plan_index_read_only_discovery_evidence"
+    ]
     assert next_actions[1]["closure_plan"].endswith("voiceops-provisioning/current/setup-closure-plan.json")
     assert next_actions[1]["evidence_scaffold"].endswith(
         "voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json"
@@ -853,6 +861,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "voiceops-provisioning/current/provisioning-preflight-evidence.manifest.example.json"
     )
     assert "execute_approved_stripe_actions" not in next_actions[1]["validation_commands"]
+    assert "read_only_discovery" in next_actions[1]["validation_commands"]
+    assert "plan_index_read_only_discovery" in next_actions[1]["validation_commands"]
+    assert "ingest_read_only_discovery_evidence" in next_actions[1]["validation_commands"]
     assert "validate_nemoclaw_action_packet" in next_actions[1]["validation_commands"]
     assert "validate_post_approval_receipts" in next_actions[1]["validation_commands"]
     assert any(
@@ -3335,6 +3346,16 @@ def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
     assert payload["next_actions"][1]["evidence_template"].endswith("provisioning-preflight-evidence.template.json")
     assert "--preflight-evidence" in payload["next_actions"][1]["local_validation_command"]
     assert "execute_approved_stripe_actions" not in payload["next_actions"][1]["validation_commands"]
+    assert "--run-readonly-discovery" in payload["next_actions"][1]["validation_commands"]["read_only_discovery"]
+    assert "--run-readonly-discovery" in payload["next_actions"][1]["validation_commands"][
+        "plan_index_read_only_discovery"
+    ]
+    assert "--read-only-discovery-evidence" in payload["next_actions"][1]["validation_commands"][
+        "ingest_read_only_discovery_evidence"
+    ]
+    assert "--read-only-discovery-evidence" in payload["next_actions"][1]["validation_commands"][
+        "plan_index_read_only_discovery_evidence"
+    ]
     assert "validate_post_approval_receipts" in payload["next_actions"][1]["validation_commands"]
     assert payload["next_actions"][2]["primary_next_command"] == payload["next_actions"][2]["first_safe_command"]
     assert payload["next_actions"][2]["primary_evidence_command"] == payload["next_actions"][2]["first_evidence_command"]
