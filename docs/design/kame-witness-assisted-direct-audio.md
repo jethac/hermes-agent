@@ -25,6 +25,42 @@ That text is a witness claim about what a frontend believed it heard. It is not
 the transcript of record, not a second Hermes user turn, not `oracle_text`, not
 a spend reason, and not tool authority.
 
+## Current Amendment: Open-S2S Transcript Context
+
+The current answer to the Moshi/Open-S2S question is: yes, send the transcript
+with the raw voice, but only as interpreter context for the same accepted speech
+cut. This is not an ASR lane and not a separate Hermes prompt. It is one
+evidence bundle:
+
+```text
+accepted waveform
+  + VAD/energy/speaker/channel metadata
+  + reflex route and acknowledgement
+  + Moshi/Open-S2S/reflex/classic-ASR witness text
+  -> Gemma direct-audio interpreter
+  -> promoted wording for Hermes active /model
+```
+
+Four rules are non-negotiable:
+
+1. Same-cut binding: witness text must share `turn_id`, `audio_segment_ref`,
+   `evidence_bundle_id`, and `evidence_merge_key` with the waveform.
+2. Raw-audio-first ordering: Gemma sees `raw_audio`, `metadata`, `reflex`, then
+   `transcript_hypotheses`; the witness is never the first prompt item.
+3. Single-turn convergence: early, inline, or late witness text updates the same
+   bundle and oracle job; it must not create a second Hermes turn.
+4. Promotion boundary: raw witness strings may appear in the ephemeral
+   interpreter request, but durable history, Hermes `/model` prompts, Stripe,
+   NemoClaw, phone, memory, files, external messages, and tool arguments may use
+   only `interpreter_promoted` or `oracle_promoted` wording plus compact audit
+   metadata.
+
+This is the shape to use for Moshi, OpenClaw, VoiceClaw, classic ASR, or any
+future open speech-to-speech provider that exposes both audio and text. Provider
+vocabulary such as `stt`, `caption`, `transcript`, `query`, or `user_text` is
+adapter-edge vocabulary only; inside Hermes it becomes a
+`transcript_hypotheses[]` row with hypothesis authority.
+
 ## Moshi Transcript Context Lock
 
 The current design explicitly allows a Moshi/Open-S2S transcript to be sent to

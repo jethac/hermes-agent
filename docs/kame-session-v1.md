@@ -445,6 +445,20 @@ create a second Hermes turn or second oracle job. If raw audio is missing, the
 packet is degraded text-only compatibility mode and cannot satisfy full KAME or
 high-risk action gates.
 
+For implementation reviews, the shortest compliance test is:
+
+```text
+provider text present + raw audio present
+  -> normalize provider text into transcript_hypotheses[]
+  -> submit exactly one raw-audio-first interpreter bundle
+  -> expose no oracle_text or action payload until promotion
+```
+
+If an adapter instead turns Moshi/Open-S2S text into a Hermes user message,
+`oracle_text`, a spend reason, a phone script, a memory/file write, an external
+message, or a tool argument before promotion, the adapter is using the old
+STT-first shape and is non-conforming.
+
 Same-turn convergence is required even when the first packet was text-only and
 the raw audio arrives moments later. The first packet may create provisional
 queue state, but a later packet for the same accepted speech cut must update

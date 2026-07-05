@@ -71,6 +71,15 @@ The demo and implementation should show the user getting an immediate reflex
 acknowledgement, then one raw-audio interpreter bundle, then promoted evidence
 flowing into the active Hermes `/model`.
 
+Implementation delta: the adapter should never ask "which transcript won?"
+before Gemma has seen the waveform. The only normal question is "which same-cut
+witnesses belong beside this accepted waveform?" If Moshi/Open-S2S, VoiceClaw,
+OpenClaw, reflex, or classic-ASR text exists, attach it after raw audio,
+metadata, and reflex state. If it arrives late, merge it into the same bundle.
+If it arrives without raw audio, mark degraded compatibility. No case should
+turn the witness into the active Hermes prompt or a high-risk action payload
+before interpreter or oracle promotion.
+
 For VoiceOps actions, this distinction is a safety requirement. A Moshi,
 OpenClaw, VoiceClaw, reflex, or classic-ASR string can help Gemma interpret a
 service name, dollar amount, phone number, approval phrase, or code-switched

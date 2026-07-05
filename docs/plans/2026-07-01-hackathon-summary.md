@@ -55,6 +55,13 @@ raw audio + timing + speaker/channel + reflex route + Moshi/Open-S2S witness
 That packet is the hackathon proof that the voice interface is fast without
 letting a quick transcript hallucination spend money or place a call.
 
+The video should make the Moshi/Open-S2S point in one sentence: "The frontend's
+rough transcript travels with the waveform as evidence for Gemma; it does not
+become the user prompt." The artifact should back that sentence with one
+bundle id, one audio segment id, `transcript_hypotheses[]`, Gemma witness
+adjudication, and promoted Hermes oracle input. That keeps the demo from
+looking like a voice-message bot with tools bolted on.
+
 The judge-visible artifact should make the evidence boundary inspectable:
 
 - a reflex acknowledgement timestamp showing the system answered the floor
