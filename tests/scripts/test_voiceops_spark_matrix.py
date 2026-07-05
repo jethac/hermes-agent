@@ -400,6 +400,53 @@ def test_spark_matrix_defaults_to_needing_evidence(tmp_path):
     assert closure["benchmark_evidence_shape"]["evidence"][0]["schema_version"] == "voiceops.spark_benchmark_evidence.v1"
     assert closure["benchmark_evidence_shape"]["evidence"][0]["candidate_id"] == "oracle-nemotron3-super-local"
     assert closure["benchmark_evidence_shape"]["evidence"][1]["kind"] == "voiceops_spark_stack_smoke"
+    assert scaffold["scaffold_entries"]["reflex-moshi-s2s"]["role"] == "reflex"
+    assert scaffold["scaffold_entries"]["reflex-moshi-s2s"]["source_artifact"] == "sources/reflex-moshi-s2s-raw.json"
+    assert scaffold["scaffold_entries"]["reflex-moshi-s2s"]["secret_values_allowed"] is False
+    assert scaffold["scaffold_entries"]["reflex-moshi-s2s"]["full_phone_numbers_allowed"] is False
+    assert {
+        "metric": "ack_latency_ms",
+        "operator": "<=",
+        "value": 350,
+        "unit": "ms",
+    } in scaffold["scaffold_entries"]["reflex-moshi-s2s"]["required_metrics"]
+    assert scaffold["scaffold_entries"]["oracle-nemotron3-super-local"]["role"] == "oracle"
+    assert scaffold["scaffold_entries"]["oracle-nemotron3-super-local"]["locality"] == "local_spark"
+    assert scaffold["scaffold_entries"]["oracle-nemotron3-super-local"][
+        "collector_attestation_required_fields"
+    ] == [
+        "collector_name",
+        "collector_version",
+        "run_id",
+        "command_argv",
+        "git_commit",
+        "started_at",
+        "finished_at",
+        "raw_artifact_sha256",
+        "redacted_artifact_sha256",
+        "parent_manifest_sha256",
+    ]
+    assert scaffold["scaffold_entries"]["voiceops_spark_stack_smoke"]["required_components"] == [
+        "reflex",
+        "interpreter",
+        "oracle",
+        "tts",
+        "sidecar",
+    ]
+    assert scaffold["scaffold_entries"]["voiceops_spark_stack_smoke"][
+        "source_artifact_must_include_kame_turn_contract"
+    ] is True
+    assert scaffold["scaffold_entries"]["voiceops_spark_stack_smoke"][
+        "transcript_hypotheses_are_witness_context"
+    ] is True
+    assert scaffold["completion_check"]["remove_every_example_only_marker"] is True
+    assert "--refresh-source-hashes" in scaffold["completion_check"]["refresh_source_hashes_command"]
+    assert "--lint-evidence" in scaffold["completion_check"]["lint_command"]
+    assert "spark-benchmark-scaffold/spark-benchmark-evidence.json" in scaffold["completion_check"][
+        "validate_command"
+    ]
+    assert any("Hosted fallback rows" in note for note in scaffold["operator_notes"])
+    assert any("ASR rows are optional witness/fallback evidence" in note for note in scaffold["operator_notes"])
     assert "scripts/dgx_spark_gemma4_voice_eval.sh" == closure["rerun_commands"]["dgx_eval"]
     assert "--refresh-source-hashes" in closure["rerun_commands"]["refresh_source_hashes"]
     assert "--lint-evidence" in closure["rerun_commands"]["lint_evidence"]

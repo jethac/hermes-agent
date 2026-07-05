@@ -1605,6 +1605,7 @@ def write_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
     sources_dir.mkdir(parents=True, exist_ok=True)
 
     scaffold = _evidence_example()
+    candidates_by_id = {candidate.candidate_id: candidate for candidate in default_candidates()}
     source_names = {
         "reflex-moshi-s2s": "reflex-moshi-s2s-raw.json",
         "interpreter-gemma4-e2b": "interpreter-gemma4-e2b-raw.json",
@@ -1614,6 +1615,7 @@ def write_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
         "tts-magpie-local": "tts-magpie-local-raw.json",
         STACK_SMOKE_KIND: "all-local-stack-smoke-raw.json",
     }
+    scaffold_entries: dict[str, dict[str, Any]] = {}
     expected_source_names = set(source_names.values())
     for stale_source in sources_dir.glob("*.json"):
         if stale_source.name in expected_source_names:
@@ -1643,7 +1645,72 @@ def write_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
         item["source_artifact_sha256"] = source_sha256
         if isinstance(item.get("collector_attestation"), dict):
             item["collector_attestation"]["redacted_artifact_sha256"] = source_sha256
+        if source_key == STACK_SMOKE_KIND:
+            scaffold_entries[source_key] = {
+                "entry_kind": STACK_SMOKE_KIND,
+                "source_artifact": item["source_artifact"],
+                "source_artifact_sha256": source_sha256,
+                "required_components": list(STACK_SMOKE_REQUIRED_COMPONENTS),
+                "required_oracle_routes": list(STACK_SMOKE_REQUIRED_ORACLE_ROUTES),
+                "required_input_sources": ["native_audio"],
+                "required_reflex_provider": "s2s_or_timing",
+                "required_interpreter_provider": "gemma_audio",
+                "required_metrics": sorted((item.get("metrics") or {}).keys()),
+                "source_artifact_must_include_kame_turn_contract": True,
+                "transcript_hypotheses_are_witness_context": True,
+                "replace_example_only": True,
+                "secret_values_allowed": False,
+                "full_phone_numbers_allowed": False,
+            }
+        else:
+            candidate = candidates_by_id.get(source_key)
+            scaffold_entries[source_key] = {
+                "candidate_id": source_key,
+                "role": candidate.role if candidate else None,
+                "priority": candidate.priority if candidate else None,
+                "locality": candidate.locality if candidate else item.get("locality"),
+                "model": candidate.model if candidate else item.get("model"),
+                "source_artifact": item["source_artifact"],
+                "source_artifact_sha256": source_sha256,
+                "required_metrics": [
+                    {
+                        "metric": target.metric,
+                        "operator": target.operator,
+                        "value": target.value,
+                        "unit": target.unit,
+                    }
+                    for target in (candidate.required_targets if candidate else [])
+                ],
+                "collector_attestation_required_fields": list(COLLECTOR_ATTESTATION_REQUIRED_FIELDS),
+                "replace_example_only": True,
+                "secret_values_allowed": False,
+                "full_phone_numbers_allowed": False,
+            }
         paths[f"scaffold_source_{source_key}"] = source_path
+
+    scaffold["scaffold_entries"] = scaffold_entries
+    scaffold["completion_check"] = {
+        "remove_every_example_only_marker": True,
+        "refresh_source_hashes_command": (
+            "uv run python scripts/voiceops_spark_matrix.py --refresh-source-hashes "
+            f"{SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
+        ),
+        "lint_command": (
+            "uv run python scripts/voiceops_spark_matrix.py --lint-evidence --evidence "
+            f"{SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
+        ),
+        "validate_command": (
+            "uv run python scripts/voiceops_spark_matrix.py "
+            "--output-dir artifacts/voiceops-spark-matrix/current --evidence "
+            f"{SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
+        ),
+    }
+    scaffold["operator_notes"] = [
+        "Collect evidence on the DGX Spark host, not on the Mac Mini or PGX when they are reserved for other work.",
+        "Do not paste secrets, private transcripts, phone numbers, or provider tokens into source artifacts.",
+        "Hosted fallback rows may be useful for demo fallback, but they do not validate one-Spark readiness.",
+        "ASR rows are optional witness/fallback evidence; reflex, interpreter, oracle, TTS, sidecar, and stack-smoke rows close the local stack gate.",
+    ]
 
     scaffold_path = scaffold_dir / "spark-benchmark-evidence.json"
     _write_json(scaffold_path, scaffold)

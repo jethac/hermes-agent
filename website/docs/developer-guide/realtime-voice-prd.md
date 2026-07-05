@@ -37,6 +37,16 @@ should be passed to the interpreter when it describes the same speech cut, but
 only as `transcript_hypotheses[]` witness context. It must not become a second
 Hermes turn or action authority by arriving first.
 
+2026-07 design checkpoint: yes, a Moshi/Open-S2S transcript can be provided to
+Gemma alongside the raw voice. That is the intended open-S2S integration shape.
+The transcript is a same-cut witness claim about what the realtime frontend
+believed it heard; the waveform remains primary evidence. The interpreter may
+use that witness to recover clipped prefixes, names, numbers, language switches,
+or rough intent, but Hermes must treat the original provider text as
+non-authoritative until `interpreter_promoted` or `oracle_promoted` evidence
+exists. Any adapter that routes the provider text around Gemma as a direct
+Hermes prompt is outside the full-KAME path.
+
 ## Production-Readiness Ladder
 
 Realtime voice should ship in visible tiers instead of as a single "done" switch. Each tier keeps the same desktop websocket and Hermes oracle boundary, so users can move inference from a laptop to a LAN sidecar or provider endpoint without changing the desktop app.
@@ -201,6 +211,13 @@ names, numbers, and code-switched phrases, but they must not create a second
 oracle turn, overwrite `oracle_text`, satisfy a high-risk action approval, or
 become durable user history unless the interpreter or oracle emits promoted
 evidence.
+
+The raw witness string is interpreter input, not oracle input. The oracle should
+receive promoted wording, intent, entities, confidence, and compact audit
+metadata such as source, digest, arrival phase, adjudication outcome, and typed
+rejection reasons. Logs and readiness artifacts should prefer redacted text or
+digests for witness strings so package evidence can prove the authority boundary
+without leaking private speech, secrets, provider tokens, or phone numbers.
 
 Partial hypotheses are transient. A partial from the reflex, Moshi/Open-S2S, or
 classic ASR may be used for UI/debug latency visibility while a speech cut is
