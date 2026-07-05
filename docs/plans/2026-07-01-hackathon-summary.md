@@ -359,6 +359,14 @@ evidence for Gemma/oracle work, not the normal reflex driver. Classic ASR should
 be retained as a fallback and diagnostic lane, not as a mandatory proof that the
 system heard the user.
 
+The demo artifact should name the normal path **witness-assisted direct-audio**:
+the reflex acknowledges after the accepted speech cut, Gemma receives the raw
+audio plus Moshi/Open-S2S/reflex/classic-ASR witness hypotheses in one
+interpreter packet, and Hermes' active `/model` receives only promoted wording
+and compact audit evidence. This is the answer to the Moshi question: yes, use
+the Moshi transcript with the raw voice, but use it as interpreter context, not
+as a parallel ASR control path.
+
 ## Demo Script
 
 1. Join Discord voice with `/voice join`.
@@ -388,6 +396,14 @@ system heard the user.
   available, arrival phase, `authority = "hypothesis"`, `tool_authority =
   false`, and an interpreter adjudication outcome before any action payload can
   reference their wording.
+- The normal voice artifact declares `mode = "witness_assisted_direct_audio"`
+  when raw audio and Moshi/Open-S2S or equivalent witness text are both present.
+  The artifact shows the interpreter input order as raw audio, metadata, reflex,
+  then transcript hypotheses.
+- Interpreter output keeps `witness_adjudications` separate from
+  `interpreter_promoted` fields. The active Hermes `/model` receives promoted
+  wording, intent, entities, confidence, and compact audit metadata, not raw
+  witness strings.
 - In a multi-human voice channel, witness text is bound to the accepted
   speaker/channel before it can influence promoted evidence. Wrong-speaker,
   wrong-channel, stale, or ambiguous-speaker hypotheses remain audit-only and

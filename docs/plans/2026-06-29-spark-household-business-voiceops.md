@@ -103,6 +103,14 @@ and multilingual/code-switched speech while preserving the safety boundary:
 unpromoted witness text stays out of `oracle_text`, Stripe, NemoClaw, phone,
 memory, file, external-message, and tool payloads.
 
+Current profile name: `witness_assisted_direct_audio`. Use it for the normal
+full-KAME path when the adapter has both the accepted waveform and
+transcript-like witness text from Moshi/Open-S2S, VoiceClaw/OpenClaw, reflex
+captioning, or classic ASR. The artifact should show one evidence bundle, raw
+audio first, witness hypotheses last, Gemma `witness_adjudications`, Gemma
+`interpreter_promoted` fields, and Hermes' active `/model` receiving only
+promoted wording plus compact audit metadata.
+
 ## Spark Model Strategy
 
 There are two related but distinct model strategies.
@@ -174,6 +182,10 @@ Target KAME layout:
   separate ASR conversation. It is one clipped raw-audio turn, one reflex route,
   and one interpreter bundle. Moshi/open-S2S, VoiceClaw/OpenClaw, reflex, and
   classic ASR text all enter as witness hypotheses when available.
+- Witness-assisted direct audio: when the same turn has raw audio plus a Moshi
+  or equivalent transcript, the interpreter packet must declare the
+  `witness_assisted_direct_audio` profile and keep `witness_adjudications`
+  separate from `interpreter_promoted` output.
 - Three-tier pivot: use a fast reflex for live floor control, Gemma for
   direct-audio interpretation of the accepted speech cut, and Hermes' active
   `/model` as the oracle. A Moshi/open-S2S transcript may be provided to Gemma

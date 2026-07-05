@@ -61,6 +61,27 @@ reflex acknowledgement or raw-audio interpreter submission when the speech gate
 accepted a cut. A present transcript must improve or explain interpretation
 without gaining authority by being fast.
 
+The implementation target is now **witness-assisted direct-audio**. This means
+Hermes should prefer a single interpreter packet that contains the bounded raw
+audio cut plus every same-cut hearing hypothesis the frontend can provide. A
+Moshi/Open-S2S transcript, VoiceClaw/OpenClaw caption, reflex caption, or
+classic-ASR string may be sent to Gemma with the waveform, but only as context
+for adjudication. It is not a separate ASR lane, not a second Hermes user turn,
+and not a fallback source of action authority.
+
+The interpreter should emit two different classes of output:
+
+- `witness_adjudications`: per-hypothesis decisions such as
+  `accepted_as_supporting_evidence`, `corrected_by_audio`, or
+  `rejected_or_diagnostic_only`
+- `interpreter_promoted`: the corrected wording, intent, entities, confidence,
+  and compact audit summary that Hermes' active `/model` may use
+
+This separation is mandatory for household/business actions. The oracle can be
+slow, local, hosted, Nemotron, or any model selected by Hermes' normal `/model`
+interface; the voice stack must still hand it only promoted evidence plus
+compact provenance, never raw witness strings masquerading as verified speech.
+
 ## Source Of Truth
 
 The current architecture is **reflex -> interpreter -> oracle**.

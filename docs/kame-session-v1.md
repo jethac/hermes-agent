@@ -210,6 +210,67 @@ for audit, but normal Hermes prompts, egress messages, Stripe/NemoClaw reasons,
 phone payloads, memory writes, file writes, and tool arguments should carry only
 the digest, source/timing metadata, adjudication outcome, and promoted wording.
 
+### Witness-Assisted Direct-Audio Profile
+
+Adapters that can supply both waveform and transcript-like text should use the
+`witness_assisted_direct_audio` profile. The profile has one control rule:
+submit one raw-audio interpreter packet for the accepted speech cut, then attach
+all same-cut transcript-like provider output as witness hypotheses. The adapter
+must not translate the provider text into a Hermes user message before Gemma
+adjudicates the packet.
+
+Required profile fields:
+
+- `mode = "witness_assisted_direct_audio"`
+- `turn_id`, `audio_segment_ref`, `evidence_bundle_id`, and
+  `evidence_merge_key`
+- `audio.primary_interpreter_evidence = true`
+- `interpreter_input_order = ["raw_audio", "metadata", "reflex",
+  "transcript_hypotheses"]`
+- `transcript_hypotheses[]` rows with `source`, `kind`, `text_digest`,
+  `role = "witness_context"`, `authority = "hypothesis"`,
+  `promotion_required = "interpreter_promoted_or_oracle_promoted"`,
+  `tool_authority = false`, `arrival_phase`, `speaker_or_actor_ref`, and
+  `channel_or_surface_ref`
+
+Recommended profile fields:
+
+- `latency_ms` and `confidence` when the provider reports them
+- `audio_time_range_ms` for the portion of the speech cut the witness claims
+  to describe
+- `partial_state`, `superseded_partial_count`, and
+  `superseded_partial_text_digests` when streaming partials collapse into a
+  final same-source hypothesis
+- `energy_gate` and `vad` metadata proving that silence, echo, and low-energy
+  artifacts did not create the accepted cut
+
+The interpreter response must keep witness decisions separate from promoted
+speech:
+
+```json
+{
+  "witness_adjudications": [
+    {
+      "text_digest": "sha256:redacted",
+      "source": "moshi",
+      "adjudication": "corrected_by_audio",
+      "rejection_reasons": []
+    }
+  ],
+  "interpreter_promoted": {
+    "corrected_transcript_digest": "sha256:redacted",
+    "intent": "provision_budgeted_phone_handoff",
+    "entities": ["budget", "phone_handoff"],
+    "confidence": 0.82
+  }
+}
+```
+
+Only `interpreter_promoted` or later `oracle_promoted` fields may feed Hermes'
+active `/model`, durable history, Stripe/NemoClaw spend reasons, phone payloads,
+memory/file writes, external messages, or tool arguments. Raw witness strings
+remain audit context even when they helped Gemma produce the promoted fields.
+
 ## Current Contract
 
 `kame_session_v1` carries one accepted speech cut, not one transcript. The

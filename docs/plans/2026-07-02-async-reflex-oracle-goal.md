@@ -39,6 +39,13 @@ Moshi/reflex/classic-ASR text is attached as `transcript_hypotheses[]` after
 raw audio, metadata, and reflex state. The active Hermes `/model` receives only
 promoted wording, intent, entities, and compact labeled evidence.
 
+Name this runtime profile `witness_assisted_direct_audio`. It is the default
+full-KAME shape whenever raw audio and Moshi/Open-S2S/reflex/classic-ASR text
+are both available for the same speech cut. The profile exists to make the
+implementation and audits unambiguous: provider text is welcome beside the
+waveform, but the waveform is primary, Gemma adjudicates each witness, and the
+oracle sees only promoted fields.
+
 The implementation should optimize for this ordering:
 
 ```text
@@ -92,9 +99,14 @@ This changes the next implementation checks:
 
 - the speech gate must produce one accepted cut before direct-audio
   interpretation
+- the interpreter packet should declare `mode =
+  "witness_assisted_direct_audio"` when it contains raw audio plus same-cut
+  witness text
 - witness-before-cut, witness-with-cut, and witness-after-start updates must
   converge on one bundle and one oracle job
 - Gemma receives raw audio before witness text in the interpreter request
+- Gemma response handling must store `witness_adjudications` separately from
+  `interpreter_promoted` fields
 - rejected or unpromoted witness text must be proven absent from Stripe,
   NemoClaw, phone, memory, file, message, tool, and durable-history sinks
 - every `rejected_or_diagnostic_only` witness hypothesis must include typed
