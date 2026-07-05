@@ -1705,6 +1705,8 @@ def test_package_audit_rejects_weakened_channel_policy_kame_gate(tmp_path):
     review_path = artifact_root / "voiceops-channel-policy" / "current" / "channel-policy-review.json"
     review = json.loads(review_path.read_text(encoding="utf-8"))
     review["kame_action_evidence_gate"]["accepted_promoted_authorities"] = ["interpreter_promoted"]
+    review["kame_action_evidence_gate"]["design_reference"] = "docs/design/full-kame-style-realtime-voice.md"
+    review["kame_action_evidence_gate"]["required_interpreter_profile"] = "text_oracle_fallback"
     review["kame_action_evidence_gate"]["required_interpreter_input_order"] = [
         "transcript_hypotheses",
         "raw_audio",
@@ -1727,6 +1729,8 @@ def test_package_audit_rejects_weakened_channel_policy_kame_gate(tmp_path):
     assert report["ok"] is False
     assert "channel_policy_review:kame_action_evidence_gate_mismatch" in report["issues"]
     assert "channel_policy_review:kame_gate_promoted_authorities_mismatch" in report["issues"]
+    assert "channel_policy_review:kame_gate_design_reference_mismatch" in report["issues"]
+    assert "channel_policy_review:kame_gate_interpreter_profile_mismatch" in report["issues"]
     assert "channel_policy_review:kame_gate_input_order_mismatch" in report["issues"]
     assert (
         "channel_policy_review:kame_gate_missing_transcript_hypothesis_fields:"

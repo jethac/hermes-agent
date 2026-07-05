@@ -24,7 +24,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.voiceops_channel_policy import (
     CHANNEL_IDS,
+    REQUIRED_KAME_DESIGN_REFERENCE,
     REQUIRED_KAME_INPUT_ORDER,
+    REQUIRED_KAME_INTERPRETER_PROFILE,
     REQUIRED_KAME_LINEAGE_FIELDS,
     REQUIRED_KAME_PROMOTED_AUTHORITIES,
     REQUIRED_TRANSCRIPT_HYPOTHESIS_CONTRACT,
@@ -1707,6 +1709,10 @@ def _audit_channel_policy(policy: Mapping[str, Any], review: Mapping[str, Any], 
     if review_kame_gate:
         if set(review_kame_gate.get("accepted_promoted_authorities") or []) != REQUIRED_KAME_PROMOTED_AUTHORITIES:
             issues.append("channel_policy_review:kame_gate_promoted_authorities_mismatch")
+        if review_kame_gate.get("design_reference") != REQUIRED_KAME_DESIGN_REFERENCE:
+            issues.append("channel_policy_review:kame_gate_design_reference_mismatch")
+        if review_kame_gate.get("required_interpreter_profile") != REQUIRED_KAME_INTERPRETER_PROFILE:
+            issues.append("channel_policy_review:kame_gate_interpreter_profile_mismatch")
         if review_kame_gate.get("required_interpreter_input_order") != REQUIRED_KAME_INPUT_ORDER:
             issues.append("channel_policy_review:kame_gate_input_order_mismatch")
         missing_hypothesis_fields = REQUIRED_TRANSCRIPT_HYPOTHESIS_FIELDS - set(

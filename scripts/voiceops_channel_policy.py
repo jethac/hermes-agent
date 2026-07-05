@@ -163,6 +163,8 @@ REQUIRED_KAME_LINEAGE_FIELDS = {
 }
 REQUIRED_KAME_PROMOTED_AUTHORITIES = {"interpreter_promoted", "oracle_promoted"}
 REQUIRED_KAME_INPUT_ORDER = ["raw_audio", "metadata", "reflex", "transcript_hypotheses"]
+REQUIRED_KAME_INTERPRETER_PROFILE = "witness_assisted_direct_audio"
+REQUIRED_KAME_DESIGN_REFERENCE = "docs/design/kame-witness-assisted-direct-audio.md"
 REQUIRED_TRANSCRIPT_HYPOTHESIS_FIELDS = {
     "kind",
     "source",
@@ -596,6 +598,8 @@ def build_channel_policy() -> dict[str, Any]:
         "escalation_policy": [asdict(step) for step in escalations],
         "kame_action_evidence_gate": {
             "gate_id": "kame_promoted_evidence_required_for_channel_egress",
+            "design_reference": REQUIRED_KAME_DESIGN_REFERENCE,
+            "required_interpreter_profile": REQUIRED_KAME_INTERPRETER_PROFILE,
             "required_for_routes": [
                 "approved_phone_handoff_call",
                 "customer_visible_outbound",
@@ -999,6 +1003,10 @@ def validate_policy(policy: dict[str, Any]) -> list[str]:
             issues.append(f"kame_gate_missing_lineage_fields:{','.join(sorted(missing_lineage))}")
         if set(kame_gate.get("accepted_promoted_authorities") or []) != REQUIRED_KAME_PROMOTED_AUTHORITIES:
             issues.append("kame_gate_promoted_authorities_mismatch")
+        if kame_gate.get("design_reference") != REQUIRED_KAME_DESIGN_REFERENCE:
+            issues.append("kame_gate_design_reference_mismatch")
+        if kame_gate.get("required_interpreter_profile") != REQUIRED_KAME_INTERPRETER_PROFILE:
+            issues.append("kame_gate_interpreter_profile_mismatch")
         if kame_gate.get("transcript_hypotheses_authority") != "hypothesis":
             issues.append("kame_gate_transcript_hypotheses_authority_not_hypothesis")
         if kame_gate.get("transcript_hypotheses_tool_authority") is not False:
@@ -1140,6 +1148,8 @@ def _markdown(policy: dict[str, Any]) -> str:
     gate = policy["kame_action_evidence_gate"]
     lines.extend(["", "## KAME Action Evidence Gate", ""])
     lines.append(f"- Gate ID: `{gate['gate_id']}`")
+    lines.append(f"- Design reference: `{gate['design_reference']}`")
+    lines.append(f"- Required interpreter profile: `{gate['required_interpreter_profile']}`")
     lines.append(f"- Required routes: {', '.join(gate['required_for_routes'])}")
     lines.append(f"- Accepted promoted authorities: {', '.join(gate['accepted_promoted_authorities'])}")
     lines.append(f"- Required interpreter input order: {', '.join(gate['required_interpreter_input_order'])}")
@@ -1210,6 +1220,8 @@ def _review_markdown(review: dict[str, Any]) -> str:
     kame_gate = review["kame_action_evidence_gate"]
     lines.extend(["", "## KAME Action Evidence Gate", ""])
     lines.append(f"- Gate ID: `{kame_gate['gate_id']}`")
+    lines.append(f"- Design reference: `{kame_gate['design_reference']}`")
+    lines.append(f"- Required interpreter profile: `{kame_gate['required_interpreter_profile']}`")
     lines.append(f"- Required routes: {', '.join(kame_gate['required_for_routes'])}")
     lines.append(f"- Accepted promoted authorities: {', '.join(kame_gate['accepted_promoted_authorities'])}")
     lines.append(f"- Required lineage fields: {', '.join(kame_gate['required_lineage_fields'])}")

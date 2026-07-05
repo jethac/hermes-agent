@@ -8,6 +8,8 @@ from pathlib import Path
 
 from scripts.voiceops_channel_policy import (
     DEFAULT_OUTPUT_DIR,
+    REQUIRED_KAME_DESIGN_REFERENCE,
+    REQUIRED_KAME_INTERPRETER_PROFILE,
     REQUIRED_KAME_INPUT_ORDER,
     REQUIRED_TRANSCRIPT_HYPOTHESIS_CONTRACT,
     REQUIRED_TRANSCRIPT_HYPOTHESIS_FIELDS,
@@ -89,6 +91,8 @@ def test_channel_policy_contains_approval_escalation_audit_and_redaction_rules()
     assert any("Cross-channel handoff" in rule for rule in policy["audit_id_continuity"]["rules"])
     gate = policy["kame_action_evidence_gate"]
     assert gate["gate_id"] == "kame_promoted_evidence_required_for_channel_egress"
+    assert gate["design_reference"] == REQUIRED_KAME_DESIGN_REFERENCE
+    assert gate["required_interpreter_profile"] == REQUIRED_KAME_INTERPRETER_PROFILE
     assert set(gate["accepted_promoted_authorities"]) == {"interpreter_promoted", "oracle_promoted"}
     assert gate["transcript_hypotheses_authority"] == "hypothesis"
     assert gate["transcript_hypotheses_tool_authority"] is False
@@ -193,6 +197,8 @@ def test_channel_policy_validates_kame_action_evidence_gate():
 
     unsafe = json.loads(json.dumps(policy))
     gate = unsafe["kame_action_evidence_gate"]
+    gate["design_reference"] = "docs/design/full-kame-style-realtime-voice.md"
+    gate["required_interpreter_profile"] = "text_oracle_fallback"
     gate["required_for_routes"].remove("approved_phone_handoff_call")
     gate["required_lineage_fields"].remove("evidence_merge_key")
     gate["accepted_promoted_authorities"] = ["interpreter_promoted"]
@@ -213,6 +219,8 @@ def test_channel_policy_validates_kame_action_evidence_gate():
         "kame_gate_missing_routes:approved_phone_handoff_call",
         "kame_gate_missing_lineage_fields:evidence_merge_key",
         "kame_gate_promoted_authorities_mismatch",
+        "kame_gate_design_reference_mismatch",
+        "kame_gate_interpreter_profile_mismatch",
         "kame_gate_transcript_hypotheses_authority_not_hypothesis",
         "kame_gate_transcript_hypotheses_tool_authority_not_false",
         "kame_gate_missing_transcript_hypothesis_fields:arrival_phase,text_digest",
@@ -509,6 +517,11 @@ def test_write_channel_policy_artifacts(tmp_path):
     assert review_payload["real_egress_enabled"] is False
     assert review_payload["changes_policy"] is False
     assert review_payload["kame_action_evidence_gate"]["gate_id"] == policy["kame_action_evidence_gate"]["gate_id"]
+    assert review_payload["kame_action_evidence_gate"]["design_reference"] == REQUIRED_KAME_DESIGN_REFERENCE
+    assert (
+        review_payload["kame_action_evidence_gate"]["required_interpreter_profile"]
+        == REQUIRED_KAME_INTERPRETER_PROFILE
+    )
     assert review_payload["kame_action_evidence_gate"]["accepted_promoted_authorities"] == [
         "interpreter_promoted",
         "oracle_promoted",
@@ -552,6 +565,8 @@ def test_write_channel_policy_artifacts(tmp_path):
     assert "Channel Authorization" in markdown
     assert "Audit ID Continuity" in markdown
     assert "KAME Action Evidence Gate" in markdown
+    assert REQUIRED_KAME_DESIGN_REFERENCE in markdown
+    assert REQUIRED_KAME_INTERPRETER_PROFILE in markdown
     assert "Required transcript hypothesis fields" in markdown
     assert "raw witness text is not allowed as outbound payload content" in markdown
     assert "Redaction Rules" in markdown
@@ -559,6 +574,8 @@ def test_write_channel_policy_artifacts(tmp_path):
     assert "Required Signoffs" in review_markdown
     assert "Per-Channel Review" in review_markdown
     assert "KAME Action Evidence Gate" in review_markdown
+    assert REQUIRED_KAME_DESIGN_REFERENCE in review_markdown
+    assert REQUIRED_KAME_INTERPRETER_PROFILE in review_markdown
     assert "Required transcript hypothesis fields" in review_markdown
     assert "Raw witness text is not allowed in channel egress" in review_markdown
     assert "Operator Must Not" in review_markdown
