@@ -440,6 +440,60 @@ def test_package_audit_rejects_async_oracle_plan_projection_drift(tmp_path):
     )
 
 
+def test_package_audit_rejects_raw_witness_text_in_plan_projection(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
+    plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
+    voice_result = next(
+        result
+        for result in plan_run["results"]
+        if result["milestone"] == "milestone_1_real_voice_operator"
+    )
+    async_projection = voice_result["details"]["async_oracle_smoke"]
+    async_projection["witness_fusion_partial_active_hypothesis"][
+        "text"
+    ] = "what is three to the power of seventeen"
+    async_projection["witness_fusion_partial_active_hypothesis"][
+        "superseded_partial_texts"
+    ] = ["what is three to the"]
+    async_projection["witness_fusion_partial_active_hypothesis"].pop("text_redacted", None)
+    async_projection["external_frontend_witness_metadata"][
+        "text"
+    ] = "prepare an external came hand off"
+    async_projection["external_frontend_witness_metadata"].pop("text_redacted", None)
+    async_projection["energy_gate_low_energy_witness_text"] = "spend money from room tone"
+    async_projection.pop("energy_gate_low_energy_witness_text_projection", None)
+    _write_json(plan_run_path, plan_run)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "plan_run:voice_operator.async_oracle_smoke.witness_fusion_partial_active_hypothesis_raw_text_present"
+        in report["issues"]
+    )
+    assert (
+        "plan_run:voice_operator.async_oracle_smoke.witness_fusion_partial_active_hypothesis_raw_partials_present"
+        in report["issues"]
+    )
+    assert (
+        "plan_run:voice_operator.async_oracle_smoke.external_frontend_witness_metadata_raw_text_present"
+        in report["issues"]
+    )
+    assert (
+        "plan_run:voice_operator.async_oracle_smoke.external_frontend_witness_metadata_text_not_redacted"
+        in report["issues"]
+    )
+    assert (
+        "plan_run:voice_operator.async_oracle_smoke.energy_gate_low_energy_witness_raw_text_present"
+        in report["issues"]
+    )
+    assert (
+        "plan_run:voice_operator.async_oracle_smoke.energy_gate_low_energy_witness_text_projection_missing"
+        in report["issues"]
+    )
+
+
 def test_package_audit_rejects_missing_async_oracle_canonical_external_frontend_transcript_hypotheses(
     tmp_path,
 ):

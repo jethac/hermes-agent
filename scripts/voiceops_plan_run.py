@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import platform
@@ -78,6 +79,43 @@ REALTIME_VOICE_LIVE_EVIDENCE_CLOSURE_COMMAND = (
     "--require-inbound "
     "--wait-seconds 5"
 )
+
+
+def _sha256_text_digest(value: str) -> str:
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _redact_projected_witness_hypothesis(value: Any) -> Any:
+    if isinstance(value, list):
+        return [_redact_projected_witness_hypothesis(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    redacted = {
+        key: _redact_projected_witness_hypothesis(item)
+        for key, item in value.items()
+        if key not in {"text", "superseded_partial_texts"}
+    }
+    text = value.get("text")
+    if isinstance(text, str) and text:
+        redacted.setdefault("text_digest", _sha256_text_digest(text))
+        redacted["text_redacted"] = True
+    elif "text" in value:
+        redacted["text_redacted"] = True
+    superseded_texts = value.get("superseded_partial_texts")
+    if isinstance(superseded_texts, (list, tuple)):
+        redacted["superseded_partial_text_digests"] = [
+            _sha256_text_digest(str(item))
+            for item in superseded_texts
+            if str(item)
+        ]
+        redacted["superseded_partial_texts_redacted"] = True
+    return redacted
+
+
+def _redacted_witness_text_projection(value: Any) -> dict[str, Any]:
+    if not isinstance(value, str) or not value:
+        return {"text_redacted": False, "text_digest": None}
+    return {"text_redacted": True, "text_digest": _sha256_text_digest(value)}
 
 
 def _walk_json_values(value: Any) -> list[Any]:
@@ -2116,7 +2154,7 @@ async def build_plan_run_async(
                     "external_frontend_witness_kind_frontend_hypothesis": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_witness_kind_frontend_hypothesis"],
-                    "external_frontend_witness_metadata": dict(
+                    "external_frontend_witness_metadata": _redact_projected_witness_hypothesis(
                         voice_operator["proofs"]["async_oracle_jobs"][
                             "external_frontend_witness_metadata"
                         ]
@@ -2486,9 +2524,11 @@ async def build_plan_run_async(
                     "energy_gate_ignored_non_speech_packets": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["energy_gate_ignored_non_speech_packets"],
-                    "energy_gate_low_energy_witness_text": voice_operator["proofs"][
-                        "async_oracle_jobs"
-                    ].get("energy_gate_low_energy_witness_text"),
+                    "energy_gate_low_energy_witness_text_projection": _redacted_witness_text_projection(
+                        voice_operator["proofs"]["async_oracle_jobs"].get(
+                            "energy_gate_low_energy_witness_text"
+                        )
+                    ),
                     "energy_gate_low_energy_witness_source": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ].get("energy_gate_low_energy_witness_source"),
@@ -2588,7 +2628,7 @@ async def build_plan_run_async(
                     "witness_fusion_partial_blocker_job_id": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["witness_fusion_partial_blocker_job_id"],
-                    "witness_fusion_partial_active_hypothesis": dict(
+                    "witness_fusion_partial_active_hypothesis": _redact_projected_witness_hypothesis(
                         voice_operator["proofs"]["async_oracle_jobs"][
                             "witness_fusion_partial_active_hypothesis"
                         ]

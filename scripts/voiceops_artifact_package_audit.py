@@ -2201,6 +2201,7 @@ def _audit_voice_operator_async_oracle_plan_projection(
     )
     details = _voice_operator_plan_details(plan_run)
     projected = details.get("async_oracle_smoke") if isinstance(details.get("async_oracle_smoke"), Mapping) else {}
+    _audit_plan_projection_witness_text_redacted(projected=projected, issues=issues)
     _audit_promoted_request_summary_contract(
         proof.get("external_frontend_promoted_request_summary"),
         label=(
@@ -2333,8 +2334,8 @@ def _audit_voice_operator_async_oracle_plan_projection(
         "witness_fusion_partial_superseded_by_final": proof.get(
             "witness_fusion_partial_superseded_by_final"
         ),
-        "witness_fusion_partial_active_hypothesis": proof.get(
-            "witness_fusion_partial_active_hypothesis"
+        "witness_fusion_partial_active_hypothesis": _redact_projected_witness_hypothesis(
+            proof.get("witness_fusion_partial_active_hypothesis")
         ),
         "witness_fusion_adjudications": proof.get("witness_fusion_adjudications"),
         "witness_fusion_rejection_reasons": proof.get("witness_fusion_rejection_reasons"),
@@ -2656,6 +2657,92 @@ def _iter_nested_authorities(value: Any) -> list[str]:
 
 def _sha256_text_digest(text: str) -> str:
     return f"sha256:{hashlib.sha256(text.encode('utf-8')).hexdigest()}"
+
+
+def _redact_projected_witness_hypothesis(value: Any) -> Any:
+    if isinstance(value, list):
+        return [_redact_projected_witness_hypothesis(item) for item in value]
+    if not isinstance(value, Mapping):
+        return value
+    redacted = {
+        key: _redact_projected_witness_hypothesis(item)
+        for key, item in value.items()
+        if key not in {"text", "superseded_partial_texts"}
+    }
+    text = value.get("text")
+    if isinstance(text, str) and text:
+        redacted.setdefault("text_digest", _sha256_text_digest(text))
+        redacted["text_redacted"] = True
+    elif "text" in value:
+        redacted["text_redacted"] = True
+    superseded_texts = value.get("superseded_partial_texts")
+    if isinstance(superseded_texts, (list, tuple)):
+        redacted["superseded_partial_text_digests"] = [
+            _sha256_text_digest(str(item))
+            for item in superseded_texts
+            if str(item)
+        ]
+        redacted["superseded_partial_texts_redacted"] = True
+    return redacted
+
+
+def _redacted_witness_text_projection(value: Any) -> dict[str, Any]:
+    if not isinstance(value, str) or not value:
+        return {"text_redacted": False, "text_digest": None}
+    return {"text_redacted": True, "text_digest": _sha256_text_digest(value)}
+
+
+def _audit_plan_projection_witness_text_redacted(
+    *,
+    projected: Mapping[str, Any],
+    issues: list[str],
+) -> None:
+    frontend = projected.get("external_frontend_witness_metadata")
+    if not isinstance(frontend, Mapping):
+        issues.append(
+            "plan_run:voice_operator.async_oracle_smoke.external_frontend_witness_metadata_not_object"
+        )
+    else:
+        if "text" in frontend:
+            issues.append(
+                "plan_run:voice_operator.async_oracle_smoke.external_frontend_witness_metadata_raw_text_present"
+            )
+        if frontend.get("text_redacted") is not True:
+            issues.append(
+                "plan_run:voice_operator.async_oracle_smoke.external_frontend_witness_metadata_text_not_redacted"
+            )
+
+    partial = projected.get("witness_fusion_partial_active_hypothesis")
+    if not isinstance(partial, Mapping):
+        issues.append(
+            "plan_run:voice_operator.async_oracle_smoke.witness_fusion_partial_active_hypothesis_not_object"
+        )
+    else:
+        if "text" in partial:
+            issues.append(
+                "plan_run:voice_operator.async_oracle_smoke.witness_fusion_partial_active_hypothesis_raw_text_present"
+            )
+        if "superseded_partial_texts" in partial:
+            issues.append(
+                "plan_run:voice_operator.async_oracle_smoke.witness_fusion_partial_active_hypothesis_raw_partials_present"
+            )
+        if partial.get("text_redacted") is not True:
+            issues.append(
+                "plan_run:voice_operator.async_oracle_smoke.witness_fusion_partial_active_hypothesis_text_not_redacted"
+            )
+    if "energy_gate_low_energy_witness_text" in projected:
+        issues.append(
+            "plan_run:voice_operator.async_oracle_smoke.energy_gate_low_energy_witness_raw_text_present"
+        )
+    energy_projection = projected.get("energy_gate_low_energy_witness_text_projection")
+    if not isinstance(energy_projection, Mapping):
+        issues.append(
+            "plan_run:voice_operator.async_oracle_smoke.energy_gate_low_energy_witness_text_projection_missing"
+        )
+    elif energy_projection.get("text_redacted") is not True:
+        issues.append(
+            "plan_run:voice_operator.async_oracle_smoke.energy_gate_low_energy_witness_text_not_redacted"
+        )
 
 
 def _audit_witness_assisted_action_sinks(

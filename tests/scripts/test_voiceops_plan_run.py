@@ -1648,6 +1648,14 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_metadata_complete"]
         is True
     )
+    frontend_witness = voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_metadata"]
+    assert "text" not in frontend_witness
+    assert frontend_witness["text_redacted"] is True
+    assert frontend_witness["text_digest"] == _text_digest("prepare an external came hand off")
+    assert frontend_witness["source"] == "moshi"
+    assert frontend_witness["role"] == "witness_context"
+    assert frontend_witness["authority"] == "hypothesis"
+    assert frontend_witness["tool_authority"] is False
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_confidence"] == 0.78
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_latency_ms"] == 140
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_witness_partial"] is False
@@ -1945,10 +1953,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     )
     assert voice_result["details"]["async_oracle_smoke"]["energy_gate_ignored_packet_vad_speech"] is False
     assert voice_result["details"]["async_oracle_smoke"]["energy_gate_ignored_non_speech_packets"] >= 2
-    assert (
-        voice_result["details"]["async_oracle_smoke"]["energy_gate_low_energy_witness_text"]
-        == "spend money from room tone"
-    )
+    assert voice_result["details"]["async_oracle_smoke"]["energy_gate_low_energy_witness_text_projection"] == {
+        "text_digest": _text_digest("spend money from room tone"),
+        "text_redacted": True,
+    }
     assert (
         voice_result["details"]["async_oracle_smoke"]["energy_gate_low_energy_witness_source"]
         == "moshi"
@@ -2017,8 +2025,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_partial_active_hypothesis"] == {
         "source": "moshi",
         "kind": "frontend_witness_hypothesis",
-        "text": "what is three to the power of seventeen",
         "text_digest": _text_digest("what is three to the power of seventeen"),
+        "text_redacted": True,
         "role": "witness_context",
         "authority": "hypothesis",
         "promotion_required": "interpreter_promoted_or_oracle_promoted",
@@ -2026,7 +2034,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "confidence": 0.88,
         "arrival_phase": "with_raw_audio",
         "partial": False,
-        "superseded_partial_texts": ("what is three to the",),
+        "superseded_partial_text_digests": [_text_digest("what is three to the")],
+        "superseded_partial_texts_redacted": True,
         "superseded_partial_count": 1,
     }
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_adjudications"] == {
