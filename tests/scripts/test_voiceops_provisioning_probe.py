@@ -985,6 +985,31 @@ def test_write_probe_artifacts(tmp_path):
         preflight_scaffold_manifest["reports"]["stripe_projects"]
         == "sections/stripe-projects-evidence.json"
     )
+    assert preflight_scaffold_manifest["sections"]["stripe_projects"]["section_report"] == (
+        "sections/stripe-projects-evidence.json"
+    )
+    assert preflight_scaffold_manifest["sections"]["stripe_projects"]["source_artifact"] == (
+        "sources/stripe-projects-redacted-source.json"
+    )
+    assert "stripe_projects.account_ref" in preflight_scaffold_manifest["sections"]["stripe_projects"][
+        "required_fields"
+    ]
+    assert "stripe_projects.source_artifact_sha256" in preflight_scaffold_manifest["sections"][
+        "stripe_projects"
+    ]["required_fields"]
+    assert preflight_scaffold_manifest["sections"]["phone_handoff"]["operator_actions"] == [
+        "Fill the phone provider account and target-reference section with a redacted source_artifact reference.",
+        "Fill the non-secret credential location reference with a redacted source_artifact reference.",
+    ]
+    assert preflight_scaffold_manifest["sections"]["rollback"]["secret_values_allowed"] is False
+    assert preflight_scaffold_manifest["sections"]["rollback"]["full_phone_numbers_allowed"] is False
+    assert preflight_scaffold_manifest["completion_check"]["remove_every_example_only_marker"] is True
+    assert "--refresh-preflight-source-hashes" in preflight_scaffold_manifest["completion_check"][
+        "refresh_source_hashes_command"
+    ]
+    assert "--read-only-discovery-evidence" in preflight_scaffold_manifest["completion_check"][
+        "validate_command"
+    ]
     scaffold_issues = load_preflight_evidence(preflight_scaffold_manifest_path)["validation_issues"]
     assert "example_only evidence is not accepted" in scaffold_issues
     assert "stripe_projects: example_only evidence is not accepted" in scaffold_issues

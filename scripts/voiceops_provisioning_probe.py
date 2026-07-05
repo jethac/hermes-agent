@@ -720,6 +720,7 @@ def write_preflight_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
     evidence = build_preflight_evidence_example()
     evidence["redaction_policy"] = "example only; replace aliases with real redacted refs and remove every example_only marker"
     reports: dict[str, str] = {}
+    manifest_sections: dict[str, dict[str, Any]] = {}
     paths: dict[str, Path] = {}
     source_names = {
         "stripe_projects": "stripe-projects-redacted-source.json",
@@ -734,6 +735,13 @@ def write_preflight_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
         "mpp": "nemoclaw-boundary-evidence.json",
         "phone_handoff": "phone-handoff-evidence.json",
         "rollback": "rollback-owner-evidence.json",
+    }
+    section_requirement_keys = {
+        "stripe_projects": ["stripe_projects_account"],
+        "stripe_link": ["stripe_link_approval_capability"],
+        "mpp": ["mpp_approval_boundary"],
+        "phone_handoff": ["phone_provider_account", "credential_location_reference"],
+        "rollback": ["rollback_owner_refs"],
     }
     for section_name in PREFLIGHT_EVIDENCE_SECTIONS:
         section = dict(evidence[section_name])
@@ -768,6 +776,28 @@ def write_preflight_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
             },
         )
         reports[section_name] = f"sections/{section_path.name}"
+        section_required_paths = [
+            path
+            for path in PREFLIGHT_EVIDENCE_REQUIRED_DOT_PATHS
+            if path.startswith(f"{section_name}.")
+        ]
+        requirements = [
+            SETUP_CLOSURE_REQUIREMENTS[key]
+            for key in section_requirement_keys[section_name]
+        ]
+        manifest_sections[section_name] = {
+            "section_report": reports[section_name],
+            "source_artifact": section["source_artifact"],
+            "source_artifact_sha256": section["source_artifact_sha256"],
+            "required_fields": section_required_paths,
+            "operator_actions": [
+                requirement["operator_action"] for requirement in requirements
+            ],
+            "proofs": [requirement["proof"] for requirement in requirements],
+            "replace_example_only": True,
+            "secret_values_allowed": False,
+            "full_phone_numbers_allowed": False,
+        }
         paths[f"scaffold_{section_name}_section"] = section_path
         paths[f"scaffold_{section_name}_source"] = source_path
 
@@ -779,6 +809,25 @@ def write_preflight_evidence_scaffold(output_dir: Path) -> dict[str, Path]:
             "example_only": True,
             "redaction_policy": "example only; this scaffold is rejected until all example_only markers are removed",
             "reports": reports,
+            "sections": manifest_sections,
+            "completion_check": {
+                "remove_every_example_only_marker": True,
+                "refresh_source_hashes_command": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--refresh-preflight-source-hashes "
+                    "artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/"
+                    "provisioning-preflight-evidence.manifest.json"
+                ),
+                "validate_command": (
+                    "uv run python scripts/voiceops_provisioning_probe.py "
+                    "--output-dir artifacts/voiceops-provisioning/current "
+                    "--env-file .env "
+                    "--preflight-evidence artifacts/voiceops-provisioning/current/"
+                    "provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json "
+                    "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/"
+                    "read-only-discovery.manifest.json"
+                ),
+            },
             "notes": "Two-layer scaffold: section reports reference separate redacted source artifacts with matching SHA-256 fields.",
         },
     )
