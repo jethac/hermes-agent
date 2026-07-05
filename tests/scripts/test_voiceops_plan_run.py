@@ -808,6 +808,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert next_actions[0]["can_run_here_now"] is False
     assert next_actions[0]["blocked_by_current_environment"]["needs_external_live_probe"] is True
     assert "DISCORD_BOT_TOKEN" in next_actions[0]["blocked_by_current_environment"]["missing_env_keys"]
+    assert next_actions[0]["primary_next_command"] == next_actions[0]["first_safe_command"]
+    assert next_actions[0]["primary_evidence_command"] == next_actions[0]["first_evidence_command"]
     assert "--audit-only" in next_actions[0]["first_safe_command"]
     assert "hermes_cli.realtime_voice_live_evidence" in next_actions[0]["first_safe_command"]
     assert "hermes_cli.realtime_voice_live_evidence" in next_actions[0]["first_evidence_command"]
@@ -835,6 +837,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "mppx_or_fallback",
     ]
     assert next_actions[1]["blocked_by_current_environment"]["needs_read_only_discovery"] is True
+    assert next_actions[1]["primary_next_command"] == next_actions[1]["first_safe_command"]
+    assert next_actions[1]["primary_evidence_command"] == next_actions[1]["first_evidence_command"]
     assert "--dry-audit" in next_actions[1]["first_safe_command"]
     assert "--package-audit" in next_actions[1]["first_safe_command"]
     assert "voiceops_provisioning_probe.py" in next_actions[1]["first_evidence_command"]
@@ -857,6 +861,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     )
     assert next_actions[2]["blocked_by_current_environment"]["required_hardware"] == "1x NVIDIA DGX Spark"
     assert next_actions[2]["blocked_by_current_environment"]["needs_measured_spark_evidence"] is True
+    assert next_actions[2]["primary_next_command"] == next_actions[2]["first_safe_command"]
+    assert next_actions[2]["primary_evidence_command"] == next_actions[2]["first_evidence_command"]
     assert "--lint-evidence" in next_actions[2]["first_safe_command"]
     assert next_actions[2]["first_evidence_command"] == "scripts/dgx_spark_gemma4_voice_eval.sh"
     assert next_actions[2]["closure_plan"].endswith("voiceops-spark-matrix/current/spark-matrix-closure-plan.json")
@@ -3195,6 +3201,8 @@ def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
     assert [action["phase_id"] for action in payload["review_actions"]] == ["multi_channel_policy_review"]
     assert payload["review_actions"][0]["status"] == "pending_human_review"
     assert payload["review_actions"][0]["real_egress_enabled"] is False
+    assert payload["next_actions"][0]["primary_next_command"] == payload["next_actions"][0]["first_safe_command"]
+    assert payload["next_actions"][0]["primary_evidence_command"] == payload["next_actions"][0]["first_evidence_command"]
     assert "--audit-only" in payload["next_actions"][0]["first_safe_command"]
     assert payload["next_actions"][0]["first_evidence_command"].startswith(
         "uv run python -m hermes_cli.realtime_voice_live_evidence"
@@ -3205,6 +3213,8 @@ def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
     assert "--validate-live-evidence" in payload["next_actions"][0]["local_validation_command"]
     assert "validate_live_manifest_offline" in payload["next_actions"][0]["validation_commands"]
     assert payload["next_actions"][0]["expected_artifacts"]
+    assert payload["next_actions"][1]["primary_next_command"] == payload["next_actions"][1]["first_safe_command"]
+    assert payload["next_actions"][1]["primary_evidence_command"] == payload["next_actions"][1]["first_evidence_command"]
     assert "--dry-audit" in payload["next_actions"][1]["first_safe_command"]
     assert "voiceops_provisioning_probe.py" in payload["next_actions"][1]["first_evidence_command"]
     assert payload["next_actions"][1]["closure_plan"].endswith("setup-closure-plan.json")
@@ -3212,6 +3222,8 @@ def test_plan_run_cli_dry_audit_does_not_write_requested_artifacts(tmp_path):
     assert "--preflight-evidence" in payload["next_actions"][1]["local_validation_command"]
     assert "execute_approved_stripe_actions" not in payload["next_actions"][1]["validation_commands"]
     assert "validate_post_approval_receipts" in payload["next_actions"][1]["validation_commands"]
+    assert payload["next_actions"][2]["primary_next_command"] == payload["next_actions"][2]["first_safe_command"]
+    assert payload["next_actions"][2]["primary_evidence_command"] == payload["next_actions"][2]["first_evidence_command"]
     assert "--lint-evidence" in payload["next_actions"][2]["first_safe_command"]
     assert payload["next_actions"][2]["first_evidence_command"] == "scripts/dgx_spark_gemma4_voice_eval.sh"
     assert payload["next_actions"][2]["closure_plan"].endswith("spark-matrix-closure-plan.json")

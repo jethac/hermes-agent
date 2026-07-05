@@ -875,6 +875,8 @@ def _build_next_actions(
                 "operator_runbook": gate.get("operator_runbook"),
                 "expected_artifacts": phase.get("expected_artifacts", []) if isinstance(phase, dict) else [],
                 "optional_artifacts": phase.get("optional_artifacts", []) if isinstance(phase, dict) else [],
+                "primary_next_command": first_command,
+                "primary_evidence_command": first_evidence_command,
                 "first_safe_command": first_command,
                 "first_evidence_command": first_evidence_command,
                 "local_audit_command": local_audit_command,
