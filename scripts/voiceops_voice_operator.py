@@ -3558,6 +3558,9 @@ def build_voice_operator_report(
                 "external_frontend_input_source"
             ),
             "external_frontend_oracle_text": async_oracle_smoke.get("external_frontend_oracle_text"),
+            "external_frontend_promoted_request_summary": dict(
+                async_oracle_smoke.get("external_frontend_promoted_request_summary") or {}
+            ),
             "external_frontend_provisional_request_summary": dict(
                 async_oracle_smoke.get("external_frontend_provisional_request_summary") or {}
             ),

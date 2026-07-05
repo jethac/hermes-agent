@@ -98,6 +98,11 @@ VALID_WITNESS_REJECTION_REASONS = {
     "waveform_conflict",
     "provider_conflict",
 }
+VALID_WITNESS_ARRIVAL_PHASES = {
+    "before_raw_audio",
+    "with_raw_audio",
+    "after_interpreter_start",
+}
 SECRET_SCAN_PATTERNS = (
     ("openai_or_stripe_secret_key", re.compile(r"\bsk_(?:live|test|car)_[A-Za-z0-9_-]{12,}\b")),
     ("openai_project_key", re.compile(r"\bsk-proj-[A-Za-z0-9_-]{12,}\b")),
@@ -2069,6 +2074,32 @@ def _audit_voice_operator_async_oracle_plan_projection(
     )
     details = _voice_operator_plan_details(plan_run)
     projected = details.get("async_oracle_smoke") if isinstance(details.get("async_oracle_smoke"), Mapping) else {}
+    _audit_promoted_request_summary_contract(
+        proof.get("external_frontend_promoted_request_summary"),
+        label=(
+            "voice_operator_readiness:proofs.async_oracle_jobs."
+            "external_frontend_promoted_request_summary"
+        ),
+        issues=issues,
+    )
+    _audit_promoted_request_summary_contract(
+        projected.get("external_frontend_promoted_request_summary"),
+        label="plan_run:voice_operator.async_oracle_smoke.external_frontend_promoted_request_summary",
+        issues=issues,
+    )
+    _audit_provisional_request_summary_contract(
+        proof.get("external_frontend_provisional_request_summary"),
+        label=(
+            "voice_operator_readiness:proofs.async_oracle_jobs."
+            "external_frontend_provisional_request_summary"
+        ),
+        issues=issues,
+    )
+    _audit_provisional_request_summary_contract(
+        projected.get("external_frontend_provisional_request_summary"),
+        label="plan_run:voice_operator.async_oracle_smoke.external_frontend_provisional_request_summary",
+        issues=issues,
+    )
     _audit_provisional_request_summary_contract(
         proof.get("external_frontend_status_provisional_request_summary"),
         label=(
@@ -2357,14 +2388,27 @@ def _audit_provisional_request_summary_contract(
     if not isinstance(summary, Mapping):
         issues.append(f"{label}_not_object")
         return
-    if summary.get("source") != "reflex_audio" and summary.get("kind") != "reflex_hypothesis":
-        return
     if summary.get("kind") != "reflex_hypothesis":
         issues.append(f"{label}_missing_reflex_kind")
     if summary.get("authority") == "reflex_hypothesis":
         issues.append(f"{label}_uses_kind_as_authority")
     if summary.get("authority") != "hypothesis":
         issues.append(f"{label}_authority_not_hypothesis")
+    if summary.get("tool_authority") is not False:
+        issues.append(f"{label}_tool_authority_not_false")
+
+
+def _audit_promoted_request_summary_contract(
+    summary: Any,
+    *,
+    label: str,
+    issues: list[str],
+) -> None:
+    if not isinstance(summary, Mapping):
+        issues.append(f"{label}_not_object")
+        return
+    if summary.get("authority") not in {"interpreter_promoted", "oracle_promoted"}:
+        issues.append(f"{label}_authority_not_promoted")
     if summary.get("tool_authority") is not False:
         issues.append(f"{label}_tool_authority_not_false")
 
@@ -2379,6 +2423,11 @@ def _audit_external_frontend_hypothesis_adjudication(
         if not isinstance(hypothesis, Mapping):
             issues.append(f"voice_operator_readiness:{label}.{index}_not_object")
             continue
+        _audit_transcript_hypothesis_contract(
+            hypothesis,
+            issues=issues,
+            label=f"voice_operator_readiness:{label}.{index}",
+        )
         adjudication = str(hypothesis.get("adjudication") or "").strip()
         if not adjudication:
             issues.append(f"voice_operator_readiness:{label}.{index}_missing_adjudication")
@@ -2403,6 +2452,22 @@ def _audit_external_frontend_hypothesis_adjudication(
         ]
         if invalid_reasons:
             issues.append(f"voice_operator_readiness:{label}.{index}_invalid_rejection_reasons")
+
+
+def _audit_transcript_hypothesis_contract(
+    hypothesis: Mapping[str, Any],
+    *,
+    issues: list[str],
+    label: str,
+) -> None:
+    for field, expected_value in REQUIRED_TRANSCRIPT_HYPOTHESIS_CONTRACT.items():
+        if hypothesis.get(field) != expected_value:
+            issues.append(f"{label}_{field}_mismatch")
+    arrival_phase = str(hypothesis.get("arrival_phase") or "").strip()
+    if not arrival_phase:
+        issues.append(f"{label}_missing_arrival_phase")
+    elif arrival_phase not in VALID_WITNESS_ARRIVAL_PHASES:
+        issues.append(f"{label}_invalid_arrival_phase")
 
 
 def _canonical_witness_adjudication_rows(hypotheses: list[Any]) -> list[dict[str, Any]]:
@@ -2618,6 +2683,16 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
     proofs = readiness.get("proofs") if isinstance(readiness.get("proofs"), Mapping) else {}
     smoke = readiness.get("smoke") if isinstance(readiness.get("smoke"), Mapping) else {}
     async_smoke = readiness.get("async_oracle_smoke") if isinstance(readiness.get("async_oracle_smoke"), Mapping) else {}
+    _audit_promoted_request_summary_contract(
+        async_smoke.get("external_frontend_promoted_request_summary"),
+        label="voice_operator_readiness:async_oracle_smoke.external_frontend_promoted_request_summary",
+        issues=issues,
+    )
+    _audit_provisional_request_summary_contract(
+        async_smoke.get("external_frontend_provisional_request_summary"),
+        label="voice_operator_readiness:async_oracle_smoke.external_frontend_provisional_request_summary",
+        issues=issues,
+    )
     _audit_provisional_request_summary_contract(
         async_smoke.get("external_frontend_status_provisional_request_summary"),
         label="voice_operator_readiness:async_oracle_smoke.external_frontend_status_provisional_request_summary",
@@ -3098,6 +3173,10 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
                 async_smoke.get("external_frontend_source_reached_oracle")
             ),
             "external_frontend_input_source": async_smoke.get("external_frontend_input_source"),
+            "external_frontend_promoted_request_summary": async_smoke.get(
+                "external_frontend_promoted_request_summary"
+            )
+            or {},
             "external_frontend_provisional_request_summary": async_smoke.get(
                 "external_frontend_provisional_request_summary"
             )

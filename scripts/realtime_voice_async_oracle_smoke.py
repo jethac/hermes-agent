@@ -2042,7 +2042,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and witness_kind_frontend_hypothesis
         and witness_metadata_complete
     )
-    oracle_request_summary = (
+    promoted_request_summary = (
         dict(getattr(request, "provisional_request_summary", {}) or {})
         if request is not None
         else {}
@@ -2169,7 +2169,8 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         if request is not None
         else "",
         "external_frontend_oracle_text": getattr(request, "oracle_text", "") if request is not None else "",
-        "external_frontend_provisional_request_summary": oracle_request_summary,
+        "external_frontend_promoted_request_summary": promoted_request_summary,
+        "external_frontend_provisional_request_summary": dict(status_provisional_summary),
         "external_frontend_status_provisional_request_summary": dict(status_provisional_summary),
         "external_frontend_provisional_request_summary_non_authoritative": provisional_summary_non_authoritative,
         "external_frontend_evidence_bundle_propagated": evidence_bundle_propagated,
@@ -5659,6 +5660,9 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "external_frontend_oracle_text": external_frontend_bridge_smoke[
             "external_frontend_oracle_text"
+        ],
+        "external_frontend_promoted_request_summary": external_frontend_bridge_smoke[
+            "external_frontend_promoted_request_summary"
         ],
         "external_frontend_provisional_request_summary": external_frontend_bridge_smoke[
             "external_frontend_provisional_request_summary"

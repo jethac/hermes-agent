@@ -372,10 +372,17 @@ def _async_oracle_smoke_payload() -> dict:
         "external_frontend_source_reached_oracle": True,
         "external_frontend_input_source": "ask_brain",
         "external_frontend_oracle_text": "Prepare external KAME handoff",
-        "external_frontend_provisional_request_summary": {
+        "external_frontend_promoted_request_summary": {
             "text": "Prepare external KAME handoff",
             "source": "gemma_interpreter",
             "authority": "interpreter_promoted",
+            "tool_authority": False,
+        },
+        "external_frontend_provisional_request_summary": {
+            "text": "Prepare external KAME handoff",
+            "source": "reflex_audio",
+            "kind": "reflex_hypothesis",
+            "authority": "hypothesis",
             "tool_authority": False,
         },
         "external_frontend_status_provisional_request_summary": {
@@ -1650,10 +1657,17 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_status_state"] == "completed"
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_source_reached_oracle"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_input_source"] == "ask_brain"
-    assert report["proofs"]["async_oracle_jobs"]["external_frontend_provisional_request_summary"] == {
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_promoted_request_summary"] == {
         "text": "Prepare external KAME handoff",
         "source": "gemma_interpreter",
         "authority": "interpreter_promoted",
+        "tool_authority": False,
+    }
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_provisional_request_summary"] == {
+        "text": "Prepare external KAME handoff",
+        "source": "reflex_audio",
+        "kind": "reflex_hypothesis",
+        "authority": "hypothesis",
         "tool_authority": False,
     }
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_status_provisional_request_summary"] == {

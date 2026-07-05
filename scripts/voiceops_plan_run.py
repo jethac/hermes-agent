@@ -2078,6 +2078,11 @@ async def build_plan_run_async(
                     "external_frontend_input_source": voice_operator["proofs"]["async_oracle_jobs"][
                         "external_frontend_input_source"
                     ],
+                    "external_frontend_promoted_request_summary": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "external_frontend_promoted_request_summary"
+                        ]
+                    ),
                     "external_frontend_provisional_request_summary": dict(
                         voice_operator["proofs"]["async_oracle_jobs"][
                             "external_frontend_provisional_request_summary"

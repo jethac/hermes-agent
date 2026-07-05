@@ -247,10 +247,17 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_source_reached_oracle"] is True
     assert report["external_frontend_input_source"] == "ask_brain"
     assert report["external_frontend_oracle_text"] == "prepare an external KAME handoff"
-    assert report["external_frontend_provisional_request_summary"] == {
+    assert report["external_frontend_promoted_request_summary"] == {
         "text": "Prepare external KAME handoff",
         "source": "gemma_interpreter",
         "authority": "interpreter_promoted",
+        "tool_authority": False,
+    }
+    assert report["external_frontend_provisional_request_summary"] == {
+        "text": "Prepare external KAME handoff",
+        "source": "reflex_audio",
+        "kind": "reflex_hypothesis",
+        "authority": "hypothesis",
         "tool_authority": False,
     }
     assert report["external_frontend_status_provisional_request_summary"] == {
@@ -308,6 +315,12 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
         == "interpreter_promoted_or_oracle_promoted"
     )
     assert report["external_frontend_transcript_hypotheses"][0]["tool_authority"] is False
+    for hypothesis in report["external_frontend_transcript_hypotheses"]:
+        assert hypothesis["role"] == "witness_context"
+        assert hypothesis["authority"] == "hypothesis"
+        assert hypothesis["promotion_required"] == "interpreter_promoted_or_oracle_promoted"
+        assert hypothesis["tool_authority"] is False
+        assert hypothesis["arrival_phase"] == "with_raw_audio"
     assert (
         report["external_frontend_auxiliary_transcript_hypotheses"]
         == report["external_frontend_transcript_hypotheses"]
