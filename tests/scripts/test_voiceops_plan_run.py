@@ -1578,7 +1578,8 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["external_frontend_status_provisional_request_summary"] == {
         "text": "Prepare external KAME handoff",
         "source": "reflex_audio",
-        "authority": "reflex_hypothesis",
+        "kind": "reflex_hypothesis",
+        "authority": "hypothesis",
         "tool_authority": False,
     }
     assert (

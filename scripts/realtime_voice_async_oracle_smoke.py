@@ -2054,7 +2054,8 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
     )
     provisional_summary_non_authoritative = (
         status_provisional_summary.get("text") == "Prepare external KAME handoff"
-        and status_provisional_summary.get("authority") == "reflex_hypothesis"
+        and status_provisional_summary.get("kind") == "reflex_hypothesis"
+        and status_provisional_summary.get("authority") == "hypothesis"
         and status_provisional_summary.get("tool_authority") is False
     )
     request_bundle_id = str(getattr(request, "evidence_bundle_id", "") or "") if request is not None else ""

@@ -587,12 +587,17 @@ class KameOracleRequest:
     def provisional_request_summary(self) -> Mapping[str, Any]:
         """Return the pre-promotion request summary used for queueing/narration."""
 
-        return {
+        authority = _kame_source_authority(self.intent_source, default="reflex_hypothesis")
+        summary_authority = authority if authority in {"interpreter_promoted", "oracle_promoted"} else "hypothesis"
+        summary: dict[str, Any] = {
             "text": self.intent.strip(),
             "source": self.intent_source or "reflex_audio",
-            "authority": _kame_source_authority(self.intent_source, default="reflex_hypothesis"),
+            "authority": summary_authority,
             "tool_authority": False,
         }
+        if summary_authority != authority:
+            summary["kind"] = authority
+        return summary
 
     @property
     def evidence_authority(self) -> Mapping[str, str]:
@@ -737,7 +742,8 @@ class KameOracleRequest:
             "intent": self.intent,
             "intent_source": self.intent_source,
             "interface_already_said": self.interface_already_said,
-            "authority": "reflex_hypothesis",
+            "kind": "reflex_hypothesis",
+            "authority": "hypothesis",
         }
         sections.append({"name": "reflex", "payload": reflex})
 

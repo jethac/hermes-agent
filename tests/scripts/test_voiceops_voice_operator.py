@@ -381,7 +381,8 @@ def _async_oracle_smoke_payload() -> dict:
         "external_frontend_status_provisional_request_summary": {
             "text": "Prepare external KAME handoff",
             "source": "reflex_audio",
-            "authority": "reflex_hypothesis",
+            "kind": "reflex_hypothesis",
+            "authority": "hypothesis",
             "tool_authority": False,
         },
         "external_frontend_provisional_request_summary_non_authoritative": True,
@@ -1658,7 +1659,8 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_status_provisional_request_summary"] == {
         "text": "Prepare external KAME handoff",
         "source": "reflex_audio",
-        "authority": "reflex_hypothesis",
+        "kind": "reflex_hypothesis",
+        "authority": "hypothesis",
         "tool_authority": False,
     }
     assert (
@@ -2026,6 +2028,9 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["interpreter_request_packet"]["prompt_policy"] == (
         report["interpreter_request_packet"]["interpreter_prompt_policy"]
     )
+    assert report["interpreter_request_packet"]["reflex"]["kind"] == "reflex_hypothesis"
+    assert report["interpreter_request_packet"]["reflex"]["authority"] == "hypothesis"
+    assert report["interpreter_request_packet"]["reflex"]["tool_authority"] is False
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_with_single_bundle"] is True
     assert report["proofs"]["async_oracle_jobs"]["witness_fusion_late_initial_bundle_id"] == (
         report["proofs"]["async_oracle_jobs"]["witness_fusion_late_final_bundle_id"]
@@ -2632,11 +2637,17 @@ def test_voice_operator_validation_rejects_interpreter_packet_prompt_policy_drif
     report["interpreter_request_packet"]["interpreter_prompt_policy"] = {
         "version": "legacy_transcript_first"
     }
+    report["interpreter_request_packet"]["reflex"].pop("kind", None)
+    report["interpreter_request_packet"]["reflex"]["authority"] = "reflex_hypothesis"
+    report["interpreter_request_packet"]["reflex"]["tool_authority"] = True
 
     issues = validate_voice_operator_report(report)
 
     assert "interpreter_request_packet:interpreter_input_order_mismatch" in issues
     assert "interpreter_request_packet:interpreter_prompt_policy_mismatch" in issues
+    assert "interpreter_request_packet:reflex_kind_mismatch" in issues
+    assert "interpreter_request_packet:reflex_authority_mismatch" in issues
+    assert "interpreter_request_packet:reflex_tool_authority_not_false" in issues
 
 
 def test_voice_operator_validation_rejects_conflicting_interpreter_packet_witness_binding():

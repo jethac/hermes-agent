@@ -4679,6 +4679,13 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         audio = packet.get("audio") if isinstance(packet.get("audio"), Mapping) else {}
         if audio.get("authority") != "primary_audio":
             issues.append("interpreter_request_packet:audio_authority_mismatch")
+        reflex = packet.get("reflex") if isinstance(packet.get("reflex"), Mapping) else {}
+        if reflex.get("kind") != "reflex_hypothesis":
+            issues.append("interpreter_request_packet:reflex_kind_mismatch")
+        if reflex.get("authority") != "hypothesis":
+            issues.append("interpreter_request_packet:reflex_authority_mismatch")
+        if reflex.get("tool_authority") is not False:
+            issues.append("interpreter_request_packet:reflex_tool_authority_not_false")
         audio_refs = async_proof.get("witness_fusion_audio_segment_refs")
         expected_audio_ref = audio_refs.get("early") if isinstance(audio_refs, Mapping) else None
         if audio.get("segment_ref") != expected_audio_ref:
@@ -5210,7 +5217,8 @@ def _interpreter_request_packet(report: Mapping[str, Any]) -> dict[str, Any]:
             "route": "defer",
             "transcript_hypothesis": proof.get("witness_fusion_early_reflex_transcript"),
             "interface_already_said": "Checking the power question.",
-            "authority": "reflex_hypothesis",
+            "kind": "reflex_hypothesis",
+            "authority": "hypothesis",
             "tool_authority": False,
         },
         "transcript_hypotheses": [

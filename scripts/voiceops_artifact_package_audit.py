@@ -2069,6 +2069,19 @@ def _audit_voice_operator_async_oracle_plan_projection(
     )
     details = _voice_operator_plan_details(plan_run)
     projected = details.get("async_oracle_smoke") if isinstance(details.get("async_oracle_smoke"), Mapping) else {}
+    _audit_provisional_request_summary_contract(
+        proof.get("external_frontend_status_provisional_request_summary"),
+        label=(
+            "voice_operator_readiness:proofs.async_oracle_jobs."
+            "external_frontend_status_provisional_request_summary"
+        ),
+        issues=issues,
+    )
+    _audit_provisional_request_summary_contract(
+        projected.get("external_frontend_status_provisional_request_summary"),
+        label="plan_run:voice_operator.async_oracle_smoke.external_frontend_status_provisional_request_summary",
+        issues=issues,
+    )
     expected = {
         "status_bounded_overflow_visible": proof.get("status_bounded_overflow_visible"),
         "status_bounded_overflow_visible_job_count": proof.get(
@@ -2335,6 +2348,27 @@ def _compare_proof_fields(
             issues.append(f"voice_operator_readiness:proofs.{label}.{field}_mismatch")
 
 
+def _audit_provisional_request_summary_contract(
+    summary: Any,
+    *,
+    label: str,
+    issues: list[str],
+) -> None:
+    if not isinstance(summary, Mapping):
+        issues.append(f"{label}_not_object")
+        return
+    if summary.get("source") != "reflex_audio" and summary.get("kind") != "reflex_hypothesis":
+        return
+    if summary.get("kind") != "reflex_hypothesis":
+        issues.append(f"{label}_missing_reflex_kind")
+    if summary.get("authority") == "reflex_hypothesis":
+        issues.append(f"{label}_uses_kind_as_authority")
+    if summary.get("authority") != "hypothesis":
+        issues.append(f"{label}_authority_not_hypothesis")
+    if summary.get("tool_authority") is not False:
+        issues.append(f"{label}_tool_authority_not_false")
+
+
 def _audit_external_frontend_hypothesis_adjudication(
     hypotheses: list[Any],
     *,
@@ -2584,6 +2618,11 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
     proofs = readiness.get("proofs") if isinstance(readiness.get("proofs"), Mapping) else {}
     smoke = readiness.get("smoke") if isinstance(readiness.get("smoke"), Mapping) else {}
     async_smoke = readiness.get("async_oracle_smoke") if isinstance(readiness.get("async_oracle_smoke"), Mapping) else {}
+    _audit_provisional_request_summary_contract(
+        async_smoke.get("external_frontend_status_provisional_request_summary"),
+        label="voice_operator_readiness:async_oracle_smoke.external_frontend_status_provisional_request_summary",
+        issues=issues,
+    )
     async_unpromoted_sink_values = async_smoke.get("unpromoted_hypothesis_action_sink_values")
     if not isinstance(async_unpromoted_sink_values, Mapping):
         issues.append("voice_operator_readiness:async_oracle_smoke.unpromoted_hypothesis_action_sink_values_not_object")

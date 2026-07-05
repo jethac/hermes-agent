@@ -569,7 +569,7 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     ] = True
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_status_provisional_request_summary"][
         "authority"
-    ] = "oracle_promoted"
+    ] = "reflex_hypothesis"
     readiness["proofs"]["async_oracle_jobs"][
         "external_frontend_provisional_request_summary_non_authoritative"
     ] = False
@@ -773,6 +773,11 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_status_provisional_request_summary_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs."
+        "external_frontend_status_provisional_request_summary_uses_kind_as_authority"
         in report["issues"]
     )
     assert (
