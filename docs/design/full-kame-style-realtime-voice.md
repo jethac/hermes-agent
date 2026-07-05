@@ -69,6 +69,13 @@ classic-ASR string may be sent to Gemma with the waveform, but only as context
 for adjudication. It is not a separate ASR lane, not a second Hermes user turn,
 and not a fallback source of action authority.
 
+The normative packet contract for that behavior is `docs/kame-session-v1.md`.
+When this design document and implementation details disagree, prefer the
+contract language there: same accepted speech cut, raw audio primary,
+transcript-looking fields as `transcript_hypotheses[]`, explicit witness
+adjudication, and only promoted interpreter/oracle fields reaching Hermes'
+active `/model` or any action sink.
+
 The interpreter should emit two different classes of output:
 
 - `witness_adjudications`: per-hypothesis decisions such as

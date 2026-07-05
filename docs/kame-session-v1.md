@@ -385,6 +385,42 @@ KAME readiness or authorize high-risk work. If raw audio arrives later for the
 same accepted cut, the degraded packet must merge into the existing evidence
 bundle instead of creating a second Hermes turn.
 
+## Implementation Checklist
+
+Use this checklist for every Discord, phone, WhatsApp, VoiceClaw/OpenClaw, or
+Moshi/Open-S2S adapter that claims full KAME behavior:
+
+- create one accepted speech cut from the VAD/energy gate before interpreter
+  scheduling
+- keep raw audio as `primary_interpreter_evidence`
+- normalize every transcript-looking provider field into
+  `transcript_hypotheses[]`, including fields named `stt_text`, `transcript`,
+  `caption`, `query`, or provider-specific equivalents
+- bind waveform and witnesses with the same `turn_id`, `audio_segment_ref`,
+  `evidence_bundle_id`, and `evidence_merge_key`
+- preserve interpreter input order as `raw_audio`, `metadata`, `reflex`,
+  `transcript_hypotheses`
+- set each witness row to `role = "witness_context"`,
+  `authority = "hypothesis"`,
+  `promotion_required = "interpreter_promoted_or_oracle_promoted"`, and
+  `tool_authority = false`
+- retain source, kind, digest, latency when available, confidence when
+  available, arrival phase, speaker binding, and channel binding for each
+  witness
+- require Gemma/interpreter adjudication for every witness before that witness
+  can shape promoted wording
+- pass only `interpreter_promoted` or `oracle_promoted` wording, intent,
+  entities, confidence, and compact audit metadata to Hermes' active `/model`
+- reject or downgrade text-only packets as degraded compatibility unless raw
+  audio later merges into the same bundle
+
+The adapter fails the contract if a Moshi/Open-S2S/reflex/classic-ASR string
+directly becomes `oracle_text`, a durable user message, a Stripe/NemoClaw spend
+reason, a phone payload, a memory/file write, an external message, or a tool
+argument before promotion. It also fails if early, inline, or late witness text
+creates a second Hermes turn or duplicate oracle job for the same accepted
+speech cut.
+
 ## Roles
 
 External frontends may provide:

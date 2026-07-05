@@ -509,6 +509,13 @@ and `unpromoted_witness_sink_values = {}`. If any sink value contains rejected,
 diagnostic-only, or otherwise unpromoted witness text, the VoiceOps proof fails
 even if the interpreter and oracle produced a usable response.
 
+Implementation cross-check: adapters should be reviewed against
+`docs/kame-session-v1.md#implementation-checklist`. In particular, a provider
+field named `stt_text`, `transcript`, `caption`, or `query` is not meaningful
+inside Hermes until it has been normalized into `transcript_hypotheses[]`,
+bound to the accepted raw-audio cut, and adjudicated by the interpreter. This
+is the concrete guard against drifting back to transcript-first scheduling.
+
 The same headless evidence path should preserve cross-surface audit continuity.
 External KAME frontend requests may carry `audit_id`, `source_audit_id`, and
 `parent_audit_id`; Hermes should keep those ids on the normalized

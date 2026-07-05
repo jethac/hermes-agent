@@ -436,6 +436,9 @@ closed by external evidence gates:
 
 - generate the Milestone 0 package headlessly
 - run `scripts/voiceops_plan_run.py --dry-audit --package-audit`
+- validate the `docs/kame-session-v1.md` implementation checklist for any
+  Discord, phone, WhatsApp, VoiceClaw/OpenClaw, or Moshi/Open-S2S adapter used
+  in the demo
 - keep readiness blocked until live Discord voice evidence, spend/provisioning
   preflight evidence, and local deployment evidence for the selected
   reflex/interpreter/oracle runtime are attached
