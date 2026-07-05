@@ -295,6 +295,14 @@ Implement the runtime and headless proof around four explicit cases:
 The latency report for those cases should break out speech-end-to-reflex-ack,
 audio-cut-to-interpreter-submit, witness-arrival timing, interpreter promotion,
 oracle start, oracle first token, TTS first audio, and playback completion.
+The headless proof should expose those segments under
+`kame_latency_breakdown_segments_ms` with the required keys
+`speech_end_to_reflex_ack_ms`, `audio_cut_to_interpreter_submit_ms`,
+`witness_arrival_ms`, `interpreter_submit_to_promotion_ms`,
+`promotion_to_oracle_start_ms`, `oracle_start_to_first_token_ms`,
+`first_token_to_tts_first_audio_ms`, `tts_first_audio_to_playback_start_ms`,
+and `playback_start_to_completion_ms`; package audit should fail if any segment
+is missing, non-numeric, negative, or the timeline is not monotonic.
 
 The Moshi transcript is useful context, not control. It should help Gemma detect
 clipped prefixes, names, numbers, code-switching, and hallucinated commands,

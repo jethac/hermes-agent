@@ -316,6 +316,13 @@ The next implementation pass should prove:
 6. Latency metrics distinguish speech-end-to-reflex-ack, audio-cut-to-Gemma
    submission, witness arrival, Gemma promotion, oracle start, oracle first
    token, TTS first audio, and playback completion.
+   Artifacts should expose these as `kame_latency_breakdown_segments_ms` with
+   required keys: `speech_end_to_reflex_ack_ms`,
+   `audio_cut_to_interpreter_submit_ms`, `witness_arrival_ms`,
+   `interpreter_submit_to_promotion_ms`, `promotion_to_oracle_start_ms`,
+   `oracle_start_to_first_token_ms`, `first_token_to_tts_first_audio_ms`,
+   `tts_first_audio_to_playback_start_ms`, and
+   `playback_start_to_completion_ms`.
 
 7. A Moshi/Open-S2S witness can improve Gemma's promoted wording without
    appearing verbatim in `oracle_text` or any action sink before promotion.

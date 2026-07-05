@@ -2632,6 +2632,33 @@ async def build_plan_run_async(
                     "kame_local_first_audio_bytes": voice_operator["proofs"]["async_oracle_jobs"][
                         "kame_local_first_audio_bytes"
                     ],
+                    "kame_latency_breakdown_smoke_ok": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["kame_latency_breakdown_smoke_ok"],
+                    "kame_latency_breakdown_required_segments": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "kame_latency_breakdown_required_segments"
+                        ]
+                    ),
+                    "kame_latency_breakdown_segments_ms": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "kame_latency_breakdown_segments_ms"
+                        ]
+                    ),
+                    "kame_latency_breakdown_timeline_ms": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "kame_latency_breakdown_timeline_ms"
+                        ]
+                    ),
+                    "kame_latency_breakdown_total_ms": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["kame_latency_breakdown_total_ms"],
+                    "kame_latency_breakdown_segment_total_ms": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["kame_latency_breakdown_segment_total_ms"],
+                    "kame_latency_breakdown_monotonic": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["kame_latency_breakdown_monotonic"],
                     "witness_fusion_with_single_bundle": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_with_single_bundle"
                     ],

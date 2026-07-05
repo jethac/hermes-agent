@@ -2033,6 +2033,31 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         voice_result["details"]["async_oracle_smoke"]["kame_local_speech_end_to_first_audio_ms"]
         >= 37
     )
+    assert voice_result["details"]["async_oracle_smoke"]["kame_latency_breakdown_smoke_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["kame_latency_breakdown_monotonic"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["kame_latency_breakdown_required_segments"] == [
+        "speech_end_to_reflex_ack_ms",
+        "audio_cut_to_interpreter_submit_ms",
+        "witness_arrival_ms",
+        "interpreter_submit_to_promotion_ms",
+        "promotion_to_oracle_start_ms",
+        "oracle_start_to_first_token_ms",
+        "first_token_to_tts_first_audio_ms",
+        "tts_first_audio_to_playback_start_ms",
+        "playback_start_to_completion_ms",
+    ]
+    assert set(voice_result["details"]["async_oracle_smoke"]["kame_latency_breakdown_segments_ms"]) == set(
+        voice_result["details"]["async_oracle_smoke"]["kame_latency_breakdown_required_segments"]
+    )
+    assert all(
+        value >= 0
+        for value in voice_result["details"]["async_oracle_smoke"][
+            "kame_latency_breakdown_segments_ms"
+        ].values()
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["kame_latency_breakdown_total_ms"] >= max(
+        voice_result["details"]["async_oracle_smoke"]["kame_latency_breakdown_segments_ms"].values()
+    )
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_with_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_late_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_no_duplicate_oracle_jobs"] is True

@@ -104,6 +104,17 @@ VALID_WITNESS_ARRIVAL_PHASES = {
     "after_interpreter_start",
 }
 EXPECTED_PROVIDER_TEXT_ALIAS_KEYS = ("stt", "caption", "transcript", "query", "user_text")
+EXPECTED_KAME_LATENCY_BREAKDOWN_SEGMENTS = (
+    "speech_end_to_reflex_ack_ms",
+    "audio_cut_to_interpreter_submit_ms",
+    "witness_arrival_ms",
+    "interpreter_submit_to_promotion_ms",
+    "promotion_to_oracle_start_ms",
+    "oracle_start_to_first_token_ms",
+    "first_token_to_tts_first_audio_ms",
+    "tts_first_audio_to_playback_start_ms",
+    "playback_start_to_completion_ms",
+)
 SECRET_SCAN_PATTERNS = (
     ("openai_or_stripe_secret_key", re.compile(r"\bsk_(?:live|test|car)_[A-Za-z0-9_-]{12,}\b")),
     ("openai_project_key", re.compile(r"\bsk-proj-[A-Za-z0-9_-]{12,}\b")),
@@ -2208,6 +2219,11 @@ def _audit_voice_operator_async_oracle_plan_projection(
         prefix="plan_run:voice_operator.async_oracle_smoke",
         issues=issues,
     )
+    _audit_kame_latency_breakdown(
+        async_smoke=projected,
+        prefix="plan_run:voice_operator.async_oracle_smoke",
+        issues=issues,
+    )
     _audit_promoted_request_summary_contract(
         proof.get("external_frontend_promoted_request_summary"),
         label=(
@@ -2822,6 +2838,42 @@ def _audit_provider_text_alias_normalization(
         issues.append(f"{prefix}.provider_text_alias_oracle_text_leak")
 
 
+def _non_negative_metric(value: object) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and value >= 0
+
+
+def _audit_kame_latency_breakdown(
+    *,
+    async_smoke: Mapping[str, Any],
+    prefix: str,
+    issues: list[str],
+) -> None:
+    expected = list(EXPECTED_KAME_LATENCY_BREAKDOWN_SEGMENTS)
+    if async_smoke.get("kame_latency_breakdown_smoke_ok") is not True:
+        issues.append(f"{prefix}.kame_latency_breakdown_smoke_not_ok")
+    if async_smoke.get("kame_latency_breakdown_required_segments") != expected:
+        issues.append(f"{prefix}.kame_latency_breakdown_required_segments_mismatch")
+
+    segments = async_smoke.get("kame_latency_breakdown_segments_ms")
+    if not isinstance(segments, Mapping):
+        issues.append(f"{prefix}.kame_latency_breakdown_segments_not_object")
+        segments = {}
+    for key in expected:
+        if not _non_negative_metric(segments.get(key)):
+            issues.append(f"{prefix}.kame_latency_breakdown_segment_missing_or_invalid:{key}")
+
+    timeline = async_smoke.get("kame_latency_breakdown_timeline_ms")
+    if not isinstance(timeline, Mapping):
+        issues.append(f"{prefix}.kame_latency_breakdown_timeline_not_object")
+    elif not all(_non_negative_metric(value) for value in timeline.values()):
+        issues.append(f"{prefix}.kame_latency_breakdown_timeline_invalid_metric")
+
+    if async_smoke.get("kame_latency_breakdown_monotonic") is not True:
+        issues.append(f"{prefix}.kame_latency_breakdown_not_monotonic")
+    if not _non_negative_metric(async_smoke.get("kame_latency_breakdown_total_ms")):
+        issues.append(f"{prefix}.kame_latency_breakdown_total_missing_or_invalid")
+
+
 def _audit_witness_fusion_multi_speaker_binding(
     *,
     async_smoke: Mapping[str, Any],
@@ -2947,6 +2999,11 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
         issues.append("voice_operator_readiness:async_oracle_smoke.unpromoted_hypothesis_action_sink_values_not_empty")
     _audit_witness_assisted_action_sinks(async_smoke=async_smoke, issues=issues)
     _audit_provider_text_alias_normalization(
+        async_smoke=async_smoke,
+        prefix="voice_operator_readiness:async_oracle_smoke",
+        issues=issues,
+    )
+    _audit_kame_latency_breakdown(
         async_smoke=async_smoke,
         prefix="voice_operator_readiness:async_oracle_smoke",
         issues=issues,

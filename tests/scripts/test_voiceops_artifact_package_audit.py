@@ -708,6 +708,78 @@ def test_package_audit_rejects_provider_text_alias_normalization_drift(tmp_path)
     )
 
 
+def test_package_audit_rejects_kame_latency_breakdown_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    voice_dir = artifact_root / "voiceops-voice-operator" / "current"
+
+    smoke_path = voice_dir / "async-oracle-smoke.json"
+    smoke = json.loads(smoke_path.read_text(encoding="utf-8"))
+    smoke["kame_latency_breakdown_smoke_ok"] = False
+    smoke["kame_latency_breakdown_required_segments"] = ["speech_end_to_reflex_ack_ms"]
+    smoke["kame_latency_breakdown_segments_ms"] = {"speech_end_to_reflex_ack_ms": -1}
+    smoke["kame_latency_breakdown_timeline_ms"] = {"speech_end": 0, "reflex_ack": -1}
+    smoke["kame_latency_breakdown_monotonic"] = False
+    smoke["kame_latency_breakdown_total_ms"] = None
+    _write_json(smoke_path, smoke)
+
+    readiness_path = voice_dir / "voice-operator-readiness.json"
+    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    readiness["async_oracle_smoke"]["kame_latency_breakdown_smoke_ok"] = False
+    readiness["async_oracle_smoke"]["kame_latency_breakdown_required_segments"] = [
+        "speech_end_to_reflex_ack_ms"
+    ]
+    readiness["async_oracle_smoke"]["kame_latency_breakdown_segments_ms"] = {
+        "speech_end_to_reflex_ack_ms": -1
+    }
+    readiness["async_oracle_smoke"]["kame_latency_breakdown_timeline_ms"] = {
+        "speech_end": 0,
+        "reflex_ack": -1,
+    }
+    readiness["async_oracle_smoke"]["kame_latency_breakdown_monotonic"] = False
+    readiness["async_oracle_smoke"]["kame_latency_breakdown_total_ms"] = None
+    _write_json(readiness_path, readiness)
+
+    plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
+    plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
+    voice_result = next(
+        result
+        for result in plan_run["results"]
+        if result["milestone"] == "milestone_1_real_voice_operator"
+    )
+    projected = voice_result["details"]["async_oracle_smoke"]
+    projected["kame_latency_breakdown_smoke_ok"] = False
+    projected["kame_latency_breakdown_required_segments"] = ["speech_end_to_reflex_ack_ms"]
+    projected["kame_latency_breakdown_segments_ms"] = {"speech_end_to_reflex_ack_ms": -1}
+    projected["kame_latency_breakdown_timeline_ms"] = {"speech_end": 0, "reflex_ack": -1}
+    projected["kame_latency_breakdown_monotonic"] = False
+    projected["kame_latency_breakdown_total_ms"] = None
+    _write_json(plan_run_path, plan_run)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "voice_operator_readiness:async_oracle_smoke.kame_latency_breakdown_smoke_not_ok"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:async_oracle_smoke.kame_latency_breakdown_required_segments_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:async_oracle_smoke.kame_latency_breakdown_segment_missing_or_invalid:speech_end_to_reflex_ack_ms"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:async_oracle_smoke.kame_latency_breakdown_not_monotonic"
+        in report["issues"]
+    )
+    assert (
+        "plan_run:voice_operator.async_oracle_smoke.kame_latency_breakdown_required_segments_mismatch"
+        in report["issues"]
+    )
+
+
 def test_package_audit_rejects_missing_witness_assisted_direct_audio_profile(
     tmp_path,
 ):

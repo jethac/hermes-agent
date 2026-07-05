@@ -2541,6 +2541,24 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         in (smoke.get("kame_local_first_audio_metric_keys") or [])
         and _non_negative_number(smoke.get("kame_defer_speech_end_to_first_audio_ms")) is not None
         and _non_negative_number(smoke.get("kame_local_speech_end_to_first_audio_ms")) is not None,
+        "kame_latency_breakdown_visible": smoke.get("kame_latency_breakdown_smoke_ok") is True
+        and smoke.get("kame_latency_breakdown_monotonic") is True
+        and _non_negative_number(smoke.get("kame_latency_breakdown_total_ms")) is not None
+        and isinstance(smoke.get("kame_latency_breakdown_segments_ms"), Mapping)
+        and all(
+            _non_negative_number(smoke["kame_latency_breakdown_segments_ms"].get(key)) is not None
+            for key in (
+                "speech_end_to_reflex_ack_ms",
+                "audio_cut_to_interpreter_submit_ms",
+                "witness_arrival_ms",
+                "interpreter_submit_to_promotion_ms",
+                "promotion_to_oracle_start_ms",
+                "oracle_start_to_first_token_ms",
+                "first_token_to_tts_first_audio_ms",
+                "tts_first_audio_to_playback_start_ms",
+                "playback_start_to_completion_ms",
+            )
+        ),
         "result_handling_bounded_and_durable": smoke.get("verbose_result_spoken_bounded") is True
         and smoke.get("verbose_result_committed_bounded") is True
         and smoke.get("verbose_result_commit_marked_truncated") is True
@@ -2933,6 +2951,16 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
                 "tests/agent/test_realtime_voice.py::test_kame_engine_local_route_reports_first_audio_metric",
             ],
             verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "kame_latency_breakdown_visible": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("kame_latency_breakdown_visible")),
+            evidence="async_oracle_smoke_full_kame_latency_breakdown",
+            test_refs=[
+                "tests/scripts/test_voiceops_plan_run.py::test_plan_run_generates_all_headless_milestone_artifacts",
+                "tests/scripts/test_voiceops_artifact_package_audit.py::test_package_audit_accepts_generated_headless_package",
+            ],
+            verification_mode="loopback_smoke_plus_package_audit",
             runtime_verified_by_this_report=True,
         ),
         "runtime_kame_action_gate_enforces_promoted_evidence": _async_oracle_acceptance_row(
@@ -4056,6 +4084,27 @@ def build_voice_operator_report(
             "kame_local_first_audio_bytes": async_oracle_smoke.get(
                 "kame_local_first_audio_bytes"
             ),
+            "kame_latency_breakdown_smoke_ok": bool(
+                async_oracle_smoke.get("kame_latency_breakdown_smoke_ok")
+            ),
+            "kame_latency_breakdown_required_segments": list(
+                async_oracle_smoke.get("kame_latency_breakdown_required_segments") or []
+            ),
+            "kame_latency_breakdown_segments_ms": dict(
+                async_oracle_smoke.get("kame_latency_breakdown_segments_ms") or {}
+            ),
+            "kame_latency_breakdown_timeline_ms": dict(
+                async_oracle_smoke.get("kame_latency_breakdown_timeline_ms") or {}
+            ),
+            "kame_latency_breakdown_total_ms": async_oracle_smoke.get(
+                "kame_latency_breakdown_total_ms"
+            ),
+            "kame_latency_breakdown_segment_total_ms": async_oracle_smoke.get(
+                "kame_latency_breakdown_segment_total_ms"
+            ),
+            "kame_latency_breakdown_monotonic": bool(
+                async_oracle_smoke.get("kame_latency_breakdown_monotonic")
+            ),
             "witness_fusion_with_bundle_id": async_oracle_smoke.get(
                 "witness_fusion_with_bundle_id"
             ),
@@ -4505,6 +4554,9 @@ def build_voice_operator_report(
             ],
             "async_oracle_kame_ack_latency_metrics_visible": async_oracle_coverage[
                 "kame_ack_latency_metrics_visible"
+            ],
+            "async_oracle_kame_latency_breakdown_visible": async_oracle_coverage[
+                "kame_latency_breakdown_visible"
             ],
             "async_oracle_runtime_kame_action_gate": async_oracle_coverage[
                 "runtime_kame_action_gate_enforced"

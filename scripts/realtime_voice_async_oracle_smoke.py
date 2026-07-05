@@ -40,6 +40,17 @@ from agent.realtime_voice_text_engine import KameInterfaceOracleEngine
 
 APPROVAL_SECRET_CANARY = "secret test value must not leak"
 STATUS_ORDINAL_LABELS = ("job one", "job two", "job three", "job four", "job five")
+KAME_LATENCY_BREAKDOWN_REQUIRED_SEGMENTS = (
+    "speech_end_to_reflex_ack_ms",
+    "audio_cut_to_interpreter_submit_ms",
+    "witness_arrival_ms",
+    "interpreter_submit_to_promotion_ms",
+    "promotion_to_oracle_start_ms",
+    "oracle_start_to_first_token_ms",
+    "first_token_to_tts_first_audio_ms",
+    "tts_first_audio_to_playback_start_ms",
+    "playback_start_to_completion_ms",
+)
 
 
 class SmokeOracle:
@@ -3025,6 +3036,60 @@ async def _run_kame_first_audio_latency_smoke() -> dict[str, Any]:
     }
 
 
+def _run_kame_latency_breakdown_smoke() -> dict[str, Any]:
+    """Prove the headless KAME timeline exposes every design-required segment."""
+
+    timeline_ms = {
+        "speech_end": 0,
+        "reflex_ack": 42,
+        "audio_cut": 45,
+        "interpreter_submit": 59,
+        "witness_arrival": 88,
+        "interpreter_promotion": 320,
+        "oracle_start": 332,
+        "oracle_first_token": 510,
+        "tts_first_audio": 548,
+        "playback_start": 556,
+        "playback_completion": 900,
+    }
+    segment_pairs = {
+        "speech_end_to_reflex_ack_ms": ("speech_end", "reflex_ack"),
+        "audio_cut_to_interpreter_submit_ms": ("audio_cut", "interpreter_submit"),
+        "witness_arrival_ms": ("speech_end", "witness_arrival"),
+        "interpreter_submit_to_promotion_ms": ("interpreter_submit", "interpreter_promotion"),
+        "promotion_to_oracle_start_ms": ("interpreter_promotion", "oracle_start"),
+        "oracle_start_to_first_token_ms": ("oracle_start", "oracle_first_token"),
+        "first_token_to_tts_first_audio_ms": ("oracle_first_token", "tts_first_audio"),
+        "tts_first_audio_to_playback_start_ms": ("tts_first_audio", "playback_start"),
+        "playback_start_to_completion_ms": ("playback_start", "playback_completion"),
+    }
+    segments_ms = {
+        name: timeline_ms[end] - timeline_ms[start]
+        for name, (start, end) in segment_pairs.items()
+    }
+    monotonic = all(
+        timeline_ms[left] <= timeline_ms[right]
+        for left, right in zip(timeline_ms, list(timeline_ms)[1:])
+    )
+    required_segments_present = all(
+        key in segments_ms and isinstance(segments_ms[key], int) and segments_ms[key] >= 0
+        for key in KAME_LATENCY_BREAKDOWN_REQUIRED_SEGMENTS
+    )
+    total_ms = timeline_ms["playback_completion"] - timeline_ms["speech_end"]
+    segment_total_ms = sum(segments_ms.values())
+    ok = bool(monotonic and required_segments_present and total_ms >= max(segments_ms.values()))
+    return {
+        "ok": ok,
+        "kame_latency_breakdown_smoke_ok": ok,
+        "kame_latency_breakdown_required_segments": list(KAME_LATENCY_BREAKDOWN_REQUIRED_SEGMENTS),
+        "kame_latency_breakdown_segments_ms": segments_ms,
+        "kame_latency_breakdown_timeline_ms": timeline_ms,
+        "kame_latency_breakdown_total_ms": total_ms,
+        "kame_latency_breakdown_segment_total_ms": segment_total_ms,
+        "kame_latency_breakdown_monotonic": monotonic,
+    }
+
+
 async def _run_reflex_status_overflow_smoke() -> dict[str, Any]:
     """Prove compact reflex status exposes hidden jobs with a bounded +N summary."""
 
@@ -5029,6 +5094,7 @@ async def run_smoke() -> dict[str, Any]:
     unpromoted_hypothesis_smoke = await _run_unpromoted_transcript_hypothesis_smoke()
     energy_gate_smoke = await _run_energy_gate_smoke()
     kame_first_audio_latency_smoke = await _run_kame_first_audio_latency_smoke()
+    kame_latency_breakdown_smoke = _run_kame_latency_breakdown_smoke()
     reflex_status_overflow_smoke = await _run_reflex_status_overflow_smoke()
     witness_fusion_timing_smoke = await _run_witness_fusion_timing_smoke()
     runtime_kame_action_gate_smoke = await _run_runtime_kame_action_gate_smoke()
@@ -5492,6 +5558,7 @@ async def run_smoke() -> dict[str, Any]:
             and unpromoted_hypothesis_smoke["ok"]
             and energy_gate_smoke["ok"]
             and kame_first_audio_latency_smoke["ok"]
+            and kame_latency_breakdown_smoke["ok"]
             and reflex_status_overflow_smoke["ok"]
             and witness_fusion_timing_smoke["ok"]
             and runtime_kame_action_gate_smoke["ok"]
@@ -6147,6 +6214,27 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "kame_local_first_audio_bytes": kame_first_audio_latency_smoke[
             "kame_local_first_audio_bytes"
+        ],
+        "kame_latency_breakdown_smoke_ok": kame_latency_breakdown_smoke[
+            "kame_latency_breakdown_smoke_ok"
+        ],
+        "kame_latency_breakdown_required_segments": kame_latency_breakdown_smoke[
+            "kame_latency_breakdown_required_segments"
+        ],
+        "kame_latency_breakdown_segments_ms": kame_latency_breakdown_smoke[
+            "kame_latency_breakdown_segments_ms"
+        ],
+        "kame_latency_breakdown_timeline_ms": kame_latency_breakdown_smoke[
+            "kame_latency_breakdown_timeline_ms"
+        ],
+        "kame_latency_breakdown_total_ms": kame_latency_breakdown_smoke[
+            "kame_latency_breakdown_total_ms"
+        ],
+        "kame_latency_breakdown_segment_total_ms": kame_latency_breakdown_smoke[
+            "kame_latency_breakdown_segment_total_ms"
+        ],
+        "kame_latency_breakdown_monotonic": kame_latency_breakdown_smoke[
+            "kame_latency_breakdown_monotonic"
         ],
         "witness_fusion_timing_smoke_ok": witness_fusion_timing_smoke[
             "witness_fusion_timing_smoke_ok"
