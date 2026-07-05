@@ -4343,6 +4343,10 @@ def _copy_witness_hypothesis_audit_fields(
         value = source.get(key)
         if isinstance(value, Mapping):
             target[key] = dict(value)
+    for key in ("speaker_or_actor_ref", "channel_or_surface_ref"):
+        value = str(source.get(key) or "").strip()
+        if value:
+            target[key] = value[:240]
     for key in ("audio_time_range_ms", "time_range_ms", "utterance_time_range_ms", "witness_time_range_ms"):
         value = source.get(key)
         if isinstance(value, (list, tuple)) and len(value) >= 2:

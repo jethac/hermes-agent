@@ -916,6 +916,8 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
             "confidence": 0.88,
             "latency_ms": 132,
             "arrival_phase": "with_raw_audio",
+            "speaker_or_actor_ref": "discord:user:42",
+            "channel_or_surface_ref": "discord_voice:guild:guild-1:channel:general",
         },
     )
     assert updated.interpreter_evidence[0]["witness_arrival_phases"] == (
@@ -1045,6 +1047,8 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
             "tool_authority": False,
             "confidence": 0.71,
             "arrival_phase": "before_raw_audio",
+            "speaker_or_actor_ref": "discord:user:42",
+            "channel_or_surface_ref": "discord_voice:guild:guild-1:channel:general",
         },
         {
             "kind": "classic_asr_hypothesis",
@@ -1057,6 +1061,8 @@ async def test_interpreter_evidence_updates_queued_job_before_execution():
             "confidence": 0.88,
             "latency_ms": 132,
             "arrival_phase": "with_raw_audio",
+            "speaker_or_actor_ref": "discord:user:42",
+            "channel_or_surface_ref": "discord_voice:guild:guild-1:channel:general",
         },
     )
     assert oracle_request.witness_arrival_phases == ("before_raw_audio", "with_raw_audio")
@@ -1157,7 +1163,9 @@ async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witn
             "kind": "frontend_witness_hypothesis",
             "arrival_phase": "with_raw_audio",
             "speaker": {"channel_user_id": "other-user", "display_name": "guest", "ambiguous": True},
+            "speaker_or_actor_ref": "discord:user:other-user",
             "channel": {"guild_id": "guild-1", "channel_id": "general"},
+            "channel_or_surface_ref": "discord_voice:guild:guild-1:channel:general",
             "audio_time_range_ms": (1100, 1800),
             "adjudication": "rejected_or_diagnostic_only",
             "rejection_reasons": ("ambiguous_speaker", "wrong_speaker"),
@@ -1172,7 +1180,9 @@ async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witn
             "kind": "frontend_witness_hypothesis",
             "arrival_phase": "with_raw_audio",
             "speaker": {"channel_user_id": "42", "display_name": "jetha"},
+            "speaker_or_actor_ref": "discord:user:42",
             "channel": {"guild_id": "guild-1", "channel_id": "general"},
+            "channel_or_surface_ref": "discord_voice:guild:guild-1:channel:general",
             "audio_time_range_ms": (100, 600),
             "adjudication": "rejected_or_diagnostic_only",
             "rejection_reasons": ("stale_witness",),
@@ -1187,7 +1197,9 @@ async def test_interpreter_evidence_rejects_wrong_speaker_channel_and_stale_witn
             "kind": "frontend_witness_hypothesis",
             "arrival_phase": "with_raw_audio",
             "speaker": {"channel_user_id": "42", "display_name": "jetha"},
+            "speaker_or_actor_ref": "discord:user:42",
             "channel": {"guild_id": "guild-1", "channel_id": "other-room"},
+            "channel_or_surface_ref": "discord_voice:guild:guild-1:channel:other-room",
             "audio_time_range_ms": (1200, 1900),
             "adjudication": "rejected_or_diagnostic_only",
             "rejection_reasons": ("wrong_channel",),

@@ -445,12 +445,26 @@ class KameOracleRequest:
     def __post_init__(self) -> None:
         """Normalize witness hypotheses to the non-authoritative KAME contract."""
 
-        normalized: list[Mapping[str, Any]] = []
+        normalized: list[dict[str, Any]] = []
         seen: set[tuple[str, str]] = set()
         for value in self.auxiliary_transcript_hypotheses:
             hypothesis = _auxiliary_transcript_hypothesis(value)
             if not hypothesis:
                 continue
+            if "speaker_or_actor_ref" not in hypothesis:
+                speaker_ref = _transcript_hypothesis_speaker_or_actor_ref(
+                    hypothesis,
+                    fallback_speaker=self.speaker_metadata,
+                )
+                if speaker_ref:
+                    hypothesis["speaker_or_actor_ref"] = speaker_ref
+            if "channel_or_surface_ref" not in hypothesis:
+                channel_ref = _transcript_hypothesis_channel_or_surface_ref(
+                    hypothesis,
+                    fallback_channel=self.channel_metadata,
+                )
+                if channel_ref:
+                    hypothesis["channel_or_surface_ref"] = channel_ref
             key = (str(hypothesis.get("source") or ""), str(hypothesis.get("text") or ""))
             if key in seen:
                 continue
@@ -458,6 +472,28 @@ class KameOracleRequest:
             normalized.append(hypothesis)
             if len(normalized) >= 5:
                 break
+        fallback_speaker = dict(self.speaker_metadata or {})
+        fallback_channel = dict(self.channel_metadata or {})
+        for hypothesis in normalized:
+            if not fallback_speaker and isinstance(hypothesis.get("speaker"), Mapping):
+                fallback_speaker = dict(hypothesis["speaker"])
+            if not fallback_channel and isinstance(hypothesis.get("channel"), Mapping):
+                fallback_channel = dict(hypothesis["channel"])
+        for hypothesis in normalized:
+            if "speaker_or_actor_ref" not in hypothesis:
+                speaker_ref = _transcript_hypothesis_speaker_or_actor_ref(
+                    hypothesis,
+                    fallback_speaker=fallback_speaker,
+                )
+                if speaker_ref:
+                    hypothesis["speaker_or_actor_ref"] = speaker_ref
+            if "channel_or_surface_ref" not in hypothesis:
+                channel_ref = _transcript_hypothesis_channel_or_surface_ref(
+                    hypothesis,
+                    fallback_channel=fallback_channel,
+                )
+                if channel_ref:
+                    hypothesis["channel_or_surface_ref"] = channel_ref
         object.__setattr__(self, "auxiliary_transcript_hypotheses", tuple(normalized))
 
     @property
@@ -596,6 +632,7 @@ class KameOracleRequest:
                 "kind": "classic_asr_hypothesis",
                 "source": self.asr_transcript_source or "asr",
                 "text": self.asr_transcript.strip(),
+                "text_digest": _transcript_text_digest(self.asr_transcript.strip()),
                 "role": KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
                 "authority": "hypothesis",
                 "promotion_required": KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
@@ -616,6 +653,20 @@ class KameOracleRequest:
         compact: list[dict[str, Any]] = []
         seen: set[tuple[str, str, str]] = set()
         for item in items:
+            if "speaker_or_actor_ref" not in item:
+                speaker_ref = _transcript_hypothesis_speaker_or_actor_ref(
+                    item,
+                    fallback_speaker=self.speaker_metadata,
+                )
+                if speaker_ref:
+                    item["speaker_or_actor_ref"] = speaker_ref
+            if "channel_or_surface_ref" not in item:
+                channel_ref = _transcript_hypothesis_channel_or_surface_ref(
+                    item,
+                    fallback_channel=self.channel_metadata,
+                )
+                if channel_ref:
+                    item["channel_or_surface_ref"] = channel_ref
             key = (str(item.get("kind") or ""), str(item.get("source") or ""), str(item.get("text") or ""))
             if key in seen:
                 continue
@@ -1258,9 +1309,15 @@ def _canonical_transcript_hypothesis(value: object) -> dict[str, Any]:
     speaker = _transcript_hypothesis_speaker_metadata(value)
     if speaker:
         hypothesis["speaker"] = speaker
+    speaker_ref = _transcript_hypothesis_speaker_or_actor_ref(value, fallback_speaker=speaker)
+    if speaker_ref:
+        hypothesis["speaker_or_actor_ref"] = speaker_ref
     channel = _transcript_hypothesis_channel_metadata(value)
     if channel:
         hypothesis["channel"] = channel
+    channel_ref = _transcript_hypothesis_channel_or_surface_ref(value, fallback_channel=channel)
+    if channel_ref:
+        hypothesis["channel_or_surface_ref"] = channel_ref
     audio_time_range_ms = _transcript_hypothesis_audio_time_range_ms(value)
     if audio_time_range_ms:
         hypothesis["audio_time_range_ms"] = audio_time_range_ms
@@ -1555,9 +1612,15 @@ def _auxiliary_transcript_hypothesis(value: object) -> dict[str, Any]:
     speaker = _transcript_hypothesis_speaker_metadata(value)
     if speaker:
         hypothesis["speaker"] = speaker
+    speaker_ref = _transcript_hypothesis_speaker_or_actor_ref(value, fallback_speaker=speaker)
+    if speaker_ref:
+        hypothesis["speaker_or_actor_ref"] = speaker_ref
     channel = _transcript_hypothesis_channel_metadata(value)
     if channel:
         hypothesis["channel"] = channel
+    channel_ref = _transcript_hypothesis_channel_or_surface_ref(value, fallback_channel=channel)
+    if channel_ref:
+        hypothesis["channel_or_surface_ref"] = channel_ref
     audio_time_range_ms = _transcript_hypothesis_audio_time_range_ms(value)
     if audio_time_range_ms:
         hypothesis["audio_time_range_ms"] = audio_time_range_ms
@@ -1583,6 +1646,55 @@ def _transcript_hypothesis_superseded_partial_texts(value: object) -> tuple[str,
         if text:
             texts.append(text[:500])
     return tuple(dict.fromkeys(texts))
+
+
+def _transcript_hypothesis_speaker_or_actor_ref(
+    value: Mapping[str, Any],
+    *,
+    fallback_speaker: Optional[Mapping[str, Any]] = None,
+) -> str:
+    explicit = _optional_text(value.get("speaker_or_actor_ref"))
+    if explicit:
+        return explicit[:200]
+    explicit_speaker = _transcript_hypothesis_speaker_metadata(value)
+    speaker = {**dict(fallback_speaker or {}), **explicit_speaker}
+    if not speaker:
+        return ""
+    platform = _optional_text(speaker.get("platform"))
+    for key in ("channel_user_id", "platform_user_id", "user_id", "speaker_id", "id"):
+        user_id = _optional_text(speaker.get(key))
+        if user_id:
+            prefix = f"{platform}:user" if platform else "speaker"
+            return f"{prefix}:{user_id}"[:200]
+    display_name = _optional_text(speaker.get("display_name"))
+    if display_name:
+        return f"speaker:{display_name}"[:200]
+    return ""
+
+
+def _transcript_hypothesis_channel_or_surface_ref(
+    value: Mapping[str, Any],
+    *,
+    fallback_channel: Optional[Mapping[str, Any]] = None,
+) -> str:
+    explicit = _optional_text(value.get("channel_or_surface_ref"))
+    if explicit:
+        return explicit[:240]
+    explicit_channel = _transcript_hypothesis_channel_metadata(value)
+    channel = {**dict(fallback_channel or {}), **explicit_channel}
+    if not channel:
+        return ""
+    transport = _optional_text(channel.get("transport")) or "surface"
+    guild_id = _optional_text(channel.get("guild_id"))
+    channel_id = _optional_text(channel.get("channel_id"))
+    if guild_id and channel_id:
+        return f"{transport}:guild:{guild_id}:channel:{channel_id}"[:240]
+    if channel_id:
+        return f"{transport}:channel:{channel_id}"[:240]
+    surface = _optional_text(channel.get("surface")) or _optional_text(channel.get("name"))
+    if surface:
+        return f"{transport}:{surface}"[:240]
+    return ""
 
 
 def _witness_arrival_phase(value: Mapping[str, Any]) -> str:

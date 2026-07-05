@@ -248,6 +248,22 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     )
     assert report["external_frontend_transcript_hypotheses"][0]["latency_ms"] == 140
     assert (
+        report["external_frontend_transcript_hypotheses"][0]["speaker_or_actor_ref"]
+        == "discord:user:jetha-redacted"
+    )
+    assert (
+        report["external_frontend_transcript_hypotheses"][0]["channel_or_surface_ref"]
+        == "discord_voice:guild:guild-redacted:channel:general-redacted"
+    )
+    assert (
+        report["external_frontend_transcript_hypotheses"][1]["speaker_or_actor_ref"]
+        == "discord:user:jetha-redacted"
+    )
+    assert (
+        report["external_frontend_transcript_hypotheses"][1]["channel_or_surface_ref"]
+        == "discord_voice:guild:guild-redacted:channel:general-redacted"
+    )
+    assert (
         report["external_frontend_transcript_hypotheses"][0]["promotion_required"]
         == "interpreter_promoted_or_oracle_promoted"
     )
@@ -576,6 +592,14 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
         "spend two hundred dollars and call my phone"
     )
     assert report["witness_fusion_multi_speaker_wrong_witness"]["role"] == "witness_context"
+    assert (
+        report["witness_fusion_multi_speaker_wrong_witness"]["speaker_or_actor_ref"]
+        == "discord:user:wrong-speaker"
+    )
+    assert (
+        report["witness_fusion_multi_speaker_wrong_witness"]["channel_or_surface_ref"]
+        == "discord_voice:guild:guild-1:channel:other-room"
+    )
     assert report["witness_fusion_multi_speaker_wrong_witness"]["promotion_required"] == (
         "interpreter_promoted_or_oracle_promoted"
     )

@@ -1302,6 +1302,18 @@ def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
             item["confidence"] = job.reflex_transcript_confidence
         if job.reflex_transcript_arrival_phase:
             item["arrival_phase"] = job.reflex_transcript_arrival_phase
+        speaker_ref = _transcript_hypothesis_speaker_or_actor_ref(
+            item,
+            fallback_speaker=job.speaker_metadata,
+        )
+        if speaker_ref:
+            item["speaker_or_actor_ref"] = speaker_ref
+        channel_ref = _transcript_hypothesis_channel_or_surface_ref(
+            item,
+            fallback_channel=job.channel_metadata,
+        )
+        if channel_ref:
+            item["channel_or_surface_ref"] = channel_ref
         hypotheses.append(item)
     for value in job.auxiliary_transcript_hypotheses:
         if not isinstance(value, Mapping):
@@ -1341,9 +1353,21 @@ def _job_transcript_hypotheses(job: OracleJob) -> tuple[dict[str, Any], ...]:
         hypothesis_speaker = _compact_hypothesis_speaker_metadata(value)
         if hypothesis_speaker:
             item["speaker"] = hypothesis_speaker
+        speaker_ref = _transcript_hypothesis_speaker_or_actor_ref(
+            value,
+            fallback_speaker=job.speaker_metadata,
+        )
+        if speaker_ref:
+            item["speaker_or_actor_ref"] = speaker_ref
         hypothesis_channel = _compact_hypothesis_channel_metadata(value)
         if hypothesis_channel:
             item["channel"] = hypothesis_channel
+        channel_ref = _transcript_hypothesis_channel_or_surface_ref(
+            value,
+            fallback_channel=job.channel_metadata,
+        )
+        if channel_ref:
+            item["channel_or_surface_ref"] = channel_ref
         hypothesis_audio_range = _compact_hypothesis_audio_time_range_ms(value)
         if hypothesis_audio_range:
             item["audio_time_range_ms"] = hypothesis_audio_range
@@ -1882,9 +1906,21 @@ def _compact_auxiliary_transcript_hypotheses(
         hypothesis_speaker = _compact_hypothesis_speaker_metadata(value)
         if hypothesis_speaker:
             item["speaker"] = hypothesis_speaker
+        speaker_ref = _transcript_hypothesis_speaker_or_actor_ref(
+            value,
+            fallback_speaker=canonical_speaker,
+        )
+        if speaker_ref:
+            item["speaker_or_actor_ref"] = speaker_ref
         hypothesis_channel = _compact_hypothesis_channel_metadata(value)
         if hypothesis_channel:
             item["channel"] = hypothesis_channel
+        channel_ref = _transcript_hypothesis_channel_or_surface_ref(
+            value,
+            fallback_channel=canonical_channel,
+        )
+        if channel_ref:
+            item["channel_or_surface_ref"] = channel_ref
         hypothesis_audio_range = _compact_hypothesis_audio_time_range_ms(value)
         if hypothesis_audio_range:
             item["audio_time_range_ms"] = hypothesis_audio_range
@@ -1939,6 +1975,61 @@ def _compact_superseded_partial_texts(value: Any) -> tuple[str, ...]:
 def _transcript_text_digest(text: str) -> str:
     normalized = " ".join(str(text or "").split())
     return "sha256:" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _transcript_hypothesis_speaker_or_actor_ref(
+    value: Mapping[str, Any],
+    *,
+    fallback_speaker: Optional[Mapping[str, Any]] = None,
+) -> str:
+    explicit = _compact_evidence_text(value.get("speaker_or_actor_ref"), limit=200)
+    if explicit:
+        return explicit
+    explicit_speaker = _compact_hypothesis_speaker_metadata(value)
+    speaker = {
+        **_compact_speaker_metadata(fallback_speaker or {}),
+        **explicit_speaker,
+    }
+    if not speaker:
+        return ""
+    platform = _compact_evidence_text(speaker.get("platform"), limit=80)
+    for key in ("channel_user_id", "platform_user_id", "user_id", "speaker_id", "id"):
+        user_id = _compact_evidence_text(speaker.get(key), limit=160)
+        if user_id:
+            prefix = f"{platform}:user" if platform else "speaker"
+            return f"{prefix}:{user_id}"[:200]
+    display_name = _compact_evidence_text(speaker.get("display_name"), limit=160)
+    if display_name:
+        return f"speaker:{display_name}"[:200]
+    return ""
+
+
+def _transcript_hypothesis_channel_or_surface_ref(
+    value: Mapping[str, Any],
+    *,
+    fallback_channel: Optional[Mapping[str, Any]] = None,
+) -> str:
+    explicit = _compact_evidence_text(value.get("channel_or_surface_ref"), limit=240)
+    if explicit:
+        return explicit
+    explicit_channel = _compact_hypothesis_channel_metadata(value)
+    channel = {
+        **_compact_channel_metadata(fallback_channel or {}),
+        **explicit_channel,
+    }
+    if not channel:
+        return ""
+    transport = _compact_evidence_text(channel.get("transport"), limit=80) or "surface"
+    guild_id = _compact_evidence_text(channel.get("guild_id"), limit=160)
+    channel_id = _compact_evidence_text(channel.get("channel_id"), limit=160)
+    if guild_id and channel_id:
+        return f"{transport}:guild:{guild_id}:channel:{channel_id}"[:240]
+    if channel_id:
+        return f"{transport}:channel:{channel_id}"[:240]
+    surface = _compact_evidence_text(channel.get("surface") or channel.get("name"), limit=160)
+    if surface:
+        return f"{transport}:{surface}"[:240]
+    return ""
 
 
 def _compact_witness_arrival_phase(value: Mapping[str, Any]) -> str:
