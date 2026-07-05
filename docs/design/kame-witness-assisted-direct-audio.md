@@ -147,6 +147,13 @@ accepted speech cut, Hermes should provide both to Gemma. The waveform is the
 primary interpreter evidence. The transcript-like string is context about what
 the realtime frontend believed it heard.
 
+This does not reintroduce an ASR requirement. For the normal path, raw audio,
+speech-gate metadata, and reflex state are enough to acknowledge the user and
+submit the Gemma interpreter packet. Moshi/Open-S2S text, reflex captions, and
+classic ASR text are auxiliary witness inputs. If they arrive in time, they
+help Gemma adjudicate the cut. If they arrive late, they merge into the same
+bundle. If they never arrive, the raw-audio interpreter path still proceeds.
+
 This is not "keeping STT in parallel." It is one interpreter bundle with sensor
 fan-in. The Moshi/Open-S2S string may help Gemma recover a clipped prefix,
 name, number, language switch, or rough intent, but it stays a witness until
@@ -288,6 +295,13 @@ adjudication, and any later promoted wording. If promoted wording is needed,
 Gemma must emit it under `interpreter_promoted`, or the Hermes oracle must emit
 it under `oracle_promoted`.
 
+The key implementation detail is to keep two different scopes: literal witness
+text is allowed in the ephemeral interpreter request and controlled debug
+source artifact; everywhere else gets a redacted hypothesis row until
+promotion. This lets Gemma compare "what Moshi thought it heard" with the
+waveform without allowing that text to become the Hermes prompt or an action
+argument by accident.
+
 Provider field names do not carry authority. Adapter-edge names such as `stt`,
 `stt_text`, `caption`, `transcript`, `query`, or `user_text` normalize into
 `transcript_hypotheses[]` when raw audio exists. If raw audio is missing, the
@@ -387,13 +401,16 @@ The next implementation pass should prove:
    scheduling, or transcript promotion.
 2. Moshi/Open-S2S witness text can be attached before, with, or after the raw
    audio cut without producing duplicate Hermes turns.
-3. Gemma receives raw audio before witness text and emits both
+3. Missing Moshi/Open-S2S/classic-ASR text does not block reflex
+   acknowledgement or raw-audio interpreter submission when the accepted cut,
+   speech-gate metadata, and reflex state exist.
+4. Gemma receives raw audio before witness text and emits both
    `witness_adjudications` and `interpreter_promoted`.
-4. Logs and artifacts show one `turn_id`, one `audio_segment_ref`, one
+5. Logs and artifacts show one `turn_id`, one `audio_segment_ref`, one
    `evidence_bundle_id`, and one oracle job lifecycle.
-5. Unpromoted witness text is sink-checked out of Stripe, NemoClaw, phone,
+6. Unpromoted witness text is sink-checked out of Stripe, NemoClaw, phone,
    memory, file, message, tool, and durable-history payloads.
-6. Latency metrics distinguish speech-end-to-reflex-ack, audio-cut-to-Gemma
+7. Latency metrics distinguish speech-end-to-reflex-ack, audio-cut-to-Gemma
    submission, witness arrival, Gemma promotion, oracle start, oracle first
    token, TTS first audio, and playback completion.
    Artifacts should expose these as `kame_latency_breakdown_segments_ms` with
@@ -404,18 +421,18 @@ The next implementation pass should prove:
    `tts_first_audio_to_playback_start_ms`, and
    `playback_start_to_completion_ms`.
 
-7. A Moshi/Open-S2S witness can improve Gemma's promoted wording without
+8. A Moshi/Open-S2S witness can improve Gemma's promoted wording without
    appearing verbatim in `oracle_text` or any action sink before promotion.
-8. A conflicting Moshi/Open-S2S witness is rejected or kept diagnostic-only
+9. A conflicting Moshi/Open-S2S witness is rejected or kept diagnostic-only
    while the raw-audio-grounded promoted wording continues to the oracle.
-9. A text-only Moshi/Open-S2S packet is visibly degraded compatibility and does
+10. A text-only Moshi/Open-S2S packet is visibly degraded compatibility and does
    not satisfy full-KAME, Stripe, NemoClaw, phone, file, memory, message, or
    tool readiness.
-10. The final package audit fails closed if witness text appears in any
+11. The final package audit fails closed if witness text appears in any
     witness-assisted action sink value, or if a sink value lacks an
     `interpreter_promoted` or `oracle_promoted` source, even when summary
     booleans claim the sinks are clean.
-11. Provider aliases `stt`, `caption`, `transcript`, `query`, and `user_text`
+12. Provider aliases `stt`, `caption`, `transcript`, `query`, and `user_text`
     all normalize into `transcript_hypotheses[]` with `provider_alias_key`
     provenance and fail package audit if they leak into `oracle_text` or any
     action sink.

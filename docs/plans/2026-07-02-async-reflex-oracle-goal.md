@@ -104,6 +104,17 @@ name, number, code-switched phrase, or rough intent, but it cannot itself
 become durable user text, `oracle_text`, a tool argument, a spend reason, a
 phone payload, memory/file content, or an external message.
 
+2026-07-05 context amendment: ASR evidence is no longer a normal-path
+requirement. A valid KAME turn may proceed from accepted raw audio, energy/VAD
+metadata, speaker/channel binding, reflex acknowledgement, and Gemma
+promotion. Moshi/Open-S2S/reflex/classic-ASR text is still useful and should be
+attached when available, but it is optional witness context, not the release
+condition for acknowledgement, interpreter submission, or oracle job creation.
+The only place literal witness text may appear before promotion is the
+ephemeral Gemma interpreter request or controlled source artifact; normal
+Hermes state and action sinks receive only digest/provenance/adjudication
+metadata until promotion.
+
 Implementation consequence: raw-audio jobs may be accepted and visible to the
 reflex immediately, but the Hermes `/model` runner must wait for
 `interpreter_promoted` or `oracle_promoted` wording before durable oracle work

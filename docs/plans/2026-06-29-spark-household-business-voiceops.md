@@ -1115,6 +1115,16 @@ Moshi/Open-S2S, VoiceClaw/OpenClaw, reflex captions, or classic ASR is useful
 as witness context, but it cannot satisfy this milestone without raw-audio
 promotion.
 
+ASR evidence is not required to close the normal-path timing proof. When raw
+audio, speech-gate metadata, speaker/channel binding, and reflex state exist,
+the system should acknowledge and submit the Gemma interpreter packet without
+waiting for Moshi/Open-S2S or classic-ASR text. If those strings exist, they
+belong in `transcript_hypotheses[]` as same-cut witness context. Literal witness
+text may be present only in the ephemeral interpreter request or controlled
+source artifact; readiness, status, oracle prompts, and action sinks should use
+only digest/provenance/adjudication metadata until `interpreter_promoted` or
+`oracle_promoted` wording exists.
+
 Headless command:
 
 ```bash
@@ -1419,6 +1429,14 @@ frontend witness attached to the same raw-audio interpreter bundle. It must not
 count as a separate Spark readiness role, create a second Hermes turn, replace
 raw-audio evidence, or satisfy spend/provisioning/phone approval gates without
 raw-audio-grounded interpreter promotion.
+
+The local/Spark evidence should therefore measure Moshi/Open-S2S or classic
+ASR as optional witness quality, not as a fourth required role. A passing local
+KAME smoke needs reflex timing, raw-audio interpreter promotion, oracle routing
+through Hermes `/model`, TTS/playback, sidecar lifecycle, and clean action
+sinks. Witness transcripts can improve the promoted interpretation, but missing
+witness transcripts should not fail the normal path when raw audio and Gemma
+promotion are present.
 
 Headless command:
 

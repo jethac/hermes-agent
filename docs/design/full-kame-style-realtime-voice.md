@@ -72,6 +72,15 @@ reflex acknowledgement or raw-audio interpreter submission when the speech gate
 accepted a cut. A present transcript must improve or explain interpretation
 without gaining authority by being fast.
 
+Current policy: do not require ASR evidence to prove a normal KAME voice turn.
+The normal proof is an accepted speech cut, speech-gate metadata, reflex state,
+Gemma direct-audio promotion, and one Hermes active-`/model` oracle job.
+Moshi/Open-S2S, reflex-caption, and classic-ASR strings are witness context,
+not release conditions. They should be collected when available because they can
+help Gemma with clipped prefixes, names, numbers, multilingual speech, and
+rough intent, but their absence is not a normal-path failure when raw audio is
+present.
+
 The implementation target is now **witness-assisted direct-audio**. This means
 Hermes should prefer a single interpreter packet that contains the bounded raw
 audio cut plus every same-cut hearing hypothesis the frontend can provide. A
@@ -195,6 +204,13 @@ Moshi/Open-S2S witness can arrive before/with/after the raw-audio packet, and
 the evidence merger must still produce one bundle and one oracle job. If the
 frontend can provide only text and no waveform, that is degraded compatibility,
 not the full KAME path and not sufficient for high-risk action gates.
+
+Literal witness text has a deliberately narrow privilege. Gemma may see the raw
+Moshi/Open-S2S or ASR string inside the ephemeral interpreter request so it can
+compare the claim against the waveform. Hermes status, durable history,
+`/model` prompts, Stripe/NemoClaw packets, phone payloads, memory/file writes,
+external messages, and tool arguments should see only source metadata, digests,
+arrival phase, confidence, adjudication, and later promoted wording.
 
 ## Canonical Short Form
 

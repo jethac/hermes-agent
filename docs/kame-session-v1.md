@@ -177,6 +177,14 @@ only under the same-cut witness contract. A Moshi/Open-S2S string is useful
 because it is a fast report of what the live interface believed it heard. It is
 not the user message, not a second STT conversation, and not a scheduler.
 
+The runtime should therefore avoid any "ASR evidence required" gate on the
+normal KAME path. The required evidence is the accepted raw-audio cut, speech
+gate metadata, reflex state, and later Gemma promotion. Moshi/Open-S2S text and
+classic ASR text are optional witness inputs. They can improve interpretation,
+serve captions, support diagnostics, or provide degraded compatibility when raw
+audio is absent, but they are not prerequisites for reflex acknowledgement,
+interpreter submission, or oracle job creation when raw audio is available.
+
 This is the normative rule for open S2S frontends. If the frontend can provide
 raw audio and transcript-like text for one accepted speech cut, Hermes should
 send both to the Gemma interpreter. If it can provide only text, Hermes may use
@@ -281,6 +289,13 @@ against the waveform. Normal Hermes oracle prompts, egress messages,
 Stripe/NemoClaw reasons, phone payloads, memory writes, file writes, durable
 history, and tool arguments should carry only the digest, source/timing
 metadata, adjudication outcome, and promoted wording.
+
+This is the allowed exception to the "no raw witness text outside action
+authority" rule. The Gemma request may contain the literal Moshi/Open-S2S or
+classic-ASR string because comparison requires the actual claim. That privilege
+does not extend to status packets, durable history, Hermes `/model` prompts, or
+action sinks. Those surfaces should see a digest and adjudication metadata until
+promotion exists.
 
 This distinction is mandatory for the witness-assisted design. The interpreter
 can see raw witness text; the rest of Hermes sees redacted witness metadata
