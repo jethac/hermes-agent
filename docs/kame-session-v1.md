@@ -286,6 +286,34 @@ This distinction is mandatory for the witness-assisted design. The interpreter
 can see raw witness text; the rest of Hermes sees redacted witness metadata
 until `interpreter_promoted` or `oracle_promoted` wording exists.
 
+### Adapter Checklist
+
+For each accepted speech cut, an adapter should execute this sequence:
+
+1. Create or locate the pending bundle by `turn_id`, `audio_segment_ref`, and
+   `evidence_merge_key`.
+2. Store the bounded waveform as `primary_interpreter_evidence`.
+3. Attach VAD, energy, speaker, channel, transport, and timing metadata.
+4. Attach reflex state: acknowledgement already spoken, provisional route,
+   interruption/playback state, and any provisional intent.
+5. Normalize any provider field named `stt`, `transcript`, `caption`, `query`,
+   `user_text`, or equivalent into `transcript_hypotheses[]`.
+6. Preserve literal witness text only inside the interpreter request and
+   controlled source artifacts; expose only digest and metadata elsewhere until
+   promotion.
+7. Submit the interpreter packet without waiting for late witness text when raw
+   audio and reflex state are available.
+8. Merge late witness text into the same bundle and job as late evidence; never
+   schedule a second Hermes turn from the witness.
+9. Accept only `interpreter_promoted` or `oracle_promoted` fields into durable
+   user history, oracle prompts, tool arguments, Stripe/NemoClaw packets, phone
+   payloads, memory/file writes, or external messages.
+
+This checklist is the concrete interpretation of "provide Moshi STT to the
+interpreter along with raw voice." The Moshi/Open-S2S text is allowed to be
+literal context for Gemma. It is not allowed to become the user prompt or
+action payload by adapter convenience.
+
 ### Three-Tier Runtime Acceptance
 
 A conforming full-KAME turn proves these properties:

@@ -282,6 +282,31 @@ Rejected hypotheses should include typed reasons, for example
   `openclaw_agent_consult`; they may not directly invoke Stripe, NemoClaw,
   phone, file, shell, memory, message, credential, or provisioning tools.
 
+## Authority Matrix
+
+| Data | Allowed Consumer | Authority | Notes |
+| --- | --- | --- | --- |
+| Accepted raw audio cut | Gemma interpreter | Primary evidence | Required for full-KAME direct-audio readiness. |
+| Energy/VAD/speaker/channel metadata | Reflex, interpreter, audit | Sensor evidence | Used to reject silence, echo, stale text, wrong speaker, and wrong channel. |
+| Reflex acknowledgement and route | User, interpreter, scheduler | Provisional | May narrate what Hermes is doing, but cannot authorize durable work. |
+| Moshi/Open-S2S/reflex/classic-ASR text | Gemma interpreter only, plus redacted audit metadata | Hypothesis | Literal text is interpreter context, not the Hermes prompt. |
+| `interpreter_promoted` fields | Hermes active `/model`, action gates, durable history | Promoted evidence | First normal-path wording eligible for oracle work and tool-critical arguments. |
+| `oracle_promoted` fields | Action gates, durable history, external sinks | Oracle authority | Produced by Hermes' active `/model` through the existing model path. |
+
+The important allowance is narrow: Gemma may receive the literal
+Moshi/Open-S2S transcript beside the waveform so it can adjudicate what the
+frontend believed it heard. Outside the interpreter request and access-controlled
+debug artifacts, that literal witness text should be represented by digest,
+source, timing, arrival phase, confidence, and adjudication outcome until
+promotion exists.
+
+This means the implementation should not sanitize away the witness before Gemma
+sees it, but it must keep that same witness out of Hermes durable history,
+oracle prompts, Stripe/NemoClaw packets, phone payloads, file/memory writes,
+external messages, and tool arguments. The adapter should treat this as an
+evidence-lane privilege: raw witness text is useful for interpretation and
+dangerous as authority.
+
 ## Action Authority
 
 Unpromoted witness text must be absent from:

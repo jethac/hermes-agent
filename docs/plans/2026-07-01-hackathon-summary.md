@@ -55,6 +55,19 @@ raw audio + timing + speaker/channel + reflex route + Moshi/Open-S2S witness
 That packet is the hackathon proof that the voice interface is fast without
 letting a quick transcript hallucination spend money or place a call.
 
+The judge-visible artifact should make the evidence boundary inspectable:
+
+- a reflex acknowledgement timestamp showing the system answered the floor
+  without waiting for STT
+- a `witness_assisted_direct_audio` interpreter packet showing raw audio first,
+  metadata and reflex state second, and Moshi/Open-S2S/reflex/classic-ASR text
+  last as `transcript_hypotheses[]`
+- one witness adjudication per transcript hypothesis
+- promoted interpreter wording flowing to Hermes' active `/model`
+- no raw witness string in Stripe spend reasons, NemoClaw action packets, phone
+  payloads, memory/file writes, external messages, tool arguments, or durable
+  user history before promotion
+
 For the video, the first audible win should be the reflex acknowledgement. The
 system should not wait for Moshi/Open-S2S or classic ASR to finish before
 saying that it is handling the request. The later proof panel can then show the
