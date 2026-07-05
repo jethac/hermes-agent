@@ -3969,6 +3969,9 @@ def build_voice_operator_report(
             "witness_fusion_multi_speaker_action_sinks_clean": bool(
                 async_oracle_smoke.get("witness_fusion_multi_speaker_action_sinks_clean")
             ),
+            "witness_fusion_multi_speaker_promoted_text": str(
+                async_oracle_smoke.get("witness_fusion_multi_speaker_promoted_text") or ""
+            ),
             "witness_fusion_audio_metadata": dict(
                 async_oracle_smoke.get("witness_fusion_audio_metadata") or {}
             ),

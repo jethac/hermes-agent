@@ -894,6 +894,7 @@ def _async_oracle_smoke_payload() -> dict:
         "witness_fusion_multi_speaker_wrong_witness_rejected": True,
         "witness_fusion_multi_speaker_bound_to_second_human": True,
         "witness_fusion_multi_speaker_action_sinks_clean": True,
+        "witness_fusion_multi_speaker_promoted_text": "prepare late witness handoff",
         "witness_fusion_accepted_counts": {"early": 1, "with": 1, "late": 1},
         "witness_fusion_started_counts": {"early": 1, "with": 1, "late": 1},
         "witness_fusion_completed_counts": {"early": 1, "with": 1, "late": 1},
@@ -2085,6 +2086,10 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         "with": 1,
         "late": 1,
     }
+    assert (
+        report["proofs"]["async_oracle_jobs"]["witness_fusion_multi_speaker_promoted_text"]
+        == "prepare late witness handoff"
+    )
     witness_fusion = report["async_oracle_acceptance"]["witness_fusion_timing_preserves_single_bundle"]
     assert witness_fusion["ok"] is True
     assert witness_fusion["evidence"] == "async_oracle_smoke_plus_witness_fusion_tests"

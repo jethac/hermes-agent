@@ -2428,6 +2428,10 @@ def _iter_nested_authorities(value: Any) -> list[str]:
     return authorities
 
 
+def _sha256_text_digest(text: str) -> str:
+    return f"sha256:{hashlib.sha256(text.encode('utf-8')).hexdigest()}"
+
+
 def _audit_witness_assisted_action_sinks(
     *,
     async_smoke: Mapping[str, Any],
@@ -2478,6 +2482,104 @@ def _audit_witness_assisted_action_sinks(
             )
 
 
+def _audit_witness_fusion_multi_speaker_binding(
+    *,
+    async_smoke: Mapping[str, Any],
+    issues: list[str],
+) -> None:
+    prefix = "voice_operator_readiness:async_oracle_smoke"
+    required_true_fields = (
+        "witness_fusion_multi_speaker_witness_smoke_ok",
+        "witness_fusion_multi_speaker_wrong_witness_rejected",
+        "witness_fusion_multi_speaker_bound_to_second_human",
+        "witness_fusion_multi_speaker_action_sinks_clean",
+    )
+    for field in required_true_fields:
+        if async_smoke.get(field) is not True:
+            issues.append(f"{prefix}.{field}_not_true")
+
+    wrong_witness_text = str(
+        async_smoke.get("witness_fusion_multi_speaker_wrong_witness_text") or ""
+    ).strip()
+    wrong_witness = async_smoke.get("witness_fusion_multi_speaker_wrong_witness")
+    if not isinstance(wrong_witness, Mapping):
+        issues.append(f"{prefix}.witness_fusion_multi_speaker_wrong_witness_missing")
+        return
+
+    if wrong_witness_text and wrong_witness.get("text") != wrong_witness_text:
+        issues.append(f"{prefix}.witness_fusion_multi_speaker_wrong_witness_text_mismatch")
+    if wrong_witness_text and wrong_witness.get("text_digest") != _sha256_text_digest(
+        wrong_witness_text
+    ):
+        issues.append(f"{prefix}.witness_fusion_multi_speaker_wrong_witness_digest_mismatch")
+    if wrong_witness.get("adjudication") != "rejected_or_diagnostic_only":
+        issues.append(f"{prefix}.witness_fusion_multi_speaker_wrong_witness_not_rejected")
+    if wrong_witness.get("authority") != "hypothesis":
+        issues.append(f"{prefix}.witness_fusion_multi_speaker_wrong_witness_authority_mismatch")
+    if wrong_witness.get("role") != "witness_context":
+        issues.append(f"{prefix}.witness_fusion_multi_speaker_wrong_witness_role_mismatch")
+    if wrong_witness.get("tool_authority") is not False:
+        issues.append(f"{prefix}.witness_fusion_multi_speaker_wrong_witness_tool_authority_not_false")
+    if wrong_witness.get("promotion_required") != "interpreter_promoted_or_oracle_promoted":
+        issues.append(f"{prefix}.witness_fusion_multi_speaker_wrong_witness_promotion_required_mismatch")
+
+    raw_reasons = wrong_witness.get("rejection_reasons")
+    if isinstance(raw_reasons, str):
+        reasons = [raw_reasons]
+    elif isinstance(raw_reasons, list):
+        reasons = [str(reason).strip() for reason in raw_reasons if str(reason).strip()]
+    else:
+        reasons = []
+    if not reasons:
+        issues.append(f"{prefix}.witness_fusion_multi_speaker_wrong_witness_missing_rejection_reasons")
+    else:
+        invalid_reasons = [
+            reason for reason in reasons if reason not in VALID_WITNESS_REJECTION_REASONS
+        ]
+        if invalid_reasons:
+            issues.append(f"{prefix}.witness_fusion_multi_speaker_wrong_witness_invalid_rejection_reasons")
+        if not {"ambiguous_speaker", "wrong_speaker", "wrong_channel", "stale_witness"}.intersection(
+            reasons
+        ):
+            issues.append(f"{prefix}.witness_fusion_multi_speaker_wrong_witness_no_binding_rejection_reason")
+
+    accepted_speaker = async_smoke.get("witness_fusion_multi_speaker_accepted_speaker")
+    wrong_speaker = async_smoke.get("witness_fusion_multi_speaker_wrong_witness_speaker")
+    if not isinstance(accepted_speaker, Mapping) or not isinstance(wrong_speaker, Mapping):
+        issues.append(f"{prefix}.witness_fusion_multi_speaker_speaker_metadata_missing")
+    else:
+        accepted_user_id = str(accepted_speaker.get("channel_user_id") or "").strip()
+        wrong_user_id = str(wrong_speaker.get("channel_user_id") or "").strip()
+        if not accepted_user_id or not wrong_user_id or accepted_user_id == wrong_user_id:
+            issues.append(f"{prefix}.witness_fusion_multi_speaker_not_bound_to_second_human")
+        if "ambiguous_speaker" in reasons and wrong_speaker.get("ambiguous") is not True:
+            issues.append(f"{prefix}.witness_fusion_multi_speaker_ambiguous_speaker_not_marked")
+
+    accepted_channel = async_smoke.get("witness_fusion_multi_speaker_accepted_channel")
+    wrong_channel = async_smoke.get("witness_fusion_multi_speaker_wrong_witness_channel")
+    if not isinstance(accepted_channel, Mapping) or not isinstance(wrong_channel, Mapping):
+        issues.append(f"{prefix}.witness_fusion_multi_speaker_channel_metadata_missing")
+    elif "wrong_channel" in reasons:
+        accepted_channel_id = str(accepted_channel.get("channel_id") or "").strip()
+        wrong_channel_id = str(wrong_channel.get("channel_id") or "").strip()
+        if not accepted_channel_id or not wrong_channel_id or accepted_channel_id == wrong_channel_id:
+            issues.append(f"{prefix}.witness_fusion_multi_speaker_wrong_channel_not_proven")
+
+    promoted_text = str(async_smoke.get("witness_fusion_multi_speaker_promoted_text") or "")
+    if wrong_witness_text and wrong_witness_text in promoted_text:
+        issues.append(f"{prefix}.witness_fusion_multi_speaker_wrong_witness_in_promoted_text")
+
+    sink_values = async_smoke.get("witness_assisted_voiceops_action_sink_values")
+    if wrong_witness_text and isinstance(sink_values, Mapping):
+        for sink_key, sink_value in sink_values.items():
+            for nested_text in _iter_nested_strings(sink_value):
+                if wrong_witness_text in nested_text:
+                    issues.append(
+                        f"{prefix}.witness_fusion_multi_speaker_wrong_witness_in_action_sink:{sink_key}"
+                    )
+                    break
+
+
 def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], issues: list[str]) -> None:
     proofs = readiness.get("proofs") if isinstance(readiness.get("proofs"), Mapping) else {}
     smoke = readiness.get("smoke") if isinstance(readiness.get("smoke"), Mapping) else {}
@@ -2489,6 +2591,7 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
     elif async_unpromoted_sink_values:
         issues.append("voice_operator_readiness:async_oracle_smoke.unpromoted_hypothesis_action_sink_values_not_empty")
     _audit_witness_assisted_action_sinks(async_smoke=async_smoke, issues=issues)
+    _audit_witness_fusion_multi_speaker_binding(async_smoke=async_smoke, issues=issues)
     external_frontend_transcript_hypotheses = async_smoke.get(
         "external_frontend_transcript_hypotheses"
     )
@@ -3227,6 +3330,39 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
                 "witness_fusion_same_turn_expected_merge_key"
             )
             or "",
+            "witness_fusion_multi_speaker_witness_smoke_ok": bool(
+                async_smoke.get("witness_fusion_multi_speaker_witness_smoke_ok")
+            ),
+            "witness_fusion_multi_speaker_wrong_witness_text": str(
+                async_smoke.get("witness_fusion_multi_speaker_wrong_witness_text") or ""
+            ),
+            "witness_fusion_multi_speaker_wrong_witness": dict(
+                async_smoke.get("witness_fusion_multi_speaker_wrong_witness") or {}
+            ),
+            "witness_fusion_multi_speaker_wrong_witness_rejected": bool(
+                async_smoke.get("witness_fusion_multi_speaker_wrong_witness_rejected")
+            ),
+            "witness_fusion_multi_speaker_wrong_witness_speaker": dict(
+                async_smoke.get("witness_fusion_multi_speaker_wrong_witness_speaker") or {}
+            ),
+            "witness_fusion_multi_speaker_wrong_witness_channel": dict(
+                async_smoke.get("witness_fusion_multi_speaker_wrong_witness_channel") or {}
+            ),
+            "witness_fusion_multi_speaker_accepted_speaker": dict(
+                async_smoke.get("witness_fusion_multi_speaker_accepted_speaker") or {}
+            ),
+            "witness_fusion_multi_speaker_accepted_channel": dict(
+                async_smoke.get("witness_fusion_multi_speaker_accepted_channel") or {}
+            ),
+            "witness_fusion_multi_speaker_bound_to_second_human": bool(
+                async_smoke.get("witness_fusion_multi_speaker_bound_to_second_human")
+            ),
+            "witness_fusion_multi_speaker_action_sinks_clean": bool(
+                async_smoke.get("witness_fusion_multi_speaker_action_sinks_clean")
+            ),
+            "witness_fusion_multi_speaker_promoted_text": str(
+                async_smoke.get("witness_fusion_multi_speaker_promoted_text") or ""
+            ),
             "witness_fusion_audio_metadata": async_smoke.get("witness_fusion_audio_metadata") or {},
             "witness_fusion_bundle_audio_metadata": async_smoke.get(
                 "witness_fusion_bundle_audio_metadata"
