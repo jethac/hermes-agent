@@ -2659,6 +2659,46 @@ async def build_plan_run_async(
                     "kame_latency_breakdown_monotonic": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["kame_latency_breakdown_monotonic"],
+                    "reflex_ack_transcript_smoke_ok": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["reflex_ack_transcript_smoke_ok"],
+                    "reflex_ack_transcript_visible": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["reflex_ack_transcript_visible"],
+                    "reflex_ack_transcript_record": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "reflex_ack_transcript_record"
+                        ]
+                    ),
+                    "reflex_ack_transcript_audit_record": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "reflex_ack_transcript_audit_record"
+                        ]
+                    ),
+                    "reflex_ack_text": voice_operator["proofs"]["async_oracle_jobs"][
+                        "reflex_ack_text"
+                    ],
+                    "reflex_ack_text_source": voice_operator["proofs"]["async_oracle_jobs"][
+                        "reflex_ack_text_source"
+                    ],
+                    "reflex_ack_authority": voice_operator["proofs"]["async_oracle_jobs"][
+                        "reflex_ack_authority"
+                    ],
+                    "reflex_ack_action_authority": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["reflex_ack_action_authority"],
+                    "reflex_ack_tool_authority": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["reflex_ack_tool_authority"],
+                    "reflex_ack_durability": voice_operator["proofs"]["async_oracle_jobs"][
+                        "reflex_ack_durability"
+                    ],
+                    "reflex_ack_turn_id": voice_operator["proofs"]["async_oracle_jobs"][
+                        "reflex_ack_turn_id"
+                    ],
+                    "reflex_ack_oracle_job_id": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["reflex_ack_oracle_job_id"],
                     "witness_fusion_with_single_bundle": voice_operator["proofs"]["async_oracle_jobs"][
                         "witness_fusion_with_single_bundle"
                     ],

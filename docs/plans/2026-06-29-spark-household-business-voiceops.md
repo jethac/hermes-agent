@@ -6,6 +6,14 @@ Design references:
 - `docs/design/kame-witness-assisted-direct-audio.md`
 - `docs/kame-session-v1.md`
 
+Canonical packet rule: use
+`docs/design/kame-witness-assisted-direct-audio.md#minimum-interpreter-packet`
+for the Moshi/Open-S2S witness path. The hackathon PRD should be read as
+raw-audio-first KAME: reflex acknowledgement, one Gemma interpreter packet with
+same-cut transcript hypotheses, then Hermes' active `/model` receiving only
+promoted evidence for Stripe, NemoClaw, phone, memory, files, messages, and
+tools.
+
 ## North Star
 
 Run a household and small business from Hermes VoiceOps, conversationally, with

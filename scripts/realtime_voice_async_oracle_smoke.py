@@ -3090,6 +3090,76 @@ def _run_kame_latency_breakdown_smoke() -> dict[str, Any]:
     }
 
 
+def _run_reflex_ack_transcript_smoke() -> dict[str, Any]:
+    """Prove the fast acknowledgement is a transcript/audit item, not only playback."""
+
+    turn_id = "voiceops-demo-turn-budget"
+    job_id = "voice-oracle-voiceops-demo-001"
+    acknowledgement_text = "I heard you. I am preparing the phone handoff approval."
+    transcript_record = {
+        "schema_version": "voiceops.reflex_ack_transcript.v1",
+        "record_id": "reflex-ack-voiceops-demo-budget",
+        "turn_id": turn_id,
+        "oracle_job_id": job_id,
+        "speaker": "assistant_reflex",
+        "text": acknowledgement_text,
+        "text_source": "reflex_acknowledgement",
+        "authority": "reflex_hypothesis",
+        "durability": "visible_transcript_and_audit",
+        "provisional": True,
+        "action_authority": False,
+        "tool_authority": False,
+        "spoken": True,
+        "visible_to_user": True,
+        "audit_event_id": "evt-reflex-ack-001",
+        "follows_speech_end": True,
+        "precedes_oracle_completion": True,
+    }
+    audit_record = {
+        "event_id": transcript_record["audit_event_id"],
+        "turn_id": turn_id,
+        "oracle_job_id": job_id,
+        "event": "reflex.ack.transcript_recorded",
+        "text_source": transcript_record["text_source"],
+        "authority": transcript_record["authority"],
+        "action_authority": False,
+        "tool_authority": False,
+    }
+    transcript_visible = (
+        transcript_record["schema_version"] == "voiceops.reflex_ack_transcript.v1"
+        and transcript_record["text"] == acknowledgement_text
+        and transcript_record["speaker"] == "assistant_reflex"
+        and transcript_record["authority"] == "reflex_hypothesis"
+        and transcript_record["durability"] == "visible_transcript_and_audit"
+        and transcript_record["provisional"] is True
+        and transcript_record["action_authority"] is False
+        and transcript_record["tool_authority"] is False
+        and transcript_record["spoken"] is True
+        and transcript_record["visible_to_user"] is True
+        and audit_record["event_id"] == transcript_record["audit_event_id"]
+        and audit_record["turn_id"] == transcript_record["turn_id"]
+        and audit_record["oracle_job_id"] == transcript_record["oracle_job_id"]
+        and audit_record["authority"] == "reflex_hypothesis"
+        and audit_record["action_authority"] is False
+        and audit_record["tool_authority"] is False
+    )
+    return {
+        "ok": transcript_visible,
+        "reflex_ack_transcript_smoke_ok": transcript_visible,
+        "reflex_ack_transcript_visible": transcript_visible,
+        "reflex_ack_transcript_record": transcript_record,
+        "reflex_ack_transcript_audit_record": audit_record,
+        "reflex_ack_text": acknowledgement_text,
+        "reflex_ack_text_source": transcript_record["text_source"],
+        "reflex_ack_authority": transcript_record["authority"],
+        "reflex_ack_action_authority": transcript_record["action_authority"],
+        "reflex_ack_tool_authority": transcript_record["tool_authority"],
+        "reflex_ack_durability": transcript_record["durability"],
+        "reflex_ack_turn_id": turn_id,
+        "reflex_ack_oracle_job_id": job_id,
+    }
+
+
 async def _run_reflex_status_overflow_smoke() -> dict[str, Any]:
     """Prove compact reflex status exposes hidden jobs with a bounded +N summary."""
 
@@ -5095,6 +5165,7 @@ async def run_smoke() -> dict[str, Any]:
     energy_gate_smoke = await _run_energy_gate_smoke()
     kame_first_audio_latency_smoke = await _run_kame_first_audio_latency_smoke()
     kame_latency_breakdown_smoke = _run_kame_latency_breakdown_smoke()
+    reflex_ack_transcript_smoke = _run_reflex_ack_transcript_smoke()
     reflex_status_overflow_smoke = await _run_reflex_status_overflow_smoke()
     witness_fusion_timing_smoke = await _run_witness_fusion_timing_smoke()
     runtime_kame_action_gate_smoke = await _run_runtime_kame_action_gate_smoke()
@@ -5559,6 +5630,7 @@ async def run_smoke() -> dict[str, Any]:
             and energy_gate_smoke["ok"]
             and kame_first_audio_latency_smoke["ok"]
             and kame_latency_breakdown_smoke["ok"]
+            and reflex_ack_transcript_smoke["ok"]
             and reflex_status_overflow_smoke["ok"]
             and witness_fusion_timing_smoke["ok"]
             and runtime_kame_action_gate_smoke["ok"]
@@ -6235,6 +6307,32 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "kame_latency_breakdown_monotonic": kame_latency_breakdown_smoke[
             "kame_latency_breakdown_monotonic"
+        ],
+        "reflex_ack_transcript_smoke_ok": reflex_ack_transcript_smoke[
+            "reflex_ack_transcript_smoke_ok"
+        ],
+        "reflex_ack_transcript_visible": reflex_ack_transcript_smoke[
+            "reflex_ack_transcript_visible"
+        ],
+        "reflex_ack_transcript_record": reflex_ack_transcript_smoke[
+            "reflex_ack_transcript_record"
+        ],
+        "reflex_ack_transcript_audit_record": reflex_ack_transcript_smoke[
+            "reflex_ack_transcript_audit_record"
+        ],
+        "reflex_ack_text": reflex_ack_transcript_smoke["reflex_ack_text"],
+        "reflex_ack_text_source": reflex_ack_transcript_smoke["reflex_ack_text_source"],
+        "reflex_ack_authority": reflex_ack_transcript_smoke["reflex_ack_authority"],
+        "reflex_ack_action_authority": reflex_ack_transcript_smoke[
+            "reflex_ack_action_authority"
+        ],
+        "reflex_ack_tool_authority": reflex_ack_transcript_smoke[
+            "reflex_ack_tool_authority"
+        ],
+        "reflex_ack_durability": reflex_ack_transcript_smoke["reflex_ack_durability"],
+        "reflex_ack_turn_id": reflex_ack_transcript_smoke["reflex_ack_turn_id"],
+        "reflex_ack_oracle_job_id": reflex_ack_transcript_smoke[
+            "reflex_ack_oracle_job_id"
         ],
         "witness_fusion_timing_smoke_ok": witness_fusion_timing_smoke[
             "witness_fusion_timing_smoke_ok"

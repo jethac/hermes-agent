@@ -2317,6 +2317,11 @@ def _audit_voice_operator_async_oracle_plan_projection(
         prefix="plan_run:voice_operator.async_oracle_smoke",
         issues=issues,
     )
+    _audit_reflex_ack_transcript(
+        async_smoke=projected,
+        prefix="plan_run:voice_operator.async_oracle_smoke",
+        issues=issues,
+    )
     _audit_promoted_request_summary_contract(
         proof.get("external_frontend_promoted_request_summary"),
         label=(
@@ -2967,6 +2972,61 @@ def _audit_kame_latency_breakdown(
         issues.append(f"{prefix}.kame_latency_breakdown_total_missing_or_invalid")
 
 
+def _audit_reflex_ack_transcript(
+    *,
+    async_smoke: Mapping[str, Any],
+    prefix: str,
+    issues: list[str],
+) -> None:
+    if async_smoke.get("reflex_ack_transcript_smoke_ok") is not True:
+        issues.append(f"{prefix}.reflex_ack_transcript_smoke_not_ok")
+    if async_smoke.get("reflex_ack_transcript_visible") is not True:
+        issues.append(f"{prefix}.reflex_ack_transcript_not_visible")
+    record = async_smoke.get("reflex_ack_transcript_record")
+    if not isinstance(record, Mapping):
+        issues.append(f"{prefix}.reflex_ack_transcript_record_not_object")
+        record = {}
+    audit_record = async_smoke.get("reflex_ack_transcript_audit_record")
+    if not isinstance(audit_record, Mapping):
+        issues.append(f"{prefix}.reflex_ack_transcript_audit_record_not_object")
+        audit_record = {}
+    expected_record_fields = {
+        "schema_version": "voiceops.reflex_ack_transcript.v1",
+        "speaker": "assistant_reflex",
+        "text_source": "reflex_acknowledgement",
+        "authority": "reflex_hypothesis",
+        "durability": "visible_transcript_and_audit",
+        "provisional": True,
+        "action_authority": False,
+        "tool_authority": False,
+        "spoken": True,
+        "visible_to_user": True,
+    }
+    for key, expected_value in expected_record_fields.items():
+        if record.get(key) != expected_value:
+            issues.append(f"{prefix}.reflex_ack_transcript_record_{key}_mismatch")
+    if not str(record.get("text") or "").strip():
+        issues.append(f"{prefix}.reflex_ack_transcript_record_text_missing")
+    if record.get("turn_id") != async_smoke.get("reflex_ack_turn_id"):
+        issues.append(f"{prefix}.reflex_ack_transcript_turn_id_mismatch")
+    if record.get("oracle_job_id") != async_smoke.get("reflex_ack_oracle_job_id"):
+        issues.append(f"{prefix}.reflex_ack_transcript_oracle_job_id_mismatch")
+    if audit_record.get("event_id") != record.get("audit_event_id"):
+        issues.append(f"{prefix}.reflex_ack_transcript_audit_event_mismatch")
+    if audit_record.get("event") != "reflex.ack.transcript_recorded":
+        issues.append(f"{prefix}.reflex_ack_transcript_audit_event_name_mismatch")
+    if audit_record.get("turn_id") != record.get("turn_id"):
+        issues.append(f"{prefix}.reflex_ack_transcript_audit_turn_id_mismatch")
+    if audit_record.get("oracle_job_id") != record.get("oracle_job_id"):
+        issues.append(f"{prefix}.reflex_ack_transcript_audit_oracle_job_id_mismatch")
+    if audit_record.get("authority") != "reflex_hypothesis":
+        issues.append(f"{prefix}.reflex_ack_transcript_audit_authority_mismatch")
+    if audit_record.get("action_authority") is not False:
+        issues.append(f"{prefix}.reflex_ack_transcript_audit_action_authority_not_false")
+    if audit_record.get("tool_authority") is not False:
+        issues.append(f"{prefix}.reflex_ack_transcript_audit_tool_authority_not_false")
+
+
 def _audit_witness_fusion_multi_speaker_binding(
     *,
     async_smoke: Mapping[str, Any],
@@ -3097,6 +3157,11 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
         issues=issues,
     )
     _audit_kame_latency_breakdown(
+        async_smoke=async_smoke,
+        prefix="voice_operator_readiness:async_oracle_smoke",
+        issues=issues,
+    )
+    _audit_reflex_ack_transcript(
         async_smoke=async_smoke,
         prefix="voice_operator_readiness:async_oracle_smoke",
         issues=issues,

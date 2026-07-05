@@ -780,6 +780,68 @@ def test_package_audit_rejects_kame_latency_breakdown_drift(tmp_path):
     )
 
 
+def test_package_audit_rejects_reflex_ack_transcript_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    voice_dir = artifact_root / "voiceops-voice-operator" / "current"
+
+    smoke_path = voice_dir / "async-oracle-smoke.json"
+    smoke = json.loads(smoke_path.read_text(encoding="utf-8"))
+    smoke["reflex_ack_transcript_smoke_ok"] = False
+    smoke["reflex_ack_transcript_visible"] = False
+    smoke["reflex_ack_transcript_record"]["authority"] = "oracle_promoted"
+    smoke["reflex_ack_transcript_record"]["action_authority"] = True
+    smoke["reflex_ack_transcript_audit_record"]["tool_authority"] = True
+    _write_json(smoke_path, smoke)
+
+    readiness_path = voice_dir / "voice-operator-readiness.json"
+    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    readiness["async_oracle_smoke"]["reflex_ack_transcript_smoke_ok"] = False
+    readiness["async_oracle_smoke"]["reflex_ack_transcript_visible"] = False
+    readiness["async_oracle_smoke"]["reflex_ack_transcript_record"]["authority"] = "oracle_promoted"
+    readiness["async_oracle_smoke"]["reflex_ack_transcript_record"]["action_authority"] = True
+    readiness["async_oracle_smoke"]["reflex_ack_transcript_audit_record"]["tool_authority"] = True
+    _write_json(readiness_path, readiness)
+
+    plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
+    plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
+    voice_result = next(
+        result
+        for result in plan_run["results"]
+        if result["milestone"] == "milestone_1_real_voice_operator"
+    )
+    projected = voice_result["details"]["async_oracle_smoke"]
+    projected["reflex_ack_transcript_smoke_ok"] = False
+    projected["reflex_ack_transcript_visible"] = False
+    projected["reflex_ack_transcript_record"]["authority"] = "oracle_promoted"
+    projected["reflex_ack_transcript_record"]["action_authority"] = True
+    projected["reflex_ack_transcript_audit_record"]["tool_authority"] = True
+    _write_json(plan_run_path, plan_run)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "voice_operator_readiness:async_oracle_smoke.reflex_ack_transcript_smoke_not_ok"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:async_oracle_smoke.reflex_ack_transcript_record_authority_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:async_oracle_smoke.reflex_ack_transcript_record_action_authority_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:async_oracle_smoke.reflex_ack_transcript_audit_tool_authority_not_false"
+        in report["issues"]
+    )
+    assert (
+        "plan_run:voice_operator.async_oracle_smoke.reflex_ack_transcript_smoke_not_ok"
+        in report["issues"]
+    )
+
+
 def test_package_audit_rejects_missing_witness_assisted_direct_audio_profile(
     tmp_path,
 ):

@@ -2151,6 +2151,16 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
     )
     partial_active = smoke.get("witness_fusion_partial_active_hypothesis")
     partial_active_hypothesis = partial_active if isinstance(partial_active, Mapping) else {}
+    reflex_ack_record = (
+        smoke.get("reflex_ack_transcript_record")
+        if isinstance(smoke.get("reflex_ack_transcript_record"), Mapping)
+        else {}
+    )
+    reflex_ack_audit_record = (
+        smoke.get("reflex_ack_transcript_audit_record")
+        if isinstance(smoke.get("reflex_ack_transcript_audit_record"), Mapping)
+        else {}
+    )
     return {
         "async_oracle_smoke_ok": bool(smoke.get("ok")),
         "four_jobs_ran_concurrently": bool(smoke.get("worker_overlap_proved"))
@@ -2559,6 +2569,22 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
                 "playback_start_to_completion_ms",
             )
         ),
+        "reflex_ack_transcript_visible": smoke.get("reflex_ack_transcript_smoke_ok") is True
+        and smoke.get("reflex_ack_transcript_visible") is True
+        and bool(reflex_ack_record)
+        and bool(reflex_ack_audit_record)
+        and reflex_ack_record.get("schema_version") == "voiceops.reflex_ack_transcript.v1"
+        and reflex_ack_record.get("text_source") == "reflex_acknowledgement"
+        and reflex_ack_record.get("authority") == "reflex_hypothesis"
+        and reflex_ack_record.get("durability") == "visible_transcript_and_audit"
+        and reflex_ack_record.get("action_authority") is False
+        and reflex_ack_record.get("tool_authority") is False
+        and reflex_ack_record.get("visible_to_user") is True
+        and reflex_ack_record.get("spoken") is True
+        and reflex_ack_audit_record.get("event") == "reflex.ack.transcript_recorded"
+        and reflex_ack_audit_record.get("event_id") == reflex_ack_record.get("audit_event_id")
+        and reflex_ack_audit_record.get("turn_id") == reflex_ack_record.get("turn_id")
+        and reflex_ack_audit_record.get("authority") == "reflex_hypothesis",
         "result_handling_bounded_and_durable": smoke.get("verbose_result_spoken_bounded") is True
         and smoke.get("verbose_result_committed_bounded") is True
         and smoke.get("verbose_result_commit_marked_truncated") is True
@@ -2956,6 +2982,16 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
         "kame_latency_breakdown_visible": _async_oracle_acceptance_row(
             ok=smoke_ok and bool(async_oracle_coverage.get("kame_latency_breakdown_visible")),
             evidence="async_oracle_smoke_full_kame_latency_breakdown",
+            test_refs=[
+                "tests/scripts/test_voiceops_plan_run.py::test_plan_run_generates_all_headless_milestone_artifacts",
+                "tests/scripts/test_voiceops_artifact_package_audit.py::test_package_audit_accepts_generated_headless_package",
+            ],
+            verification_mode="loopback_smoke_plus_package_audit",
+            runtime_verified_by_this_report=True,
+        ),
+        "reflex_ack_transcript_visible": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("reflex_ack_transcript_visible")),
+            evidence="async_oracle_smoke_reflex_ack_transcript_record",
             test_refs=[
                 "tests/scripts/test_voiceops_plan_run.py::test_plan_run_generates_all_headless_milestone_artifacts",
                 "tests/scripts/test_voiceops_artifact_package_audit.py::test_package_audit_accepts_generated_headless_package",
@@ -4105,6 +4141,26 @@ def build_voice_operator_report(
             "kame_latency_breakdown_monotonic": bool(
                 async_oracle_smoke.get("kame_latency_breakdown_monotonic")
             ),
+            "reflex_ack_transcript_smoke_ok": bool(
+                async_oracle_smoke.get("reflex_ack_transcript_smoke_ok")
+            ),
+            "reflex_ack_transcript_visible": bool(
+                async_oracle_smoke.get("reflex_ack_transcript_visible")
+            ),
+            "reflex_ack_transcript_record": dict(
+                async_oracle_smoke.get("reflex_ack_transcript_record") or {}
+            ),
+            "reflex_ack_transcript_audit_record": dict(
+                async_oracle_smoke.get("reflex_ack_transcript_audit_record") or {}
+            ),
+            "reflex_ack_text": async_oracle_smoke.get("reflex_ack_text"),
+            "reflex_ack_text_source": async_oracle_smoke.get("reflex_ack_text_source"),
+            "reflex_ack_authority": async_oracle_smoke.get("reflex_ack_authority"),
+            "reflex_ack_action_authority": async_oracle_smoke.get("reflex_ack_action_authority"),
+            "reflex_ack_tool_authority": async_oracle_smoke.get("reflex_ack_tool_authority"),
+            "reflex_ack_durability": async_oracle_smoke.get("reflex_ack_durability"),
+            "reflex_ack_turn_id": async_oracle_smoke.get("reflex_ack_turn_id"),
+            "reflex_ack_oracle_job_id": async_oracle_smoke.get("reflex_ack_oracle_job_id"),
             "witness_fusion_with_bundle_id": async_oracle_smoke.get(
                 "witness_fusion_with_bundle_id"
             ),
@@ -4558,6 +4614,9 @@ def build_voice_operator_report(
             "async_oracle_kame_latency_breakdown_visible": async_oracle_coverage[
                 "kame_latency_breakdown_visible"
             ],
+            "async_oracle_reflex_ack_transcript_visible": async_oracle_coverage[
+                "reflex_ack_transcript_visible"
+            ],
             "async_oracle_runtime_kame_action_gate": async_oracle_coverage[
                 "runtime_kame_action_gate_enforced"
             ],
@@ -4709,6 +4768,8 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "interpreter_prompt_policy_visible",
         "energy_gate_ignores_non_speech_without_work",
         "kame_ack_latency_metrics_visible",
+        "kame_latency_breakdown_visible",
+        "reflex_ack_transcript_visible",
         "runtime_kame_action_gate_enforced",
         "durable_promoted_turn_resume_contract",
         "unflagged_high_risk_tool_event_fails_closed",

@@ -10,6 +10,13 @@ witness_design: docs/design/kame-witness-assisted-direct-audio.md
 
 # goal: Make the KAME reflex and Hermes oracle truly async
 
+Canonical adapter shape:
+`docs/design/kame-witness-assisted-direct-audio.md#minimum-interpreter-packet`.
+For Moshi/Open-S2S witness context, the runtime should produce one accepted
+speech cut, raw audio first, same-cut `transcript_hypotheses[]` last, Gemma
+`witness_adjudications`, Gemma `interpreter_promoted`, then Hermes' active
+`/model`.
+
 ## Summary
 
 The KAME voice branch has the right authority boundary: the human talks to a

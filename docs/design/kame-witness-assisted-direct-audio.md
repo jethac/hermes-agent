@@ -58,6 +58,61 @@ or conflicting Moshi/Open-S2S output remains degraded or diagnostic-only and
 cannot reach Stripe, NemoClaw, phone, memory, file, message, durable history,
 or tool sinks.
 
+## Minimum Interpreter Packet
+
+The adapter should construct one interpreter packet per accepted speech cut.
+The packet is raw-audio-first, with every transcript-looking side channel
+attached as a same-cut hypothesis:
+
+```json
+{
+  "mode": "witness_assisted_direct_audio",
+  "turn_id": "voice-turn-123",
+  "audio_segment_ref": "audio-segment-123",
+  "interpreter_input_order": [
+    "raw_audio",
+    "metadata",
+    "reflex",
+    "transcript_hypotheses"
+  ],
+  "metadata": {
+    "speaker_or_actor_ref": "discord-user-123",
+    "channel_or_surface_ref": "discord-voice-general",
+    "vad_speech": true,
+    "energy_gate": "accepted"
+  },
+  "reflex": {
+    "acknowledgement_text": "I heard you. I am checking that.",
+    "acknowledgement_source": "reflex_acknowledgement",
+    "authority": "reflex_hypothesis",
+    "tool_authority": false
+  },
+  "transcript_hypotheses": [
+    {
+      "source": "moshi",
+      "kind": "frontend_witness_hypothesis",
+      "provider_alias_key": "stt",
+      "role": "witness_context",
+      "authority": "hypothesis",
+      "promotion_required": "interpreter_promoted_or_oracle_promoted",
+      "tool_authority": false,
+      "arrival_phase": "with_raw_audio"
+    }
+  ]
+}
+```
+
+The literal Moshi/Open-S2S text may be present in the ephemeral Gemma
+interpreter request, because Gemma needs to compare the frontend's claim with
+the waveform. Outside that interpreter request and access-controlled debugging,
+persist source, timing, digest, confidence, arrival phase, and adjudication
+instead of replayable raw witness text.
+
+Gemma's response must separate `witness_adjudications` from
+`interpreter_promoted`. Hermes' active `/model`, Stripe, NemoClaw, phone,
+memory, files, external messages, and tool calls may consume only promoted
+fields plus compact labeled audit metadata.
+
 ## Current Architecture Choice
 
 The practical design choice is:

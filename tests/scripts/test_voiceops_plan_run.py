@@ -2058,6 +2058,21 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert voice_result["details"]["async_oracle_smoke"]["kame_latency_breakdown_total_ms"] >= max(
         voice_result["details"]["async_oracle_smoke"]["kame_latency_breakdown_segments_ms"].values()
     )
+    assert voice_result["details"]["async_oracle_smoke"]["reflex_ack_transcript_smoke_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["reflex_ack_transcript_visible"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["reflex_ack_text"]
+    assert voice_result["details"]["async_oracle_smoke"]["reflex_ack_authority"] == "reflex_hypothesis"
+    assert voice_result["details"]["async_oracle_smoke"]["reflex_ack_action_authority"] is False
+    assert voice_result["details"]["async_oracle_smoke"]["reflex_ack_tool_authority"] is False
+    assert voice_result["details"]["async_oracle_smoke"]["reflex_ack_durability"] == (
+        "visible_transcript_and_audit"
+    )
+    ack_record = voice_result["details"]["async_oracle_smoke"]["reflex_ack_transcript_record"]
+    assert ack_record["schema_version"] == "voiceops.reflex_ack_transcript.v1"
+    assert ack_record["text_source"] == "reflex_acknowledgement"
+    assert ack_record["authority"] == "reflex_hypothesis"
+    assert ack_record["visible_to_user"] is True
+    assert ack_record["spoken"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_with_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_late_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_no_duplicate_oracle_jobs"] is True

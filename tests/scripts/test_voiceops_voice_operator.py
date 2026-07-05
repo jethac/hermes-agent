@@ -863,6 +863,82 @@ def _async_oracle_smoke_payload() -> dict:
         "kame_local_speech_end_to_first_audio_ms": 41,
         "kame_defer_first_audio_bytes": 15,
         "kame_local_first_audio_bytes": 17,
+        "kame_latency_breakdown_smoke_ok": True,
+        "kame_latency_breakdown_required_segments": [
+            "speech_end_to_reflex_ack_ms",
+            "audio_cut_to_interpreter_submit_ms",
+            "witness_arrival_ms",
+            "interpreter_submit_to_promotion_ms",
+            "promotion_to_oracle_start_ms",
+            "oracle_start_to_first_token_ms",
+            "first_token_to_tts_first_audio_ms",
+            "tts_first_audio_to_playback_start_ms",
+            "playback_start_to_completion_ms",
+        ],
+        "kame_latency_breakdown_segments_ms": {
+            "speech_end_to_reflex_ack_ms": 42,
+            "audio_cut_to_interpreter_submit_ms": 14,
+            "witness_arrival_ms": 88,
+            "interpreter_submit_to_promotion_ms": 261,
+            "promotion_to_oracle_start_ms": 12,
+            "oracle_start_to_first_token_ms": 178,
+            "first_token_to_tts_first_audio_ms": 38,
+            "tts_first_audio_to_playback_start_ms": 8,
+            "playback_start_to_completion_ms": 344,
+        },
+        "kame_latency_breakdown_timeline_ms": {
+            "speech_end": 0,
+            "reflex_ack": 42,
+            "audio_cut": 45,
+            "interpreter_submit": 59,
+            "witness_arrival": 88,
+            "interpreter_promotion": 320,
+            "oracle_start": 332,
+            "oracle_first_token": 510,
+            "tts_first_audio": 548,
+            "playback_start": 556,
+            "playback_completion": 900,
+        },
+        "kame_latency_breakdown_total_ms": 900,
+        "kame_latency_breakdown_segment_total_ms": 985,
+        "kame_latency_breakdown_monotonic": True,
+        "reflex_ack_transcript_smoke_ok": True,
+        "reflex_ack_transcript_visible": True,
+        "reflex_ack_transcript_record": {
+            "schema_version": "voiceops.reflex_ack_transcript.v1",
+            "turn_id": "voiceops-demo-turn-budget",
+            "oracle_job_id": "voice-oracle-voiceops-demo-001",
+            "speaker": "assistant_reflex",
+            "text": "I heard you. I am preparing the phone handoff approval.",
+            "text_source": "reflex_acknowledgement",
+            "authority": "reflex_hypothesis",
+            "durability": "visible_transcript_and_audit",
+            "visible_to_user": True,
+            "spoken": True,
+            "provisional": True,
+            "action_authority": False,
+            "tool_authority": False,
+            "audit_event_id": "evt-reflex-ack-001",
+        },
+        "reflex_ack_transcript_audit_record": {
+            "event_id": "evt-reflex-ack-001",
+            "event": "reflex.ack.transcript_recorded",
+            "turn_id": "voiceops-demo-turn-budget",
+            "oracle_job_id": "voice-oracle-voiceops-demo-001",
+            "text_source": "reflex_acknowledgement",
+            "authority": "reflex_hypothesis",
+            "action_authority": False,
+            "tool_authority": False,
+            "durability": "visible_transcript_and_audit",
+        },
+        "reflex_ack_text": "I heard you. I am preparing the phone handoff approval.",
+        "reflex_ack_text_source": "reflex_acknowledgement",
+        "reflex_ack_authority": "reflex_hypothesis",
+        "reflex_ack_action_authority": False,
+        "reflex_ack_tool_authority": False,
+        "reflex_ack_durability": "visible_transcript_and_audit",
+        "reflex_ack_turn_id": "voiceops-demo-turn-budget",
+        "reflex_ack_oracle_job_id": "voice-oracle-voiceops-demo-001",
         "witness_fusion_with_bundle_id": "kame-evidence-witness-with",
         "witness_fusion_with_single_bundle": True,
         "witness_fusion_late_initial_bundle_id": "kame-evidence-witness-late",
@@ -2612,6 +2688,21 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     )
     assert report["proofs"]["async_oracle_jobs"]["kame_defer_speech_end_to_first_audio_ms"] >= 41
     assert report["proofs"]["async_oracle_jobs"]["kame_local_speech_end_to_first_audio_ms"] >= 37
+    assert report["requirements"]["async_oracle_reflex_ack_transcript_visible"] is True
+    assert report["async_oracle_coverage"]["reflex_ack_transcript_visible"] is True
+    assert report["async_oracle_acceptance"]["reflex_ack_transcript_visible"]["ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["reflex_ack_transcript_smoke_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["reflex_ack_transcript_visible"] is True
+    assert report["proofs"]["async_oracle_jobs"]["reflex_ack_authority"] == "reflex_hypothesis"
+    assert report["proofs"]["async_oracle_jobs"]["reflex_ack_action_authority"] is False
+    assert report["proofs"]["async_oracle_jobs"]["reflex_ack_tool_authority"] is False
+    assert report["proofs"]["async_oracle_jobs"]["reflex_ack_durability"] == "visible_transcript_and_audit"
+    ack_record = report["proofs"]["async_oracle_jobs"]["reflex_ack_transcript_record"]
+    assert ack_record["schema_version"] == "voiceops.reflex_ack_transcript.v1"
+    assert ack_record["text_source"] == "reflex_acknowledgement"
+    assert ack_record["authority"] == "reflex_hypothesis"
+    assert ack_record["visible_to_user"] is True
+    assert ack_record["spoken"] is True
     assert report["proofs"]["latency_metrics"]["oracle_metric_status"] == "needs_live_oracle_or_sidecar_probe"
     assert report["live_probe_required_for_completion"]["status"] == "needs_live_probe"
     assert report["live_probe_required_for_completion"]["missing_gates"] == [
