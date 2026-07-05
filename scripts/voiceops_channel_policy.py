@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 
 DEFAULT_OUTPUT_DIR = Path("artifacts/voiceops-channel-policy/current")
@@ -196,6 +197,13 @@ REQUIRED_UNPROMOTED_WITNESS_SINK_CHECKS = {
     "file_clean",
     "message_clean",
     "durable_history_clean",
+}
+REVIEW_DECISION_SCHEMA_VERSION = "voiceops.multi_channel_policy_review_decision.v1"
+REVIEW_DECISION_ARTIFACT_ID = "voiceops-m3-channel-policy-review-decision"
+REVIEW_DECISIONS_THAT_CLOSE_REVIEW = {
+    "approve_artifact_for_demo_recording",
+    "approve_dry_run_only",
+    "approve_live_egress_after_external_credentials_are_bound",
 }
 
 
@@ -557,6 +565,30 @@ def apply_redactions(text: str, rules: Iterable[RedactionRule] | None = None) ->
     return redacted
 
 
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def stable_review_sha256(review: Mapping[str, Any]) -> str:
+    """Return a stable digest for a review packet, excluding volatile timestamps."""
+
+    stable = dict(review)
+    stable.pop("generated_at", None)
+    encoded = json.dumps(stable, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _parse_utc_timestamp(value: Any) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    text = value.strip()
+    try:
+        parsed = dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None
+
+
 def build_channel_policy() -> dict[str, Any]:
     channels = default_channel_authorizations()
     routes = default_approval_routes()
@@ -784,6 +816,106 @@ def build_review_packet(policy: dict[str, Any]) -> dict[str, Any]:
             "uv run python scripts/voiceops_plan_run.py --artifact-root artifacts --output-dir artifacts/voiceops-plan/current --package-audit",
         ],
     }
+
+
+def load_channel_policy_review_decision(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def validate_channel_policy_review_decision(
+    decision: Mapping[str, Any],
+    *,
+    review: Mapping[str, Any],
+    review_path: Path | None = None,
+) -> list[str]:
+    """Validate a separate operator decision for the channel-policy review.
+
+    A valid decision closes the review gap only. It must not mutate generated
+    policy artifacts or enable live egress by itself.
+    """
+
+    issues: list[str] = []
+    if decision.get("schema_version") != REVIEW_DECISION_SCHEMA_VERSION:
+        issues.append("decision_schema_version_mismatch")
+    if decision.get("artifact_id") != REVIEW_DECISION_ARTIFACT_ID:
+        issues.append("decision_artifact_id_mismatch")
+    for key in ("milestone", "policy_id", "policy_version"):
+        if decision.get(key) != review.get(key):
+            issues.append(f"decision_{key}_mismatch")
+    if decision.get("review_artifact_ref") != "channel-policy-review.json":
+        issues.append("decision_review_artifact_ref_mismatch")
+    expected_sha256 = decision.get("review_artifact_sha256")
+    expected_stable_sha256 = decision.get("review_artifact_stable_sha256")
+    has_exact_sha = isinstance(expected_sha256, str) and re.fullmatch(r"[0-9a-f]{64}", expected_sha256)
+    has_stable_sha = isinstance(expected_stable_sha256, str) and re.fullmatch(r"[0-9a-f]{64}", expected_stable_sha256)
+    if not has_exact_sha and not has_stable_sha:
+        issues.append("decision_review_artifact_sha256_invalid")
+    if has_exact_sha and review_path is not None and review_path.exists() and expected_sha256 != _file_sha256(review_path):
+        issues.append("decision_review_artifact_sha256_mismatch")
+    if has_stable_sha and expected_stable_sha256 != stable_review_sha256(review):
+        issues.append("decision_review_artifact_stable_sha256_mismatch")
+    review_decision_options = set(review.get("decision_options") or [])
+    decision_value = decision.get("decision")
+    if decision_value not in review_decision_options:
+        issues.append("decision_not_in_review_options")
+    if decision_value not in REVIEW_DECISIONS_THAT_CLOSE_REVIEW:
+        issues.append("decision_not_review_closing")
+    if decision.get("review_status") != "approved":
+        issues.append("decision_review_status_not_approved")
+    if decision.get("artifact_only") is not True:
+        issues.append("decision_artifact_only_not_true")
+    if decision.get("changes_policy") is not False:
+        issues.append("decision_changes_policy_not_false")
+    if decision.get("changes_readiness_by_itself") is not False:
+        issues.append("decision_changes_readiness_by_itself_not_false")
+    if decision.get("real_egress_enabled") is not False:
+        issues.append("decision_real_egress_enabled_not_false")
+
+    required_roles = {
+        str(signoff.get("role"))
+        for signoff in review.get("required_signoffs", [])
+        if isinstance(signoff, Mapping) and signoff.get("required") is True
+    }
+    signoffs = decision.get("signoffs")
+    if not isinstance(signoffs, list):
+        signoffs = []
+    approved_roles: set[str] = set()
+    for index, signoff in enumerate(signoffs):
+        if not isinstance(signoff, Mapping):
+            issues.append(f"decision_signoff_{index}_not_object")
+            continue
+        role = str(signoff.get("role") or "")
+        if signoff.get("approved") is True:
+            approved_roles.add(role)
+        if not role:
+            issues.append(f"decision_signoff_{index}_missing_role")
+        if not str(signoff.get("decision_by") or "").strip():
+            issues.append(f"decision_signoff_{role or index}_missing_decision_by")
+        if not _parse_utc_timestamp(signoff.get("decided_at")):
+            issues.append(f"decision_signoff_{role or index}_decided_at_invalid")
+    missing_roles = required_roles - approved_roles
+    if missing_roles:
+        issues.append(f"decision_missing_required_signoffs:{','.join(sorted(missing_roles))}")
+
+    gate = decision.get("kame_action_evidence_gate")
+    review_gate = review.get("kame_action_evidence_gate") if isinstance(review.get("kame_action_evidence_gate"), Mapping) else {}
+    if not isinstance(gate, Mapping):
+        issues.append("decision_kame_gate_missing")
+    else:
+        for key in ("gate_id", "design_reference", "required_interpreter_profile"):
+            if gate.get(key) != review_gate.get(key):
+                issues.append(f"decision_kame_gate_{key}_mismatch")
+        if gate.get("raw_transcript_text_allowed_in_channel_egress") is not False:
+            issues.append("decision_kame_gate_raw_transcript_text_allowed")
+        if gate.get("unpromoted_witness_may_enter_payloads") is not False:
+            issues.append("decision_kame_gate_unpromoted_witness_allows_payloads")
+
+    acknowledged = set(decision.get("acknowledged_operator_must_not") or [])
+    required_must_not = set(review.get("operator_must_not") or [])
+    missing_acknowledgements = required_must_not - acknowledged
+    if missing_acknowledgements:
+        issues.append("decision_missing_operator_must_not_acknowledgements")
+    return issues
 
 
 def validate_policy(policy: dict[str, Any]) -> list[str]:

@@ -7,6 +7,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scripts.voiceops_channel_policy import (
+    REVIEW_DECISION_ARTIFACT_ID,
+    REVIEW_DECISION_SCHEMA_VERSION,
+    stable_review_sha256,
+)
 from scripts.voiceops_plan_run import build_plan_run, parse_args, write_plan_run
 from scripts.voiceops_provisioning_probe import build_milestone2_execution_plan, build_probe_report
 from toolsets import _HERMES_CORE_TOOLS
@@ -30,6 +35,41 @@ def _write_fake_bin(bin_dir: Path, name: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("#!/usr/bin/env sh\nprintf '%s\\n' mock\n", encoding="utf-8")
     path.chmod(0o755)
+
+
+def _valid_channel_policy_decision(review: dict) -> dict:
+    return {
+        "schema_version": REVIEW_DECISION_SCHEMA_VERSION,
+        "artifact_id": REVIEW_DECISION_ARTIFACT_ID,
+        "milestone": review["milestone"],
+        "policy_id": review["policy_id"],
+        "policy_version": review["policy_version"],
+        "review_artifact_ref": "channel-policy-review.json",
+        "review_artifact_stable_sha256": stable_review_sha256(review),
+        "decision": "approve_dry_run_only",
+        "review_status": "approved",
+        "artifact_only": True,
+        "changes_policy": False,
+        "changes_readiness_by_itself": False,
+        "real_egress_enabled": False,
+        "kame_action_evidence_gate": {
+            "gate_id": review["kame_action_evidence_gate"]["gate_id"],
+            "design_reference": review["kame_action_evidence_gate"]["design_reference"],
+            "required_interpreter_profile": review["kame_action_evidence_gate"]["required_interpreter_profile"],
+            "raw_transcript_text_allowed_in_channel_egress": False,
+            "unpromoted_witness_may_enter_payloads": False,
+        },
+        "acknowledged_operator_must_not": review["operator_must_not"],
+        "signoffs": [
+            {
+                "role": signoff["role"],
+                "approved": True,
+                "decision_by": f"{signoff['role']}-ref",
+                "decided_at": "2026-07-05T00:00:00Z",
+            }
+            for signoff in review["required_signoffs"]
+        ],
+    }
 
 
 def _witness_hypothesis(
@@ -2265,6 +2305,10 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert [phase["phase_id"] for phase in handoff_payload["review_phases"]] == ["multi_channel_policy_review"]
     assert handoff_payload["review_phases"][0]["status"] == "pending_human_review"
     assert handoff_payload["review_phases"][0]["real_egress_enabled"] is False
+    assert (
+        "artifacts/voiceops-channel-policy/current/channel-policy-review-decision.json"
+        in handoff_payload["review_phases"][0]["review_artifacts"]
+    )
     assert [action["phase_id"] for action in payload["review_actions"]] == ["multi_channel_policy_review"]
     assert payload["review_actions"][0]["status"] == "pending_human_review"
     assert payload["review_actions"][0]["real_egress_enabled"] is False
@@ -2344,6 +2388,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     ]
     assert "--post-approval-receipts" in provisioning_gate["rerun_commands"]["plan_index_post_approval_receipts"]
     assert "--post-approval-receipts" in handoff_payload["final_reindex_command"]
+    assert "--channel-policy-operator-decision" in handoff_payload["final_reindex_command"]
     spark_gate = next(gate for gate in closure["gates"] if gate["gate_id"] == "local_spark_stack_matrix")
     assert spark_gate["closure_plan"].endswith("spark-matrix-closure-plan.json")
     assert spark_gate["closure_artifact"].endswith("spark-matrix-closure-plan.md")
@@ -2422,6 +2467,88 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert "package_audit.status is pass" in handoff_markdown
     assert "milestone_0_hackathon_proof" in markdown
     assert "Next Actions" in markdown
+
+
+def test_plan_run_accepts_channel_policy_operator_decision(tmp_path):
+    artifact_root = tmp_path / "artifacts"
+    output_dir = artifact_root / "voiceops-plan" / "current"
+    build_plan_run(artifact_root=artifact_root, output_dir=output_dir, env={})
+    review_path = artifact_root / "voiceops-channel-policy" / "current" / "channel-policy-review.json"
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    decision_path = tmp_path / "channel-policy-review-decision.json"
+    _write_json(decision_path, _valid_channel_policy_decision(review))
+
+    summary = build_plan_run(
+        artifact_root=artifact_root,
+        output_dir=output_dir,
+        env={},
+        channel_policy_operator_decision=decision_path,
+    )
+
+    channel_result = next(
+        result for result in summary["results"] if result["milestone"] == "milestone_3_multi_channel_policy"
+    )
+    generated_review = json.loads(review_path.read_text(encoding="utf-8"))
+
+    assert channel_result["status"] == "reviewed"
+    assert channel_result["details"]["review_decision_path"] == str(decision_path)
+    assert channel_result["details"]["review_decision_status"] == "accepted"
+    assert channel_result["details"]["review_decision_issues"] == []
+    assert channel_result["details"]["review_decision_changes_policy"] is False
+    assert channel_result["details"]["review_decision_real_egress_enabled"] is False
+    assert channel_result["details"]["review_status"] == "pending_human_review"
+    assert channel_result["details"]["real_egress_enabled"] is False
+    assert generated_review["review_status"] == "pending_human_review"
+    assert generated_review["artifact_only"] is True
+    assert generated_review["changes_policy"] is False
+    assert generated_review["real_egress_enabled"] is False
+    assert summary["ok"] is True
+    assert summary["hard_failures"] == []
+    assert summary["review_gaps"] == []
+    assert summary["closure_index"]["review_gaps"] == []
+    assert summary["closure_index"]["review_actions"][0]["status"] == "operator_review_accepted"
+    assert summary["closure_index"]["review_actions"][0]["decision_artifact"] == str(decision_path)
+    assert summary["closure_index"]["operator_handoff"]["review_phases"][0]["status"] == "operator_review_accepted"
+    assert summary["readiness_ok"] is False
+    assert summary["readiness_gaps"] == [
+        "milestone_1_real_voice_operator",
+        "milestone_2_real_spend_and_provisioning_preflight",
+        "milestone_4_local_spark_stack_matrix",
+    ]
+
+
+def test_plan_run_rejects_invalid_channel_policy_operator_decision(tmp_path):
+    artifact_root = tmp_path / "artifacts"
+    output_dir = artifact_root / "voiceops-plan" / "current"
+    build_plan_run(artifact_root=artifact_root, output_dir=output_dir, env={})
+    review_path = artifact_root / "voiceops-channel-policy" / "current" / "channel-policy-review.json"
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    decision = _valid_channel_policy_decision(review)
+    decision["real_egress_enabled"] = True
+    decision["signoffs"] = decision["signoffs"][:1]
+    decision_path = tmp_path / "channel-policy-review-decision.invalid.json"
+    _write_json(decision_path, decision)
+
+    summary = build_plan_run(
+        artifact_root=artifact_root,
+        output_dir=output_dir,
+        env={},
+        channel_policy_operator_decision=decision_path,
+    )
+
+    channel_result = next(
+        result for result in summary["results"] if result["milestone"] == "milestone_3_multi_channel_policy"
+    )
+
+    assert channel_result["status"] == "validation_failed"
+    assert channel_result["details"]["review_decision_status"] == "invalid"
+    assert "decision_real_egress_enabled_not_false" in channel_result["details"]["review_decision_issues"]
+    assert (
+        "decision_missing_required_signoffs:channel_owner,privacy_reviewer,security_owner"
+        in channel_result["details"]["review_decision_issues"]
+    )
+    assert summary["ok"] is False
+    assert summary["hard_failures"] == ["milestone_3_multi_channel_policy"]
 
 
 def test_plan_run_closes_remaining_gates_with_redacted_local_evidence(tmp_path, monkeypatch):
@@ -3141,6 +3268,7 @@ def test_parse_args_defaults_to_plan_artifact_paths():
     assert args.interpreter_model is None
     assert args.voice_live_evidence == []
     assert args.provisioning_preflight_evidence is None
+    assert args.channel_policy_operator_decision is None
     assert args.timeout_seconds is None
     assert args.readonly_discovery_timeout_seconds is None
     assert args.run_command_probes is False

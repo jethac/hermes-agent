@@ -8,6 +8,8 @@ from pathlib import Path
 
 from scripts.voiceops_channel_policy import (
     DEFAULT_OUTPUT_DIR,
+    REVIEW_DECISION_ARTIFACT_ID,
+    REVIEW_DECISION_SCHEMA_VERSION,
     REQUIRED_KAME_DESIGN_REFERENCE,
     REQUIRED_KAME_INTERPRETER_PROFILE,
     REQUIRED_KAME_INPUT_ORDER,
@@ -17,6 +19,8 @@ from scripts.voiceops_channel_policy import (
     build_channel_policy,
     build_review_packet,
     parse_args,
+    stable_review_sha256,
+    validate_channel_policy_review_decision,
     validate_policy,
     write_channel_policy,
 )
@@ -600,6 +604,70 @@ def test_channel_policy_review_packet_is_artifact_only_and_per_channel():
     assert any("voice call" in item for item in review["operator_must_not"])
     assert any("spend_provisioning_or_credential" in gate for gate in review["egress_enablement_gates"])
     assert any("interpreter_promoted or oracle_promoted" in gate for gate in review["egress_enablement_gates"])
+
+
+def _valid_review_decision(review: dict) -> dict:
+    return {
+        "schema_version": REVIEW_DECISION_SCHEMA_VERSION,
+        "artifact_id": REVIEW_DECISION_ARTIFACT_ID,
+        "milestone": review["milestone"],
+        "policy_id": review["policy_id"],
+        "policy_version": review["policy_version"],
+        "review_artifact_ref": "channel-policy-review.json",
+        "review_artifact_stable_sha256": stable_review_sha256(review),
+        "decision": "approve_dry_run_only",
+        "review_status": "approved",
+        "artifact_only": True,
+        "changes_policy": False,
+        "changes_readiness_by_itself": False,
+        "real_egress_enabled": False,
+        "kame_action_evidence_gate": {
+            "gate_id": review["kame_action_evidence_gate"]["gate_id"],
+            "design_reference": review["kame_action_evidence_gate"]["design_reference"],
+            "required_interpreter_profile": review["kame_action_evidence_gate"]["required_interpreter_profile"],
+            "raw_transcript_text_allowed_in_channel_egress": False,
+            "unpromoted_witness_may_enter_payloads": False,
+        },
+        "acknowledged_operator_must_not": review["operator_must_not"],
+        "signoffs": [
+            {
+                "role": signoff["role"],
+                "approved": True,
+                "decision_by": f"{signoff['role']}-ref",
+                "decided_at": "2026-07-05T00:00:00Z",
+            }
+            for signoff in review["required_signoffs"]
+        ],
+    }
+
+
+def test_channel_policy_review_decision_validates_non_mutating_approval():
+    policy = build_channel_policy()
+    review = build_review_packet(policy)
+    decision = _valid_review_decision(review)
+
+    assert validate_channel_policy_review_decision(decision, review=review) == []
+
+
+def test_channel_policy_review_decision_rejects_mutating_or_incomplete_approval():
+    policy = build_channel_policy()
+    review = build_review_packet(policy)
+    decision = _valid_review_decision(review)
+    decision["real_egress_enabled"] = True
+    decision["changes_policy"] = True
+    decision["review_artifact_stable_sha256"] = "0" * 64
+    decision["signoffs"] = decision["signoffs"][:1]
+    decision["kame_action_evidence_gate"]["required_interpreter_profile"] = "text_oracle_fallback"
+    decision["acknowledged_operator_must_not"] = []
+
+    assert validate_channel_policy_review_decision(decision, review=review) == [
+        "decision_review_artifact_stable_sha256_mismatch",
+        "decision_changes_policy_not_false",
+        "decision_real_egress_enabled_not_false",
+        "decision_missing_required_signoffs:channel_owner,privacy_reviewer,security_owner",
+        "decision_kame_gate_required_interpreter_profile_mismatch",
+        "decision_missing_operator_must_not_acknowledgements",
+    ]
 
 
 def test_channel_policy_cli_smoke(tmp_path):

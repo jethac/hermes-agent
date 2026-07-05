@@ -32,7 +32,14 @@ from scripts.hackathon_voiceops_demo import (
     write_demo,
 )
 from scripts.voiceops_artifact_package_audit import audit_package, write_audit as write_package_audit
-from scripts.voiceops_channel_policy import build_channel_policy, build_review_packet, validate_policy, write_channel_policy
+from scripts.voiceops_channel_policy import (
+    load_channel_policy_review_decision,
+    build_channel_policy,
+    build_review_packet,
+    validate_channel_policy_review_decision,
+    validate_policy,
+    write_channel_policy,
+)
 from scripts.voiceops_operator_state import build_operator_state, validate_operator_state, write_operator_state
 from scripts.voiceops_provisioning_probe import (
     DEFAULT_COMMAND_PROBE_TIMEOUT_SECONDS,
@@ -634,6 +641,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
                     "artifacts/voiceops-channel-policy/current/channel-policy.md",
                     "artifacts/voiceops-channel-policy/current/channel-policy-review.json",
                     "artifacts/voiceops-channel-policy/current/channel-policy-review.md",
+                    "artifacts/voiceops-channel-policy/current/channel-policy-review-decision.json",
                 ],
                 "first_safe_command": (
                     "uv run python scripts/voiceops_channel_policy.py "
@@ -670,6 +678,7 @@ def _build_operator_handoff(gates: list[dict[str, Any]], blockers: dict[str, Any
             "--read-only-discovery-evidence artifacts/voiceops-provisioning/current/read-only-discovery.manifest.json "
             "--provisioning-preflight-evidence artifacts/voiceops-provisioning/current/provisioning-preflight-scaffold/provisioning-preflight-evidence.manifest.json "
             "--post-approval-receipts artifacts/voiceops-provisioning/current/post-approval-receipts.json "
+            "--channel-policy-operator-decision artifacts/voiceops-channel-policy/current/channel-policy-review-decision.json "
             f"--evidence {SPARK_BENCHMARK_SCAFFOLD_EVIDENCE}"
         ),
         "final_package_audit_command": (
@@ -895,6 +904,8 @@ def _build_review_actions(handoff: dict[str, Any]) -> list[dict[str, Any]]:
                 "phase_id": phase.get("phase_id"),
                 "milestone": phase.get("milestone"),
                 "status": phase.get("status"),
+                "decision_artifact": phase.get("decision_artifact"),
+                "decision_status": phase.get("decision_status"),
                 "can_run_here_now": phase.get("can_run_here_now"),
                 "blocked_by_current_environment": phase.get("blocked_by_current_environment", {}),
                 "first_safe_command": phase.get("first_safe_command"),
@@ -924,6 +935,7 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
     voice = _result_by_milestone(results, "milestone_1_real_voice_operator")
     provisioning = _result_by_milestone(results, "milestone_2_real_spend_and_provisioning_preflight")
     spark = _result_by_milestone(results, "milestone_4_local_spark_stack_matrix")
+    channel_policy = _result_by_milestone(results, "milestone_3_multi_channel_policy")
     current_environment = summary.get("current_environment", {})
     source_plan_run = str(Path(summary["output_dir"]) / "voiceops-plan-run.json")
     voice_missing = voice["details"].get("live_probe_missing_gates", [])
@@ -1450,6 +1462,16 @@ def build_readiness_closure_index(summary: dict[str, Any]) -> dict[str, Any]:
     readiness_gap_milestones = set(summary["readiness_gaps"])
     remaining_gates = [gate for gate in gates if gate["milestone"] in readiness_gap_milestones]
     handoff = _build_operator_handoff(gates, blockers)
+    if channel_policy.get("status") == "reviewed":
+        for phase in handoff.get("review_phases", []):
+            if isinstance(phase, dict) and phase.get("phase_id") == "multi_channel_policy_review":
+                phase["status"] = "operator_review_accepted"
+                phase["decision_artifact"] = channel_policy.get("details", {}).get("review_decision_path")
+                phase["decision_status"] = channel_policy.get("details", {}).get("review_decision_status")
+                phase["success_check"] = (
+                    "channel policy review decision validated; generated policy/review artifacts remain "
+                    "artifact_only, changes_policy is false, and real_egress_enabled is false"
+                )
     handoff = _append_plan_model_flags(handoff, model_flags)
     next_actions = _build_next_actions(remaining_gates=remaining_gates, handoff=handoff, blockers=blockers)
     review_actions = _build_review_actions(handoff)
@@ -1499,6 +1521,7 @@ def build_plan_run(
     provisioning_preflight_evidence: Path | None = None,
     read_only_discovery_evidence: Path | None = None,
     post_approval_receipts: Path | None = None,
+    channel_policy_operator_decision: Path | None = None,
     run_command_probes: bool = False,
     run_readonly_discovery: bool = False,
     timeout_seconds: int | None = None,
@@ -1519,6 +1542,7 @@ def build_plan_run(
             provisioning_preflight_evidence=provisioning_preflight_evidence,
             read_only_discovery_evidence=read_only_discovery_evidence,
             post_approval_receipts=post_approval_receipts,
+            channel_policy_operator_decision=channel_policy_operator_decision,
             run_command_probes=run_command_probes,
             run_readonly_discovery=run_readonly_discovery,
             timeout_seconds=timeout_seconds,
@@ -1542,6 +1566,7 @@ async def build_plan_run_async(
     provisioning_preflight_evidence: Path | None = None,
     read_only_discovery_evidence: Path | None = None,
     post_approval_receipts: Path | None = None,
+    channel_policy_operator_decision: Path | None = None,
     run_command_probes: bool = False,
     run_readonly_discovery: bool = False,
     timeout_seconds: int | None = None,
@@ -2940,15 +2965,56 @@ async def build_plan_run_async(
     channel_review = build_review_packet(channel_policy)
     channel_issues = validate_policy(channel_policy)
     channel_paths = write_channel_policy(channel_policy_dir, channel_policy)
+    channel_decision_status = "not_supplied"
+    channel_decision_issues: list[str] = []
+    channel_decision_payload: dict[str, Any] | None = None
+    if channel_policy_operator_decision is not None:
+        try:
+            channel_decision_payload = load_channel_policy_review_decision(channel_policy_operator_decision)
+            channel_decision_issues = validate_channel_policy_review_decision(
+                channel_decision_payload,
+                review=channel_review,
+                review_path=Path(channel_paths["review_json"]),
+            )
+        except (OSError, json.JSONDecodeError) as exc:
+            channel_decision_issues = [f"decision_load_failed:{type(exc).__name__}"]
+        channel_decision_status = "accepted" if not channel_decision_issues else "invalid"
+    channel_status = (
+        "validation_failed"
+        if channel_issues or channel_decision_status == "invalid"
+        else "reviewed"
+        if channel_decision_status == "accepted"
+        else "needs_review"
+    )
     results.append(
         _milestone_result(
             milestone="milestone_3_multi_channel_policy",
             command=f"uv run python scripts/voiceops_channel_policy.py --output-dir {channel_policy_dir}",
             output_dir=channel_policy_dir,
             artifacts=channel_paths,
-            status="needs_review" if not channel_issues else "validation_failed",
+            status=channel_status,
             details={
                 "validation_issues": channel_issues,
+                "review_decision_path": (
+                    str(channel_policy_operator_decision) if channel_policy_operator_decision is not None else None
+                ),
+                "review_decision_status": channel_decision_status,
+                "review_decision_issues": channel_decision_issues,
+                "review_decision_schema_version": (
+                    channel_decision_payload.get("schema_version")
+                    if isinstance(channel_decision_payload, dict)
+                    else None
+                ),
+                "review_decision_changes_policy": (
+                    channel_decision_payload.get("changes_policy")
+                    if isinstance(channel_decision_payload, dict)
+                    else None
+                ),
+                "review_decision_real_egress_enabled": (
+                    channel_decision_payload.get("real_egress_enabled")
+                    if isinstance(channel_decision_payload, dict)
+                    else None
+                ),
                 "review_required_for_real_egress": channel_policy["scope"]["review_required_for_real_egress"],
                 "review_status": channel_policy["scope"]["review_status"],
                 "real_egress_enabled": channel_policy["scope"]["real_egress_enabled"],
@@ -3021,6 +3087,7 @@ async def build_plan_run_async(
                 provisioning_preflight_evidence,
                 read_only_discovery_evidence,
                 post_approval_receipts,
+                channel_policy_operator_decision,
             )
             if path is not None
         ],
@@ -3526,6 +3593,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--provisioning-preflight-evidence", type=Path, default=None)
     parser.add_argument("--read-only-discovery-evidence", "--readonly-discovery-evidence", type=Path, default=None)
     parser.add_argument("--post-approval-receipts", type=Path, default=None)
+    parser.add_argument("--channel-policy-operator-decision", type=Path, default=None)
     parser.add_argument(
         "--package-audit",
         action="store_true",
@@ -3635,6 +3703,7 @@ def main(argv: list[str] | None = None) -> int:
                 provisioning_preflight_evidence=args.provisioning_preflight_evidence,
                 read_only_discovery_evidence=args.read_only_discovery_evidence,
                 post_approval_receipts=args.post_approval_receipts,
+                channel_policy_operator_decision=args.channel_policy_operator_decision,
                 run_command_probes=False,
                 run_readonly_discovery=False,
                 timeout_seconds=args.timeout_seconds,
@@ -3703,6 +3772,7 @@ def main(argv: list[str] | None = None) -> int:
         provisioning_preflight_evidence=args.provisioning_preflight_evidence,
         read_only_discovery_evidence=args.read_only_discovery_evidence,
         post_approval_receipts=args.post_approval_receipts,
+        channel_policy_operator_decision=args.channel_policy_operator_decision,
         run_command_probes=args.run_command_probes,
         run_readonly_discovery=args.run_readonly_discovery,
         timeout_seconds=args.timeout_seconds,
