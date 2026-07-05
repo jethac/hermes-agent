@@ -44,6 +44,23 @@ bundle." If the frontend provides text without raw audio, that is degraded
 compatibility mode, useful for captions or clarification, but insufficient for
 full KAME evidence or high-risk action gates.
 
+The interpreter prompt must make that authority boundary explicit. Gemma should
+be asked to judge the waveform first, then use Moshi/Open-S2S/reflex/classic-ASR
+text only as a witness claim about what a frontend believed it heard. The prompt
+must require one adjudication per hypothesis, must allow the witness to repair
+clipped prefixes or ambiguous names/numbers, and must also allow rejection when
+energy, timing, speaker, channel, waveform, or session evidence disagrees. It
+must not ask Gemma to run "ASR" as a sibling lane or to pick the earliest text as
+truth. The only output eligible for Hermes' active `/model` is promoted
+interpreter wording, intent, entities, confidence, and compact witness audit
+metadata.
+
+Classic ASR therefore remains an optional evidence/fallback producer, not a
+normal-path dependency. A missing Moshi/classic-ASR transcript must not delay the
+reflex acknowledgement or raw-audio interpreter submission when the speech gate
+accepted a cut. A present transcript must improve or explain interpretation
+without gaining authority by being fast.
+
 ## Source Of Truth
 
 The current architecture is **reflex -> interpreter -> oracle**.

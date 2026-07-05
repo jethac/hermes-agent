@@ -91,6 +91,23 @@ the critical path for acknowledgement or interpreter scheduling. The adapter may
 attach witness text before, with, or after raw audio, provided the merge keys
 prove that every attachment belongs to the same accepted speech cut.
 
+Interpreter prompts for this packet must be phrased as witness adjudication, not
+ASR selection. The prompt contract is:
+
+- raw audio is primary evidence for the accepted speech cut
+- `transcript_hypotheses[]` are frontend/reflex/ASR witness claims, not verified
+  user text
+- each hypothesis must receive an adjudication outcome and, if rejected, typed
+  rejection reasons
+- accepted or corrected witness content may influence only
+  `interpreter_promoted` fields
+- unpromoted witness text must not be copied into `oracle_text`, durable
+  history, tool arguments, spend reasons, phone payloads, memory/file writes, or
+  external messages
+
+This is what lets Hermes provide Moshi/Open-S2S transcript text to Gemma beside
+raw voice without reintroducing a parallel STT control path.
+
 ## Direct-Audio Interpreter Context Rule
 
 The answer to "can we provide Moshi STT as context with raw voice?" is yes, but

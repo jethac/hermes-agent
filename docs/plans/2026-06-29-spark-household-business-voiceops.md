@@ -93,6 +93,16 @@ business operations, this is the authority boundary that keeps a fast or
 hallucinated transcript from becoming a bill payment, provider account, phone
 script, memory entry, file write, external message, or tool argument.
 
+Implementation amendment, 2026-07-05: prompt Gemma as an evidence adjudicator,
+not as a parallel ASR service. The interpreter request should say that raw audio
+is primary, that Moshi/Open-S2S/reflex/classic-ASR strings are same-cut witness
+claims, and that every witness must be accepted as supporting evidence,
+corrected by audio, or rejected/kept diagnostic-only before any wording can be
+promoted. This allows Moshi "STT" to help with clipped starts, names, numbers,
+and multilingual/code-switched speech while preserving the safety boundary:
+unpromoted witness text stays out of `oracle_text`, Stripe, NemoClaw, phone,
+memory, file, external-message, and tool payloads.
+
 ## Spark Model Strategy
 
 There are two related but distinct model strategies.
