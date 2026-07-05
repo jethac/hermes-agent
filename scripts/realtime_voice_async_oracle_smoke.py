@@ -1993,6 +1993,8 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         for key, value in external_frontend_interpreter_promoted.items()
         if value not in ("", None, [], ())
     }
+    request_bundle_id = str(getattr(request, "evidence_bundle_id", "") or "") if request is not None else ""
+    request_merge_key = str(getattr(request, "evidence_merge_key", "") or "") if request is not None else ""
     external_frontend_witness_direct_audio_profile_ok = (
         external_frontend_mode == KAME_INTERPRETER_PROFILE_WITNESS_ASSISTED_DIRECT_AUDIO
         and external_frontend_interpreter_profile
@@ -2008,6 +2010,91 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and external_frontend_interpreter_promoted.get("authority") == "interpreter_promoted"
         and "prepare an external came hand off"
         not in json.dumps(external_frontend_interpreter_promoted, sort_keys=True).lower()
+    )
+    minimum_interpreter_packet_hypotheses = [
+        {
+            key: value
+            for key, value in dict(item).items()
+            if key
+            in {
+                "source",
+                "kind",
+                "text_digest",
+                "role",
+                "authority",
+                "promotion_required",
+                "tool_authority",
+                "arrival_phase",
+                "latency_ms",
+                "confidence",
+                "speaker_or_actor_ref",
+                "channel_or_surface_ref",
+                "partial",
+                "adjudication",
+            }
+        }
+        | {"text_redacted": True}
+        for item in external_frontend_transcript_hypotheses
+        if isinstance(item, Mapping)
+    ]
+    minimum_interpreter_packet = {
+        "schema_version": "voiceops.minimum_interpreter_packet.v1",
+        "mode": external_frontend_mode,
+        "turn_id": str(getattr(request, "turn_id", "") or "") if request is not None else "",
+        "audio_segment_ref": getattr(request, "audio_segment_ref", "") if request is not None else "",
+        "interpreter_input_order": external_frontend_interpreter_input_order,
+        "metadata": {
+            "evidence_bundle_id": request_bundle_id,
+            "evidence_merge_key": request_merge_key,
+            "speaker_or_actor_ref": "discord:jetha-redacted",
+            "channel_or_surface_ref": "discord_voice:general-redacted",
+            "vad_speech": True,
+            "energy_gate": "accepted",
+            "audio_time_range_ms": list(getattr(request, "audio_time_range_ms", ()))
+            if request is not None
+            else [],
+        },
+        "reflex": {
+            "acknowledgement_text": getattr(request, "interface_already_said", "")
+            if request is not None
+            else "",
+            "acknowledgement_source": "reflex_acknowledgement",
+            "route": getattr(getattr(request, "route", None), "value", "")
+            if request is not None
+            else "",
+            "authority": "reflex_hypothesis",
+            "tool_authority": False,
+        },
+        "transcript_hypotheses": minimum_interpreter_packet_hypotheses,
+    }
+    minimum_interpreter_packet_text = json.dumps(
+        minimum_interpreter_packet,
+        sort_keys=True,
+        default=str,
+    ).lower()
+    minimum_interpreter_packet_ok = (
+        minimum_interpreter_packet["mode"] == KAME_INTERPRETER_PROFILE_WITNESS_ASSISTED_DIRECT_AUDIO
+        and minimum_interpreter_packet["audio_segment_ref"] == "artifact://voiceclaw/turn-1.wav"
+        and minimum_interpreter_packet["interpreter_input_order"]
+        == ["raw_audio", "metadata", "reflex", "transcript_hypotheses"]
+        and minimum_interpreter_packet["metadata"]["evidence_bundle_id"] == request_bundle_id
+        and minimum_interpreter_packet["metadata"]["evidence_merge_key"] == request_merge_key
+        and minimum_interpreter_packet["metadata"]["vad_speech"] is True
+        and minimum_interpreter_packet["metadata"]["energy_gate"] == "accepted"
+        and minimum_interpreter_packet["reflex"]["acknowledgement_text"] == "I'm preparing the handoff."
+        and minimum_interpreter_packet["reflex"]["authority"] == "reflex_hypothesis"
+        and minimum_interpreter_packet["reflex"]["tool_authority"] is False
+        and bool(minimum_interpreter_packet_hypotheses)
+        and all(
+            item.get("role") == "witness_context"
+            and item.get("authority") == "hypothesis"
+            and item.get("promotion_required") == "interpreter_promoted_or_oracle_promoted"
+            and item.get("tool_authority") is False
+            and item.get("text_redacted") is True
+            and "text" not in item
+            for item in minimum_interpreter_packet_hypotheses
+        )
+        and "prepare an external came hand off" not in minimum_interpreter_packet_text
     )
     first_auxiliary_hypothesis = (
         proof_hypotheses[0]
@@ -2071,8 +2158,6 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and status_provisional_summary.get("authority") == "hypothesis"
         and status_provisional_summary.get("tool_authority") is False
     )
-    request_bundle_id = str(getattr(request, "evidence_bundle_id", "") or "") if request is not None else ""
-    request_merge_key = str(getattr(request, "evidence_merge_key", "") or "") if request is not None else ""
     metadata_bundle_id = str(metadata.get("kame_evidence_bundle_id") or "")
     metadata_merge_key = str(metadata.get("kame_evidence_merge_key") or "")
     status_bundle = status_job.get("evidence_bundle") if isinstance(status_job.get("evidence_bundle"), dict) else {}
@@ -2234,6 +2319,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and evidence_bundle_propagated
         and evidence_bundle_single_turn
         and external_frontend_witness_direct_audio_profile_ok
+        and minimum_interpreter_packet_ok
         and durable_hypothesis_not_promoted
         and terminal_correlation_observed
         and audit_id_continuity_observed
@@ -2254,6 +2340,21 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         ),
         "external_frontend_witness_direct_audio_profile_ok": (
             external_frontend_witness_direct_audio_profile_ok
+        ),
+        "minimum_interpreter_packet_smoke_ok": minimum_interpreter_packet_ok,
+        "minimum_interpreter_packet": minimum_interpreter_packet,
+        "minimum_interpreter_packet_input_order": external_frontend_interpreter_input_order,
+        "minimum_interpreter_packet_text_redacted": (
+            "prepare an external came hand off" not in minimum_interpreter_packet_text
+        ),
+        "minimum_interpreter_packet_witness_count": len(minimum_interpreter_packet_hypotheses),
+        "minimum_interpreter_packet_raw_audio_primary": (
+            minimum_interpreter_packet["audio_segment_ref"] == "artifact://voiceclaw/turn-1.wav"
+            and minimum_interpreter_packet["metadata"]["energy_gate"] == "accepted"
+        ),
+        "minimum_interpreter_packet_hypotheses_authority": all(
+            item.get("authority") == "hypothesis" and item.get("tool_authority") is False
+            for item in minimum_interpreter_packet_hypotheses
         ),
         "external_frontend_witness_adjudications": external_frontend_witness_adjudications,
         "external_frontend_interpreter_promoted": external_frontend_interpreter_promoted,
@@ -5844,6 +5945,27 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "external_frontend_witness_direct_audio_profile_ok": external_frontend_bridge_smoke[
             "external_frontend_witness_direct_audio_profile_ok"
+        ],
+        "minimum_interpreter_packet_smoke_ok": external_frontend_bridge_smoke[
+            "minimum_interpreter_packet_smoke_ok"
+        ],
+        "minimum_interpreter_packet": external_frontend_bridge_smoke[
+            "minimum_interpreter_packet"
+        ],
+        "minimum_interpreter_packet_input_order": external_frontend_bridge_smoke[
+            "minimum_interpreter_packet_input_order"
+        ],
+        "minimum_interpreter_packet_text_redacted": external_frontend_bridge_smoke[
+            "minimum_interpreter_packet_text_redacted"
+        ],
+        "minimum_interpreter_packet_witness_count": external_frontend_bridge_smoke[
+            "minimum_interpreter_packet_witness_count"
+        ],
+        "minimum_interpreter_packet_raw_audio_primary": external_frontend_bridge_smoke[
+            "minimum_interpreter_packet_raw_audio_primary"
+        ],
+        "minimum_interpreter_packet_hypotheses_authority": external_frontend_bridge_smoke[
+            "minimum_interpreter_packet_hypotheses_authority"
         ],
         "external_frontend_witness_adjudications": external_frontend_bridge_smoke[
             "external_frontend_witness_adjudications"

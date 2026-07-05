@@ -2063,6 +2063,20 @@ async def build_plan_run_async(
                     "external_frontend_protocol_contract": voice_operator["proofs"]["async_oracle_jobs"][
                         "external_frontend_protocol_contract"
                     ],
+                    "external_frontend_mode": voice_operator["proofs"]["async_oracle_jobs"][
+                        "external_frontend_mode"
+                    ],
+                    "external_frontend_interpreter_profile": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_interpreter_profile"],
+                    "external_frontend_interpreter_input_order": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "external_frontend_interpreter_input_order"
+                        ]
+                    ),
+                    "external_frontend_witness_direct_audio_profile_ok": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_witness_direct_audio_profile_ok"],
                     "external_frontend_job_id": voice_operator["proofs"]["async_oracle_jobs"][
                         "external_frontend_job_id"
                     ],
@@ -2139,12 +2153,18 @@ async def build_plan_run_async(
                     "external_frontend_evidence_bundle_propagated": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_evidence_bundle_propagated"],
+                    "external_frontend_evidence_bundle_id": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_evidence_bundle_id"],
                     "external_frontend_evidence_merge_key": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_evidence_merge_key"],
                     "external_frontend_evidence_merge_key_propagated": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_evidence_merge_key_propagated"],
+                    "external_frontend_audio_segment_ref": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["external_frontend_audio_segment_ref"],
                     "external_frontend_hypothesis_not_durable_oracle_text": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["external_frontend_hypothesis_not_durable_oracle_text"],
@@ -2249,6 +2269,29 @@ async def build_plan_run_async(
                         )
                         or []
                     ),
+                    "minimum_interpreter_packet_smoke_ok": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["minimum_interpreter_packet_smoke_ok"],
+                    "minimum_interpreter_packet": dict(
+                        voice_operator["proofs"]["async_oracle_jobs"]["minimum_interpreter_packet"]
+                    ),
+                    "minimum_interpreter_packet_input_order": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "minimum_interpreter_packet_input_order"
+                        ]
+                    ),
+                    "minimum_interpreter_packet_text_redacted": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["minimum_interpreter_packet_text_redacted"],
+                    "minimum_interpreter_packet_witness_count": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["minimum_interpreter_packet_witness_count"],
+                    "minimum_interpreter_packet_raw_audio_primary": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["minimum_interpreter_packet_raw_audio_primary"],
+                    "minimum_interpreter_packet_hypotheses_authority": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["minimum_interpreter_packet_hypotheses_authority"],
                     "provider_text_alias_normalization_smoke_ok": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["provider_text_alias_normalization_smoke_ok"],

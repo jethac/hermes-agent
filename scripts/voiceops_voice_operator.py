@@ -2161,6 +2161,23 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         if isinstance(smoke.get("reflex_ack_transcript_audit_record"), Mapping)
         else {}
     )
+    minimum_packet = (
+        smoke.get("minimum_interpreter_packet")
+        if isinstance(smoke.get("minimum_interpreter_packet"), Mapping)
+        else {}
+    )
+    minimum_packet_metadata = (
+        minimum_packet.get("metadata") if isinstance(minimum_packet.get("metadata"), Mapping) else {}
+    )
+    minimum_packet_reflex = (
+        minimum_packet.get("reflex") if isinstance(minimum_packet.get("reflex"), Mapping) else {}
+    )
+    minimum_packet_hypotheses = (
+        minimum_packet.get("transcript_hypotheses")
+        if isinstance(minimum_packet.get("transcript_hypotheses"), list)
+        else []
+    )
+    minimum_packet_text = json.dumps(minimum_packet, sort_keys=True, default=str).lower()
     return {
         "async_oracle_smoke_ok": bool(smoke.get("ok")),
         "four_jobs_ran_concurrently": bool(smoke.get("worker_overlap_proved"))
@@ -2423,6 +2440,39 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and (smoke.get("external_frontend_tool_result_forbidden_paths") or []) == []
         and (smoke.get("external_frontend_reflex_status_forbidden_paths") or []) == []
         and (smoke.get("external_frontend_placeholder_forbidden_paths") or []) == [],
+        "minimum_interpreter_packet_canonical": smoke.get("minimum_interpreter_packet_smoke_ok") is True
+        and minimum_packet.get("schema_version") == "voiceops.minimum_interpreter_packet.v1"
+        and minimum_packet.get("mode") == "witness_assisted_direct_audio"
+        and minimum_packet.get("audio_segment_ref") == smoke.get("external_frontend_audio_segment_ref")
+        and minimum_packet.get("interpreter_input_order")
+        == ["raw_audio", "metadata", "reflex", "transcript_hypotheses"]
+        and minimum_packet.get("interpreter_input_order")
+        == smoke.get("external_frontend_interpreter_input_order")
+        and minimum_packet_metadata.get("evidence_bundle_id")
+        == smoke.get("external_frontend_evidence_bundle_id")
+        and minimum_packet_metadata.get("evidence_merge_key")
+        == smoke.get("external_frontend_evidence_merge_key")
+        and minimum_packet_metadata.get("vad_speech") is True
+        and minimum_packet_metadata.get("energy_gate") == "accepted"
+        and minimum_packet_reflex.get("authority") == "reflex_hypothesis"
+        and minimum_packet_reflex.get("tool_authority") is False
+        and bool(minimum_packet_hypotheses)
+        and len(minimum_packet_hypotheses)
+        == int(smoke.get("minimum_interpreter_packet_witness_count") or 0)
+        and smoke.get("minimum_interpreter_packet_text_redacted") is True
+        and smoke.get("minimum_interpreter_packet_raw_audio_primary") is True
+        and smoke.get("minimum_interpreter_packet_hypotheses_authority") is True
+        and all(
+            isinstance(item, Mapping)
+            and item.get("text_redacted") is True
+            and "text" not in item
+            and item.get("role") == "witness_context"
+            and item.get("authority") == "hypothesis"
+            and item.get("promotion_required") == "interpreter_promoted_or_oracle_promoted"
+            and item.get("tool_authority") is False
+            for item in minimum_packet_hypotheses
+        )
+        and "prepare an external came hand off" not in minimum_packet_text,
         "durable_promoted_turn_resume_contract": smoke.get("durable_resume_contract_smoke_ok") is True
         and smoke.get("durable_resume_contract_schema_version") == "voiceops.kame_durable_resume_context.v1"
         and int(smoke.get("durable_resume_promoted_turn_count") or 0) >= 4
@@ -2910,6 +2960,16 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             evidence="async_oracle_smoke_plus_external_frontend_tests",
             test_refs=ASYNC_ORACLE_ACCEPTANCE_TEST_REFS["external_frontend_bridge"],
             verification_mode="loopback_smoke_plus_focused_tests",
+            runtime_verified_by_this_report=True,
+        ),
+        "minimum_interpreter_packet_is_canonical": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("minimum_interpreter_packet_canonical")),
+            evidence="async_oracle_smoke_minimum_interpreter_packet",
+            test_refs=[
+                "tests/scripts/test_voiceops_plan_run.py::test_plan_run_generates_all_headless_milestone_artifacts",
+                "tests/scripts/test_voiceops_artifact_package_audit.py::test_package_audit_accepts_generated_headless_package",
+            ],
+            verification_mode="loopback_smoke_plus_package_audit",
             runtime_verified_by_this_report=True,
         ),
         "durable_promoted_turn_resume_contract": _async_oracle_acceptance_row(
@@ -3565,6 +3625,27 @@ def build_voice_operator_report(
             ),
             "external_frontend_witness_direct_audio_profile_ok": bool(
                 async_oracle_smoke.get("external_frontend_witness_direct_audio_profile_ok")
+            ),
+            "minimum_interpreter_packet_smoke_ok": bool(
+                async_oracle_smoke.get("minimum_interpreter_packet_smoke_ok")
+            ),
+            "minimum_interpreter_packet": dict(
+                async_oracle_smoke.get("minimum_interpreter_packet") or {}
+            ),
+            "minimum_interpreter_packet_input_order": list(
+                async_oracle_smoke.get("minimum_interpreter_packet_input_order") or []
+            ),
+            "minimum_interpreter_packet_text_redacted": bool(
+                async_oracle_smoke.get("minimum_interpreter_packet_text_redacted")
+            ),
+            "minimum_interpreter_packet_witness_count": async_oracle_smoke.get(
+                "minimum_interpreter_packet_witness_count"
+            ),
+            "minimum_interpreter_packet_raw_audio_primary": bool(
+                async_oracle_smoke.get("minimum_interpreter_packet_raw_audio_primary")
+            ),
+            "minimum_interpreter_packet_hypotheses_authority": bool(
+                async_oracle_smoke.get("minimum_interpreter_packet_hypotheses_authority")
             ),
             "external_frontend_witness_adjudications": list(
                 async_oracle_smoke.get("external_frontend_witness_adjudications") or []
@@ -4605,6 +4686,9 @@ def build_voice_operator_report(
             "async_oracle_interpreter_prompt_policy_visible": async_oracle_coverage[
                 "interpreter_prompt_policy_visible"
             ],
+            "async_oracle_minimum_interpreter_packet_canonical": async_oracle_coverage[
+                "minimum_interpreter_packet_canonical"
+            ],
             "async_oracle_energy_gate_ignores_non_speech": async_oracle_coverage[
                 "energy_gate_ignores_non_speech_without_work"
             ],
@@ -4766,6 +4850,7 @@ def validate_voice_operator_report(report: dict[str, Any]) -> list[str]:
         "witness_fusion_adjudicates_frontend_text",
         "interpreter_prompt_input_order_visible",
         "interpreter_prompt_policy_visible",
+        "minimum_interpreter_packet_canonical",
         "energy_gate_ignores_non_speech_without_work",
         "kame_ack_latency_metrics_visible",
         "kame_latency_breakdown_visible",

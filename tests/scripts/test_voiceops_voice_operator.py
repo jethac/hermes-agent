@@ -526,6 +526,62 @@ def _async_oracle_smoke_payload() -> dict:
         "external_frontend_reflex_status_forbidden_paths": [],
         "external_frontend_placeholder": "Accepted job one running: I'm preparing the handoff.",
         "external_frontend_placeholder_forbidden_paths": [],
+        "minimum_interpreter_packet_smoke_ok": True,
+        "minimum_interpreter_packet": {
+            "schema_version": "voiceops.minimum_interpreter_packet.v1",
+            "mode": "witness_assisted_direct_audio",
+            "turn_id": "voice-smoke-external-frontend:voiceclaw:1",
+            "audio_segment_ref": "artifact://voiceclaw/turn-1.wav",
+            "interpreter_input_order": [
+                "raw_audio",
+                "metadata",
+                "reflex",
+                "transcript_hypotheses",
+            ],
+            "metadata": {
+                "evidence_bundle_id": "kame-evidence-abc123",
+                "evidence_merge_key": "kame-merge-external-front-end",
+                "speaker_or_actor_ref": "discord:jetha-redacted",
+                "channel_or_surface_ref": "discord_voice:general-redacted",
+                "vad_speech": True,
+                "energy_gate": "accepted",
+                "audio_time_range_ms": [100, 2100],
+            },
+            "reflex": {
+                "acknowledgement_text": "I'm preparing the handoff.",
+                "acknowledgement_source": "reflex_acknowledgement",
+                "route": "defer",
+                "authority": "reflex_hypothesis",
+                "tool_authority": False,
+            },
+            "transcript_hypotheses": [
+                {
+                    "source": "moshi",
+                    "kind": "frontend_witness_hypothesis",
+                    "text_digest": _text_digest("prepare an external kame handoff"),
+                    "text_redacted": True,
+                    "role": "witness_context",
+                    "authority": "hypothesis",
+                    "promotion_required": "interpreter_promoted_or_oracle_promoted",
+                    "tool_authority": False,
+                    "arrival_phase": "with_raw_audio",
+                    "latency_ms": 140,
+                    "confidence": 0.78,
+                    "partial": False,
+                    "adjudication": "corrected_by_audio",
+                }
+            ],
+        },
+        "minimum_interpreter_packet_input_order": [
+            "raw_audio",
+            "metadata",
+            "reflex",
+            "transcript_hypotheses",
+        ],
+        "minimum_interpreter_packet_text_redacted": True,
+        "minimum_interpreter_packet_witness_count": 1,
+        "minimum_interpreter_packet_raw_audio_primary": True,
+        "minimum_interpreter_packet_hypotheses_authority": True,
         "external_frontend_event_counts": {
             "tool.result": 2,
             "oracle.job.accepted": 1,
@@ -1681,6 +1737,28 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         report["proofs"]["async_oracle_jobs"]["external_frontend_witness_direct_audio_profile_ok"]
         is True
     )
+    assert report["requirements"]["async_oracle_minimum_interpreter_packet_canonical"] is True
+    assert report["async_oracle_coverage"]["minimum_interpreter_packet_canonical"] is True
+    assert report["async_oracle_acceptance"]["minimum_interpreter_packet_is_canonical"]["ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["minimum_interpreter_packet_smoke_ok"] is True
+    assert report["proofs"]["async_oracle_jobs"]["minimum_interpreter_packet_text_redacted"] is True
+    assert report["proofs"]["async_oracle_jobs"]["minimum_interpreter_packet_raw_audio_primary"] is True
+    assert report["proofs"]["async_oracle_jobs"]["minimum_interpreter_packet_hypotheses_authority"] is True
+    assert report["proofs"]["async_oracle_jobs"]["minimum_interpreter_packet_input_order"] == [
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    ]
+    minimum_packet = report["proofs"]["async_oracle_jobs"]["minimum_interpreter_packet"]
+    assert minimum_packet["schema_version"] == "voiceops.minimum_interpreter_packet.v1"
+    assert minimum_packet["mode"] == "witness_assisted_direct_audio"
+    assert minimum_packet["audio_segment_ref"] == "artifact://voiceclaw/turn-1.wav"
+    assert minimum_packet["metadata"]["energy_gate"] == "accepted"
+    assert minimum_packet["reflex"]["authority"] == "reflex_hypothesis"
+    assert minimum_packet["reflex"]["tool_authority"] is False
+    assert minimum_packet["transcript_hypotheses"][0]["text_redacted"] is True
+    assert "text" not in minimum_packet["transcript_hypotheses"][0]
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_witness_adjudications"] == [
         {
             "source": "moshi",

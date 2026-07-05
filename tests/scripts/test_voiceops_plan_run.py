@@ -2073,6 +2073,27 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert ack_record["authority"] == "reflex_hypothesis"
     assert ack_record["visible_to_user"] is True
     assert ack_record["spoken"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["minimum_interpreter_packet_smoke_ok"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["minimum_interpreter_packet_text_redacted"] is True
+    assert voice_result["details"]["async_oracle_smoke"]["minimum_interpreter_packet_raw_audio_primary"] is True
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["minimum_interpreter_packet_hypotheses_authority"]
+        is True
+    )
+    minimum_packet = voice_result["details"]["async_oracle_smoke"]["minimum_interpreter_packet"]
+    assert minimum_packet["schema_version"] == "voiceops.minimum_interpreter_packet.v1"
+    assert minimum_packet["mode"] == "witness_assisted_direct_audio"
+    assert minimum_packet["interpreter_input_order"] == [
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    ]
+    assert minimum_packet["metadata"]["energy_gate"] == "accepted"
+    assert minimum_packet["reflex"]["authority"] == "reflex_hypothesis"
+    assert minimum_packet["reflex"]["tool_authority"] is False
+    assert minimum_packet["transcript_hypotheses"][0]["text_redacted"] is True
+    assert "text" not in minimum_packet["transcript_hypotheses"][0]
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_with_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_late_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_no_duplicate_oracle_jobs"] is True

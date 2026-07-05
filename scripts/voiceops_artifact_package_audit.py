@@ -2322,6 +2322,11 @@ def _audit_voice_operator_async_oracle_plan_projection(
         prefix="plan_run:voice_operator.async_oracle_smoke",
         issues=issues,
     )
+    _audit_minimum_interpreter_packet(
+        async_smoke=projected,
+        prefix="plan_run:voice_operator.async_oracle_smoke",
+        issues=issues,
+    )
     _audit_promoted_request_summary_contract(
         proof.get("external_frontend_promoted_request_summary"),
         label=(
@@ -3027,6 +3032,81 @@ def _audit_reflex_ack_transcript(
         issues.append(f"{prefix}.reflex_ack_transcript_audit_tool_authority_not_false")
 
 
+def _audit_minimum_interpreter_packet(
+    *,
+    async_smoke: Mapping[str, Any],
+    prefix: str,
+    issues: list[str],
+) -> None:
+    if async_smoke.get("minimum_interpreter_packet_smoke_ok") is not True:
+        issues.append(f"{prefix}.minimum_interpreter_packet_smoke_not_ok")
+    packet = async_smoke.get("minimum_interpreter_packet")
+    if not isinstance(packet, Mapping):
+        issues.append(f"{prefix}.minimum_interpreter_packet_not_object")
+        packet = {}
+    metadata = packet.get("metadata") if isinstance(packet.get("metadata"), Mapping) else {}
+    reflex = packet.get("reflex") if isinstance(packet.get("reflex"), Mapping) else {}
+    hypotheses = (
+        packet.get("transcript_hypotheses")
+        if isinstance(packet.get("transcript_hypotheses"), list)
+        else []
+    )
+    if packet.get("schema_version") != "voiceops.minimum_interpreter_packet.v1":
+        issues.append(f"{prefix}.minimum_interpreter_packet_schema_mismatch")
+    if packet.get("mode") != "witness_assisted_direct_audio":
+        issues.append(f"{prefix}.minimum_interpreter_packet_mode_mismatch")
+    if packet.get("interpreter_input_order") != [
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    ]:
+        issues.append(f"{prefix}.minimum_interpreter_packet_input_order_mismatch")
+    if packet.get("audio_segment_ref") != async_smoke.get("external_frontend_audio_segment_ref"):
+        issues.append(f"{prefix}.minimum_interpreter_packet_audio_segment_ref_mismatch")
+    if metadata.get("evidence_bundle_id") != async_smoke.get("external_frontend_evidence_bundle_id"):
+        issues.append(f"{prefix}.minimum_interpreter_packet_bundle_id_mismatch")
+    if metadata.get("evidence_merge_key") != async_smoke.get("external_frontend_evidence_merge_key"):
+        issues.append(f"{prefix}.minimum_interpreter_packet_merge_key_mismatch")
+    if metadata.get("vad_speech") is not True:
+        issues.append(f"{prefix}.minimum_interpreter_packet_vad_speech_not_true")
+    if metadata.get("energy_gate") != "accepted":
+        issues.append(f"{prefix}.minimum_interpreter_packet_energy_gate_mismatch")
+    if reflex.get("authority") != "reflex_hypothesis":
+        issues.append(f"{prefix}.minimum_interpreter_packet_reflex_authority_mismatch")
+    if reflex.get("tool_authority") is not False:
+        issues.append(f"{prefix}.minimum_interpreter_packet_reflex_tool_authority_not_false")
+    if not hypotheses:
+        issues.append(f"{prefix}.minimum_interpreter_packet_hypotheses_missing")
+    if len(hypotheses) != int(async_smoke.get("minimum_interpreter_packet_witness_count") or -1):
+        issues.append(f"{prefix}.minimum_interpreter_packet_witness_count_mismatch")
+    for index, hypothesis in enumerate(hypotheses):
+        if not isinstance(hypothesis, Mapping):
+            issues.append(f"{prefix}.minimum_interpreter_packet_hypothesis_not_object:{index}")
+            continue
+        if "text" in hypothesis:
+            issues.append(f"{prefix}.minimum_interpreter_packet_hypothesis_text_not_redacted:{index}")
+        expected = {
+            "role": "witness_context",
+            "authority": "hypothesis",
+            "promotion_required": "interpreter_promoted_or_oracle_promoted",
+            "tool_authority": False,
+            "text_redacted": True,
+        }
+        for key, expected_value in expected.items():
+            if hypothesis.get(key) != expected_value:
+                issues.append(f"{prefix}.minimum_interpreter_packet_hypothesis_{key}_mismatch:{index}")
+    packet_text = json.dumps(packet, sort_keys=True, default=str).lower()
+    if "prepare an external came hand off" in packet_text:
+        issues.append(f"{prefix}.minimum_interpreter_packet_raw_witness_text_present")
+    if async_smoke.get("minimum_interpreter_packet_text_redacted") is not True:
+        issues.append(f"{prefix}.minimum_interpreter_packet_text_redacted_not_true")
+    if async_smoke.get("minimum_interpreter_packet_raw_audio_primary") is not True:
+        issues.append(f"{prefix}.minimum_interpreter_packet_raw_audio_primary_not_true")
+    if async_smoke.get("minimum_interpreter_packet_hypotheses_authority") is not True:
+        issues.append(f"{prefix}.minimum_interpreter_packet_hypotheses_authority_not_true")
+
+
 def _audit_witness_fusion_multi_speaker_binding(
     *,
     async_smoke: Mapping[str, Any],
@@ -3162,6 +3242,11 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
         issues=issues,
     )
     _audit_reflex_ack_transcript(
+        async_smoke=async_smoke,
+        prefix="voice_operator_readiness:async_oracle_smoke",
+        issues=issues,
+    )
+    _audit_minimum_interpreter_packet(
         async_smoke=async_smoke,
         prefix="voice_operator_readiness:async_oracle_smoke",
         issues=issues,
