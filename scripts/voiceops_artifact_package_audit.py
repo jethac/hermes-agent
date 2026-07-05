@@ -77,6 +77,21 @@ EXPECTED_SPARK_SCAFFOLD_LINT_ISSUES = {
 }
 LOCAL_MODEL_MARKERS = ("local", "dgx", "spark", "localhost", "127.0.0.1", "vllm")
 HOSTED_MODEL_MARKERS = ("hosted", "cloud", "provider", "remote", "api", "nous")
+VALID_WITNESS_ADJUDICATION_OUTCOMES = {
+    "accepted_as_supporting_evidence",
+    "corrected_by_audio",
+    "rejected_or_diagnostic_only",
+}
+VALID_WITNESS_REJECTION_REASONS = {
+    "ambiguous_speaker",
+    "wrong_speaker",
+    "wrong_channel",
+    "stale_witness",
+    "timing_conflict",
+    "low_energy_non_speech",
+    "waveform_conflict",
+    "provider_conflict",
+}
 SECRET_SCAN_PATTERNS = (
     ("openai_or_stripe_secret_key", re.compile(r"\bsk_(?:live|test|car)_[A-Za-z0-9_-]{12,}\b")),
     ("openai_project_key", re.compile(r"\bsk-proj-[A-Za-z0-9_-]{12,}\b")),
@@ -2085,6 +2100,42 @@ def _compare_proof_fields(
             issues.append(f"voice_operator_readiness:proofs.{label}.{field}_mismatch")
 
 
+def _audit_external_frontend_hypothesis_adjudication(
+    hypotheses: list[Any],
+    *,
+    issues: list[str],
+    label: str,
+) -> None:
+    for index, hypothesis in enumerate(hypotheses):
+        if not isinstance(hypothesis, Mapping):
+            issues.append(f"voice_operator_readiness:{label}.{index}_not_object")
+            continue
+        adjudication = str(hypothesis.get("adjudication") or "").strip()
+        if not adjudication:
+            issues.append(f"voice_operator_readiness:{label}.{index}_missing_adjudication")
+            continue
+        if adjudication not in VALID_WITNESS_ADJUDICATION_OUTCOMES:
+            issues.append(f"voice_operator_readiness:{label}.{index}_invalid_adjudication")
+            continue
+        if adjudication != "rejected_or_diagnostic_only":
+            continue
+        raw_reasons = hypothesis.get("rejection_reasons")
+        if isinstance(raw_reasons, str):
+            reasons = [raw_reasons]
+        elif isinstance(raw_reasons, list):
+            reasons = [str(reason).strip() for reason in raw_reasons if str(reason).strip()]
+        else:
+            reasons = []
+        if not reasons:
+            issues.append(f"voice_operator_readiness:{label}.{index}_missing_rejection_reasons")
+            continue
+        invalid_reasons = [
+            reason for reason in reasons if reason not in VALID_WITNESS_REJECTION_REASONS
+        ]
+        if invalid_reasons:
+            issues.append(f"voice_operator_readiness:{label}.{index}_invalid_rejection_reasons")
+
+
 def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], issues: list[str]) -> None:
     proofs = readiness.get("proofs") if isinstance(readiness.get("proofs"), Mapping) else {}
     smoke = readiness.get("smoke") if isinstance(readiness.get("smoke"), Mapping) else {}
@@ -2114,6 +2165,12 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             issues.append(
                 "voice_operator_readiness:async_oracle_smoke.external_frontend_transcript_hypotheses_empty"
             )
+    else:
+        _audit_external_frontend_hypothesis_adjudication(
+            external_frontend_transcript_hypotheses,
+            issues=issues,
+            label="async_oracle_smoke.external_frontend_transcript_hypotheses",
+        )
     legacy_external_frontend_hypotheses = async_smoke.get(
         "external_frontend_auxiliary_transcript_hypotheses"
     )
@@ -2191,6 +2248,12 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
     if "external_frontend_transcript_hypotheses" not in async_proof:
         issues.append(
             "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_transcript_hypotheses_missing"
+        )
+    elif isinstance(async_proof.get("external_frontend_transcript_hypotheses"), list):
+        _audit_external_frontend_hypothesis_adjudication(
+            async_proof["external_frontend_transcript_hypotheses"],
+            issues=issues,
+            label="proofs.async_oracle_jobs.external_frontend_transcript_hypotheses",
         )
     _compare_proof_fields(
         label="async_oracle_jobs",

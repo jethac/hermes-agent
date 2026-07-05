@@ -4234,6 +4234,23 @@ def _oracle_request_auxiliary_hypotheses_from_evidence(
             continue
         key = (source, text)
         if key in seen:
+            existing = next(
+                (
+                    candidate
+                    for candidate in compact
+                    if candidate.get("source") == source and candidate.get("text") == text
+                ),
+                None,
+            )
+            if existing is not None and not existing.get("adjudication") and any(
+                str(item.get(field) or "").strip()
+                for field in ("adjudication", "interpreter_adjudication", "outcome")
+            ):
+                compact.remove(existing)
+                seen.remove(key)
+            else:
+                continue
+        if key in seen:
             continue
         seen.add(key)
         hypothesis: dict[str, Any] = {

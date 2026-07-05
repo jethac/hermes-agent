@@ -372,6 +372,8 @@ def _async_oracle_smoke_payload() -> dict:
                 "latency_ms": 140,
                 "partial": False,
                 "audio_time_range_ms": [120, 2080],
+                "arrival_phase": "with_raw_audio",
+                "adjudication": "corrected_by_audio",
                 "speaker": {
                     "platform": "discord",
                     "channel_user_id": "jetha-redacted",
@@ -399,6 +401,8 @@ def _async_oracle_smoke_payload() -> dict:
                 "latency_ms": 140,
                 "partial": False,
                 "audio_time_range_ms": (120, 2080),
+                "arrival_phase": "with_raw_audio",
+                "adjudication": "corrected_by_audio",
                 "speaker": {
                     "platform": "discord",
                     "channel_user_id": "jetha-redacted",
@@ -427,6 +431,8 @@ def _async_oracle_smoke_payload() -> dict:
             "latency_ms": 140,
             "partial": False,
             "audio_time_range_ms": (120, 2080),
+            "arrival_phase": "with_raw_audio",
+            "adjudication": "corrected_by_audio",
             "speaker": {
                 "platform": "discord",
                 "channel_user_id": "jetha-redacted",
@@ -845,6 +851,10 @@ def _async_oracle_smoke_payload() -> dict:
             "late": ["ambiguous_speaker", "wrong_speaker", "wrong_channel", "stale_witness"],
         },
         "witness_fusion_adjudication_outcomes_observed": True,
+        "witness_fusion_multi_speaker_witness_smoke_ok": True,
+        "witness_fusion_multi_speaker_wrong_witness_rejected": True,
+        "witness_fusion_multi_speaker_bound_to_second_human": True,
+        "witness_fusion_multi_speaker_action_sinks_clean": True,
         "witness_fusion_accepted_counts": {"early": 1, "with": 1, "late": 1},
         "witness_fusion_started_counts": {"early": 1, "with": 1, "late": 1},
         "witness_fusion_completed_counts": {"early": 1, "with": 1, "late": 1},
@@ -1577,6 +1587,12 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
             "tool_authority"
         ]
         is False
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_transcript_hypotheses"][0][
+            "adjudication"
+        ]
+        == "corrected_by_audio"
     )
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_witness_tool_authority_false"] is True
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_witness_role_context"] is True

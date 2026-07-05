@@ -247,6 +247,15 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
         report["external_frontend_transcript_hypotheses"][0]["text"]
     )
     assert report["external_frontend_transcript_hypotheses"][0]["latency_ms"] == 140
+    assert report["external_frontend_transcript_hypotheses"][0]["arrival_phase"] == "with_raw_audio"
+    assert (
+        report["external_frontend_transcript_hypotheses"][0]["adjudication"]
+        == "corrected_by_audio"
+    )
+    assert (
+        report["external_frontend_transcript_hypotheses"][1]["adjudication"]
+        == "corrected_by_audio"
+    )
     assert (
         report["external_frontend_transcript_hypotheses"][0]["speaker_or_actor_ref"]
         == "discord:user:jetha-redacted"

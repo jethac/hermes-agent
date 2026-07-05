@@ -1663,6 +1663,38 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
                 "confidence": 0.91,
                 "audio_segment_ref": "artifact://voiceclaw/turn-1.wav",
                 "audio_time_range_ms": [100, 2100],
+                "auxiliary_transcript_hypotheses": [
+                    {
+                        "source": "moshi",
+                        "kind": "frontend_witness_hypothesis",
+                        "text": "prepare an external came hand off",
+                        "confidence": 0.78,
+                        "latency_ms": 140,
+                        "partial": False,
+                        "audio_time_range_ms": [120, 2080],
+                        "arrival_phase": "with_raw_audio",
+                        "adjudication": "corrected_by_audio",
+                        "speaker": {
+                            "platform": "discord",
+                            "channel_user_id": "jetha-redacted",
+                            "display_name": "jetha",
+                            "is_bot": False,
+                        },
+                        "channel": {
+                            "transport": "discord_voice",
+                            "guild_id": "guild-redacted",
+                            "channel_id": "general-redacted",
+                            "surface": "desk_voice",
+                        },
+                    },
+                    {
+                        "source": "voiceclaw",
+                        "kind": "frontend_witness_hypothesis",
+                        "text": "prepare an external came hand off",
+                        "arrival_phase": "with_raw_audio",
+                        "adjudication": "corrected_by_audio",
+                    },
+                ],
                 "reason": "attach promoted interpreter evidence before oracle execution",
             },
         )
@@ -1831,12 +1863,17 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         if request is not None
         else ()
     )
-    external_frontend_transcript_hypotheses = [
-        dict(item) for item in auxiliary_hypotheses if isinstance(item, Mapping)
-    ]
+    status_transcript_hypotheses = status_job.get("transcript_hypotheses")
+    if isinstance(status_transcript_hypotheses, list) and status_transcript_hypotheses:
+        proof_hypotheses = tuple(
+            item for item in status_transcript_hypotheses if isinstance(item, Mapping)
+        )
+    else:
+        proof_hypotheses = tuple(item for item in auxiliary_hypotheses if isinstance(item, Mapping))
+    external_frontend_transcript_hypotheses = [dict(item) for item in proof_hypotheses]
     first_auxiliary_hypothesis = (
-        auxiliary_hypotheses[0]
-        if auxiliary_hypotheses and isinstance(auxiliary_hypotheses[0], Mapping)
+        proof_hypotheses[0]
+        if proof_hypotheses and isinstance(proof_hypotheses[0], Mapping)
         else {}
     )
     witness_kind = str(first_auxiliary_hypothesis.get("kind") or "")
@@ -1844,12 +1881,12 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
     witness_metadata = dict(first_auxiliary_hypothesis)
     witness_role_context = all(
         item.get("role") == "witness_context"
-        for item in auxiliary_hypotheses
+        for item in proof_hypotheses
         if isinstance(item, Mapping)
     )
     witness_promotion_required = all(
         item.get("promotion_required") == "interpreter_promoted_or_oracle_promoted"
-        for item in auxiliary_hypotheses
+        for item in proof_hypotheses
         if isinstance(item, Mapping)
     )
     witness_metadata_complete = (
@@ -1865,6 +1902,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and isinstance(witness_metadata.get("channel"), Mapping)
         and witness_metadata["channel"].get("transport") == "discord_voice"
         and witness_metadata["channel"].get("channel_id") == "general-redacted"
+        and witness_metadata.get("adjudication") == "corrected_by_audio"
     )
     evidence_bundle_propagated = (
         request is not None
@@ -2026,7 +2064,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         "external_frontend_witness_channel": dict(witness_metadata.get("channel") or {}),
         "external_frontend_witness_tool_authority_false": all(
             item.get("tool_authority") is False
-            for item in auxiliary_hypotheses
+            for item in proof_hypotheses
             if isinstance(item, Mapping)
         )
         if request is not None

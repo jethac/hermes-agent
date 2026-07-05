@@ -1872,6 +1872,20 @@ def _compact_auxiliary_transcript_hypotheses(
             continue
         dedupe_key = (source, text)
         if dedupe_key in seen:
+            existing = next(
+                (
+                    candidate
+                    for candidate in compact
+                    if candidate.get("source") == source and candidate.get("text") == text
+                ),
+                None,
+            )
+            if existing is not None and not existing.get("adjudication") and _compact_transcript_hypothesis_adjudication(value):
+                compact.remove(existing)
+                seen.remove(dedupe_key)
+            else:
+                continue
+        if dedupe_key in seen:
             continue
         seen.add(dedupe_key)
         item: dict[str, Any] = {
