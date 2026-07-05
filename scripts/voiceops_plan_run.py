@@ -744,6 +744,7 @@ def _sync_demo_handoff_preview(demo_dir: Path, plan_handoff: dict[str, Any]) -> 
             "blocked_by_current_environment",
             "commands",
             "expected_artifacts",
+            "optional_artifacts",
             "success_check",
         ):
             phase[key] = plan_phase.get(key)

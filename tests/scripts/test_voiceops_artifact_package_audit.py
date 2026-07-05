@@ -2737,6 +2737,34 @@ def test_package_audit_rejects_duplicate_closure_artifact_refs(tmp_path):
     assert f"demo_handoff:local_spark_stack:expected_artifacts_duplicate:{spark_artifact}" in report["issues"]
 
 
+def test_package_audit_rejects_next_action_handoff_summary_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
+    closure_path = artifact_root / "voiceops-plan" / "current" / "readiness-closure-index.json"
+
+    plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
+    closure = json.loads(closure_path.read_text(encoding="utf-8"))
+
+    for payload in (closure, plan_run["closure_index"]):
+        payload["next_actions"][0]["expected_artifacts"] = payload["next_actions"][0]["expected_artifacts"][:-1]
+        payload["next_actions"][1]["success_check"] = "done when the operator says so"
+        payload["next_actions"][2]["secret_policy"] = "redact when convenient"
+        payload["next_actions"][2]["operator_step"] = ""
+    plan_run["next_actions"] = plan_run["closure_index"]["next_actions"]
+
+    _write_json(plan_run_path, plan_run)
+    _write_json(closure_path, closure)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "operator_handoff:live_discord_voice_operator:expected_artifacts_mismatch_with_phase" in report["issues"]
+    assert "demo_handoff:live_discord_voice_operator:expected_artifacts_mismatch_with_phase" in report["issues"]
+    assert "operator_handoff:spend_and_provisioning_preflight:success_check_mismatch_with_phase" in report["issues"]
+    assert "operator_handoff:local_spark_stack_matrix:secret_policy_missing_no_secret_rule" in report["issues"]
+    assert "operator_handoff:local_spark_stack_matrix:operator_step_missing" in report["issues"]
+
+
 def test_package_audit_rejects_handoff_validation_command_without_safety_label(tmp_path):
     artifact_root = _generate_package(tmp_path)
     handoff_path = artifact_root / "voiceops-plan" / "current" / "operator-handoff.json"

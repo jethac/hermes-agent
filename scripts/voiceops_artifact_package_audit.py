@@ -1563,6 +1563,27 @@ def _audit_handoff_validation_command_safety(
         if not isinstance(command_safety, Mapping):
             issues.append(f"{label}:{gate_id}:missing_command_safety")
             continue
+        for field in (
+            "expected_artifacts",
+            "optional_artifacts",
+            "success_check",
+            "first_safe_command",
+            "first_evidence_command",
+        ):
+            action_value = (action.get(field) or []) if field == "optional_artifacts" else action.get(field)
+            phase_value = (phase.get(field) or []) if field == "optional_artifacts" else phase.get(field)
+            if action_value != phase_value:
+                issues.append(f"{label}:{gate_id}:{field}_mismatch_with_phase")
+        if action.get("primary_next_command") != action.get("first_safe_command"):
+            issues.append(f"{label}:{gate_id}:primary_next_command_mismatch")
+        if action.get("primary_evidence_command") != action.get("first_evidence_command"):
+            issues.append(f"{label}:{gate_id}:primary_evidence_command_mismatch")
+        secret_policy = str(action.get("secret_policy") or "")
+        if "never include secret values" not in secret_policy:
+            issues.append(f"{label}:{gate_id}:secret_policy_missing_no_secret_rule")
+        operator_step = str(action.get("operator_step") or "").strip()
+        if not operator_step:
+            issues.append(f"{label}:{gate_id}:operator_step_missing")
         validation_commands = action.get("validation_commands")
         if not isinstance(validation_commands, Mapping):
             issues.append(f"{label}:{gate_id}:validation_commands_not_object")
