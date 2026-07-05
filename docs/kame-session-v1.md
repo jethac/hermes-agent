@@ -100,6 +100,14 @@ the critical path for acknowledgement or interpreter scheduling. The adapter may
 attach witness text before, with, or after raw audio, provided the merge keys
 prove that every attachment belongs to the same accepted speech cut.
 
+Runtime action-gate invariant: whenever an oracle job enters
+`waiting_for_approval`, its full status and audit event must include a
+`voiceops.runtime_kame_action_gate.v1` decision, even if the approval packet is
+otherwise empty. Sparse approval waits fail closed until promoted interpreter or
+oracle evidence has been consumed before the irreversible action and the tool
+disclosure reference is present. Reflex-visible status may continue to redact
+the approval packet.
+
 ### Witness Source Taxonomy
 
 Use the narrowest non-authoritative kind the adapter can prove:

@@ -325,6 +325,13 @@ def test_package_audit_rejects_async_oracle_plan_projection_drift(tmp_path):
     )
     voice_result["details"]["async_oracle_smoke"]["status_bounded_overflow_hidden_job_count"] = 0
     voice_result["details"]["async_oracle_smoke"]["status_bounded_overflow_more_spoken_status"] = ""
+    voice_result["details"]["async_oracle_smoke"]["witness_fusion_same_turn_single_bundle"] = False
+    voice_result["details"]["async_oracle_smoke"]["witness_fusion_interpreter_prompt_input_order"] = [
+        "transcript_hypotheses",
+        "raw_audio",
+    ]
+    voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_promoted_ok"] = False
+    voice_result["details"]["async_oracle_smoke"]["runtime_kame_action_gate_self_attested_ok"] = True
     _write_json(plan_run_path, plan_run)
 
     report = audit_package(artifact_root)
@@ -336,6 +343,22 @@ def test_package_audit_rejects_async_oracle_plan_projection_drift(tmp_path):
     )
     assert (
         "plan_run:voice_operator.async_oracle_smoke.status_bounded_overflow_more_spoken_status_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "plan_run:voice_operator.async_oracle_smoke.witness_fusion_same_turn_single_bundle_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "plan_run:voice_operator.async_oracle_smoke.witness_fusion_interpreter_prompt_input_order_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "plan_run:voice_operator.async_oracle_smoke.runtime_kame_action_gate_promoted_ok_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "plan_run:voice_operator.async_oracle_smoke.runtime_kame_action_gate_self_attested_ok_mismatch"
         in report["issues"]
     )
 

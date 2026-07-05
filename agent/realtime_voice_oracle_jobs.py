@@ -662,7 +662,7 @@ class OracleJobManager:
                 return job
             job.state = OracleJobState.WAITING_FOR_APPROVAL
             job.approval_reason = _compact_evidence_text(reason or "waiting for approval", limit=240)
-            job.approval = _compact_approval_payload(approval, job=job) if approval else {}
+            job.approval = _compact_approval_payload(approval or {}, job=job)
             job.updated_at = self._clock()
             payload = dict(job.to_status())
             await self._emit_locked(

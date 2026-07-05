@@ -2015,6 +2015,161 @@ def _audit_voice_operator_async_oracle_plan_projection(
         "status_bounded_overflow_hidden_ids_absent": proof.get(
             "status_bounded_overflow_hidden_ids_absent"
         ),
+        "witness_fusion_timing_smoke_ok": proof.get("witness_fusion_timing_smoke_ok"),
+        "witness_fusion_arrival_phases": list(proof.get("witness_fusion_arrival_phases") or []),
+        "witness_fusion_case_job_ids": proof.get("witness_fusion_case_job_ids"),
+        "witness_fusion_turn_ids": proof.get("witness_fusion_turn_ids"),
+        "witness_fusion_audio_segment_refs": proof.get("witness_fusion_audio_segment_refs"),
+        "witness_fusion_evidence_merge_keys": proof.get("witness_fusion_evidence_merge_keys"),
+        "witness_fusion_merge_key_observed": proof.get("witness_fusion_merge_key_observed"),
+        "witness_fusion_same_turn_convergence_ok": proof.get(
+            "witness_fusion_same_turn_convergence_ok"
+        ),
+        "witness_fusion_same_turn_arrival_phases": list(
+            proof.get("witness_fusion_same_turn_arrival_phases") or []
+        ),
+        "witness_fusion_same_turn_lineage": proof.get("witness_fusion_same_turn_lineage"),
+        "witness_fusion_same_turn_phase_lineage": proof.get(
+            "witness_fusion_same_turn_phase_lineage"
+        ),
+        "witness_fusion_same_turn_bundle_ids_by_phase": proof.get(
+            "witness_fusion_same_turn_bundle_ids_by_phase"
+        ),
+        "witness_fusion_same_turn_job_ids_by_phase": proof.get(
+            "witness_fusion_same_turn_job_ids_by_phase"
+        ),
+        "witness_fusion_same_turn_single_bundle": proof.get(
+            "witness_fusion_same_turn_single_bundle"
+        ),
+        "witness_fusion_same_turn_one_oracle_job": proof.get(
+            "witness_fusion_same_turn_one_oracle_job"
+        ),
+        "witness_fusion_same_turn_oracle_job_counts": proof.get(
+            "witness_fusion_same_turn_oracle_job_counts"
+        ),
+        "witness_fusion_same_turn_no_duplicate_oracle_job": proof.get(
+            "witness_fusion_same_turn_no_duplicate_oracle_job"
+        ),
+        "witness_fusion_same_turn_expected_merge_key": proof.get(
+            "witness_fusion_same_turn_expected_merge_key"
+        ),
+        "witness_fusion_audio_metadata": proof.get("witness_fusion_audio_metadata"),
+        "witness_fusion_bundle_audio_metadata": proof.get("witness_fusion_bundle_audio_metadata"),
+        "witness_fusion_accepted_audio_gate_observed": proof.get(
+            "witness_fusion_accepted_audio_gate_observed"
+        ),
+        "witness_fusion_early_single_bundle": proof.get("witness_fusion_early_single_bundle"),
+        "witness_fusion_interpreter_prompt_input_order": list(
+            proof.get("witness_fusion_interpreter_prompt_input_order") or []
+        ),
+        "witness_fusion_interpreter_prompt_input_order_expected": list(
+            proof.get("witness_fusion_interpreter_prompt_input_order_expected") or []
+        ),
+        "witness_fusion_interpreter_prompt_input_order_visible": proof.get(
+            "witness_fusion_interpreter_prompt_input_order_visible"
+        ),
+        "witness_fusion_interpreter_prompt_policy": proof.get(
+            "witness_fusion_interpreter_prompt_policy"
+        ),
+        "witness_fusion_interpreter_prompt_policy_expected": proof.get(
+            "witness_fusion_interpreter_prompt_policy_expected"
+        ),
+        "witness_fusion_interpreter_prompt_policy_version": proof.get(
+            "witness_fusion_interpreter_prompt_policy_version"
+        ),
+        "witness_fusion_interpreter_prompt_policy_visible": proof.get(
+            "witness_fusion_interpreter_prompt_policy_visible"
+        ),
+        "witness_fusion_with_single_bundle": proof.get("witness_fusion_with_single_bundle"),
+        "witness_fusion_late_single_bundle": proof.get("witness_fusion_late_single_bundle"),
+        "witness_fusion_no_duplicate_oracle_jobs": proof.get(
+            "witness_fusion_no_duplicate_oracle_jobs"
+        ),
+        "witness_fusion_partial_superseded_by_final": proof.get(
+            "witness_fusion_partial_superseded_by_final"
+        ),
+        "witness_fusion_partial_active_hypothesis": proof.get(
+            "witness_fusion_partial_active_hypothesis"
+        ),
+        "witness_fusion_adjudications": proof.get("witness_fusion_adjudications"),
+        "witness_fusion_rejection_reasons": proof.get("witness_fusion_rejection_reasons"),
+        "witness_fusion_adjudication_outcomes_observed": proof.get(
+            "witness_fusion_adjudication_outcomes_observed"
+        ),
+        "runtime_kame_action_gate_smoke_ok": proof.get("runtime_kame_action_gate_smoke_ok"),
+        "runtime_kame_action_gate_hypothesis_only_ok": proof.get(
+            "runtime_kame_action_gate_hypothesis_only_ok"
+        ),
+        "runtime_kame_action_gate_hypothesis_only_issues": list(
+            proof.get("runtime_kame_action_gate_hypothesis_only_issues") or []
+        ),
+        "runtime_kame_action_gate_degraded_text_only_ok": proof.get(
+            "runtime_kame_action_gate_degraded_text_only_ok"
+        ),
+        "runtime_kame_action_gate_degraded_text_only_issues": list(
+            proof.get("runtime_kame_action_gate_degraded_text_only_issues") or []
+        ),
+        "runtime_kame_action_gate_degraded_text_only_status": proof.get(
+            "runtime_kame_action_gate_degraded_text_only_status"
+        ),
+        "runtime_kame_action_gate_degraded_text_only_reason": proof.get(
+            "runtime_kame_action_gate_degraded_text_only_reason"
+        ),
+        "runtime_kame_action_gate_degraded_text_only_raw_audio_available": proof.get(
+            "runtime_kame_action_gate_degraded_text_only_raw_audio_available"
+        ),
+        "runtime_kame_action_gate_degraded_text_only_preserves_hypothesis": proof.get(
+            "runtime_kame_action_gate_degraded_text_only_preserves_hypothesis"
+        ),
+        "runtime_kame_action_gate_degraded_oracle_promoted_ok": proof.get(
+            "runtime_kame_action_gate_degraded_oracle_promoted_ok"
+        ),
+        "runtime_kame_action_gate_degraded_oracle_promoted_issues": list(
+            proof.get("runtime_kame_action_gate_degraded_oracle_promoted_issues") or []
+        ),
+        "runtime_kame_action_gate_degraded_oracle_promoted_authorities": list(
+            proof.get("runtime_kame_action_gate_degraded_oracle_promoted_authorities") or []
+        ),
+        "runtime_kame_action_gate_degraded_oracle_promoted_status": proof.get(
+            "runtime_kame_action_gate_degraded_oracle_promoted_status"
+        ),
+        "runtime_kame_action_gate_degraded_oracle_promoted_raw_audio_available": proof.get(
+            "runtime_kame_action_gate_degraded_oracle_promoted_raw_audio_available"
+        ),
+        "runtime_kame_action_gate_degraded_oracle_promoted_consumed_before_action": proof.get(
+            "runtime_kame_action_gate_degraded_oracle_promoted_consumed_before_action"
+        ),
+        "runtime_kame_action_gate_promoted_ok": proof.get("runtime_kame_action_gate_promoted_ok"),
+        "runtime_kame_action_gate_promoted_authorities": list(
+            proof.get("runtime_kame_action_gate_promoted_authorities") or []
+        ),
+        "runtime_kame_action_gate_promoted_consumed_before_action": proof.get(
+            "runtime_kame_action_gate_promoted_consumed_before_action"
+        ),
+        "runtime_kame_action_gate_self_attested_ok": proof.get(
+            "runtime_kame_action_gate_self_attested_ok"
+        ),
+        "runtime_kame_action_gate_self_attested_issues": list(
+            proof.get("runtime_kame_action_gate_self_attested_issues") or []
+        ),
+        "runtime_kame_action_gate_self_attested_authorities": list(
+            proof.get("runtime_kame_action_gate_self_attested_authorities") or []
+        ),
+        "runtime_kame_action_gate_self_attested_consumed_before_action": proof.get(
+            "runtime_kame_action_gate_self_attested_consumed_before_action"
+        ),
+        "runtime_kame_action_gate_missing_tool_disclosure_ok": proof.get(
+            "runtime_kame_action_gate_missing_tool_disclosure_ok"
+        ),
+        "runtime_kame_action_gate_missing_tool_disclosure_issues": list(
+            proof.get("runtime_kame_action_gate_missing_tool_disclosure_issues") or []
+        ),
+        "runtime_kame_action_gate_missing_tool_disclosure_authorities": list(
+            proof.get("runtime_kame_action_gate_missing_tool_disclosure_authorities") or []
+        ),
+        "runtime_kame_action_gate_tool_disclosure_ref_observed": proof.get(
+            "runtime_kame_action_gate_tool_disclosure_ref_observed"
+        ),
     }
     for field, expected_value in expected.items():
         if projected.get(field) != expected_value:

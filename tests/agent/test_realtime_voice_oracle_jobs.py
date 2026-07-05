@@ -2502,6 +2502,59 @@ async def test_waiting_for_approval_holds_capacity_and_emits_redacted_event():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("approval_payload", [None, {}])
+async def test_waiting_for_approval_without_payload_still_exposes_kame_action_gate(
+    approval_payload,
+):
+    events = []
+    release = asyncio.Event()
+
+    async def runner(job):
+        await release.wait()
+        return "done"
+
+    manager = OracleJobManager(
+        runner=runner,
+        event_callback=lambda event: events.append(event.to_status()),
+    )
+    job = await manager.submit(_request("approve a high risk action"))
+    await asyncio.sleep(0)
+
+    waiting = await manager.mark_waiting_for_approval(
+        job.job_id,
+        reason="approval required",
+        approval=approval_payload,
+    )
+    status = await manager.status_view()
+
+    assert waiting.state == OracleJobState.WAITING_FOR_APPROVAL
+    approval = dict(status["jobs"][0]["approval"])
+    assert set(approval) == {"kame_action_gate"}
+    gate = approval["kame_action_gate"]
+    assert gate["schema_version"] == "voiceops.runtime_kame_action_gate.v1"
+    assert gate["ok"] is False
+    assert gate["requires_promoted_evidence"] is True
+    assert gate["accepted_authorities"] == ("interpreter_promoted", "oracle_promoted")
+    assert gate["present_authorities"] == ()
+    assert gate["interpreter_evidence_consumed_before_irreversible_action"] is False
+    assert gate.get("tool_disclosure_ref", "") == ""
+    assert gate["issues"] == (
+        "missing_promoted_evidence",
+        "interpreter_evidence_not_consumed_before_irreversible_action",
+        "degraded_text_only_cannot_authorize_high_risk_action",
+        "missing_tool_disclosure_ref",
+    )
+    assert "approval" not in status["reflex"]["jobs"][0]
+
+    waiting_event = next(event for event in events if event["type"] == "oracle.job.waiting_for_approval")
+    event_gate = waiting_event["payload"]["approval"]["kame_action_gate"]
+    assert event_gate == gate
+
+    release.set()
+    await manager.wait_for_idle()
+
+
+@pytest.mark.asyncio
 async def test_cancelling_waiting_for_approval_keeps_capacity_until_worker_stops_and_drops_late_result(tmp_path):
     ledger_path = tmp_path / "voiceops-oracle-jobs.jsonl"
     started = []

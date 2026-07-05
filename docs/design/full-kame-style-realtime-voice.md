@@ -1646,7 +1646,10 @@ approval-related tool progress events should include
 has been consumed before the irreversible boundary and `tool_disclosure_ref =
 "tool_disclosure"` is present. The gate may list reflex/Moshi/OpenClaw/VoiceClaw
 or ASR hypotheses as present witness context, but those labels are not accepted
-authorities and cannot make the gate pass.
+authorities and cannot make the gate pass. This gate is required even when an
+approval wait has no rich approval packet yet; sparse waits must still expose
+the fail-closed gate in full job status and audit events while reflex-facing
+status keeps approval details redacted.
 
 Headless acceptance for this runtime gate is explicit: the async oracle smoke
 must report `runtime_kame_action_gate_*` fields proving that hypothesis-only
