@@ -1651,6 +1651,14 @@ approval wait has no rich approval packet yet; sparse waits must still expose
 the fail-closed gate in full job status and audit events while reflex-facing
 status keeps approval details redacted.
 
+Unapproved high-risk tool detection must not depend only on obvious tool names.
+The runtime should also treat structured metadata such as `risk_level`,
+`risk_category`, `tool_category`, `action_kind`, `capability`, policy, safety,
+or approval metadata as action-gate inputs. A benign-looking tool name that
+declares spend, phone, credential, provisioning, shell, file, memory, message,
+network, high, mutating, irreversible, or approval-required risk must fail
+closed unless it enters the explicit approval path.
+
 Headless acceptance for this runtime gate is explicit: the async oracle smoke
 must report `runtime_kame_action_gate_*` fields proving that hypothesis-only
 approval waits fail closed with `missing_promoted_evidence`, while approval

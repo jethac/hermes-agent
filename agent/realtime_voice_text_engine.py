@@ -11,7 +11,7 @@ import re
 import tempfile
 import time
 from dataclasses import replace
-from typing import Any, AsyncIterator, List, Mapping, Optional
+from typing import Any, AsyncIterator, List, Mapping, Optional, Sequence
 
 from agent.realtime_voice import (
     AudioChunk,
@@ -5264,6 +5264,48 @@ _ORACLE_TOOL_ACTION_GATE_NAME_MARKERS = frozenset(
         "write_memory",
     }
 )
+_ORACLE_TOOL_ACTION_GATE_CATEGORIES = frozenset(
+    {
+        "call",
+        "credential",
+        "file",
+        "memory",
+        "message",
+        "network",
+        "phone",
+        "provisioning",
+        "shell",
+        "spend",
+    }
+)
+_ORACLE_TOOL_ACTION_GATE_METADATA_KEYS = frozenset(
+    {
+        "action_category",
+        "action_kind",
+        "capability",
+        "category",
+        "kind",
+        "risk",
+        "risk_category",
+        "risk_level",
+        "safety_category",
+        "tool_category",
+    }
+)
+_ORACLE_TOOL_ACTION_GATE_RISK_VALUES = frozenset(
+    {
+        "approval_required",
+        "critical",
+        "dangerous",
+        "external_action",
+        "high",
+        "high_risk",
+        "irreversible",
+        "mutating",
+        "requires_approval",
+        "unsafe",
+    }
+)
 
 
 def _oracle_tool_event_type(item: Mapping[str, Any]) -> Optional[VoiceEventType]:
@@ -5296,17 +5338,74 @@ def _oracle_tool_event_waits_for_approval(item: Mapping[str, Any]) -> bool:
 
 
 def _oracle_tool_event_requires_kame_action_gate(item: Mapping[str, Any]) -> bool:
+    candidates = list(_oracle_tool_event_risk_candidates(item))
     tool_name = _oracle_tool_event_name(item)
-    if not tool_name:
+    if tool_name:
+        candidates.append(tool_name)
+    normalized = " ".join(_normalize_oracle_tool_risk_text(candidate) for candidate in candidates)
+    if not normalized:
         return False
-    normalized = (
-        tool_name.strip()
+    if any(marker in normalized for marker in _ORACLE_TOOL_ACTION_GATE_NAME_MARKERS):
+        return True
+    return any(
+        candidate in _ORACLE_TOOL_ACTION_GATE_CATEGORIES
+        or candidate in _ORACLE_TOOL_ACTION_GATE_RISK_VALUES
+        for candidate in (_normalize_oracle_tool_risk_text(value) for value in candidates)
+    )
+
+
+def _oracle_tool_event_risk_candidates(item: Mapping[str, Any]) -> tuple[str, ...]:
+    candidates: list[str] = []
+
+    def collect(value: Any, *, key_hint: str = "") -> None:
+        if isinstance(value, Mapping):
+            for raw_key, nested in value.items():
+                key = _normalize_oracle_tool_risk_text(raw_key)
+                if (
+                    key in _ORACLE_TOOL_ACTION_GATE_METADATA_KEYS
+                    or key in {"metadata", "approval", "risk_metadata", "safety", "policy"}
+                ):
+                    collect(nested, key_hint=key)
+                elif key_hint:
+                    collect(nested, key_hint=key_hint)
+            return
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            for nested in value:
+                collect(nested, key_hint=key_hint)
+            return
+        if not key_hint:
+            return
+        text = _normalize_oracle_tool_risk_text(value)
+        if not text:
+            return
+        if (
+            key_hint in {"risk", "risk_level"}
+            and text not in _ORACLE_TOOL_ACTION_GATE_RISK_VALUES
+            and not any(marker in text for marker in _ORACLE_TOOL_ACTION_GATE_NAME_MARKERS)
+        ):
+            return
+        if (
+            key_hint in _ORACLE_TOOL_ACTION_GATE_METADATA_KEYS
+            and text not in _ORACLE_TOOL_ACTION_GATE_CATEGORIES
+            and text not in _ORACLE_TOOL_ACTION_GATE_RISK_VALUES
+            and not any(marker in text for marker in _ORACLE_TOOL_ACTION_GATE_NAME_MARKERS)
+        ):
+            return
+        candidates.append(text)
+
+    collect(item)
+    return tuple(dict.fromkeys(candidates))
+
+
+def _normalize_oracle_tool_risk_text(value: Any) -> str:
+    return (
+        str(value or "")
+        .strip()
         .lower()
         .replace("-", "_")
         .replace(".", "_")
         .replace(" ", "_")
     )
-    return any(marker in normalized for marker in _ORACLE_TOOL_ACTION_GATE_NAME_MARKERS)
 
 
 def _oracle_tool_event_name(item: Mapping[str, Any]) -> str:

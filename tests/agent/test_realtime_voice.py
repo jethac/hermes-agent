@@ -6707,6 +6707,34 @@ def test_async_oracle_unflagged_high_risk_tool_call_fails_closed(monkeypatch):
     asyncio.run(run())
 
 
+def test_async_oracle_unflagged_metadata_high_risk_tool_call_fails_closed(monkeypatch):
+    async def run():
+        seen, spoken = await _run_unapproved_high_risk_tool_event_smoke(
+            monkeypatch,
+            {
+                "event": "tool_call",
+                "tool_name": "dispatch_action",
+                "tool_call_id": "call-unsafe-metadata",
+                "metadata": {"risk_category": "spend", "risk_level": "high"},
+                "arguments": {"amount": 200, "card": "secret-card"},
+            },
+        )
+
+        suppressed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_RESULT_SUPPRESSED)
+        failed = next(event for event in seen if event.type == VoiceEventType.ORACLE_JOB_FAILED)
+        assert suppressed.payload["suppression_reason"] == "unapproved_high_risk_tool_event"
+        assert "KAME action gate failed" in failed.payload["error"]
+        assert not any(
+            event.type == VoiceEventType.ORACLE_JOB_PROGRESS
+            and event.payload.get("phase") == "tool"
+            for event in seen
+        )
+        assert "secret-card" not in str(seen)
+        assert spoken == ["Preparing the spend request."]
+
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize(
     "tool_name",
     [
@@ -6732,6 +6760,36 @@ def test_async_oracle_high_risk_tool_aliases_require_action_gate(tool_name):
     assert _oracle_tool_event_requires_kame_action_gate(
         {"event": "tool_call", "tool_name": tool_name}
     )
+
+
+@pytest.mark.parametrize(
+    "tool_event",
+    [
+        {"event": "tool_call", "tool_name": "dispatch_action", "metadata": {"risk_category": "spend"}},
+        {"event": "tool_call", "tool_name": "dispatch_action", "metadata": {"risk_level": "high"}},
+        {"event": "tool_call", "tool_name": "dispatch_action", "approval": {"action_kind": "phone"}},
+        {"event": "tool_call", "tool_name": "dispatch_action", "safety": {"capability": "credential"}},
+        {
+            "event": "tool_call",
+            "tool_name": "dispatch_action",
+            "metadata": {"policy": {"tool_category": "provisioning"}},
+        },
+    ],
+)
+def test_async_oracle_high_risk_tool_metadata_requires_action_gate(tool_event):
+    assert _oracle_tool_event_requires_kame_action_gate(tool_event)
+
+
+@pytest.mark.parametrize(
+    "tool_event",
+    [
+        {"event": "tool_call", "tool_name": "lookup_status"},
+        {"event": "tool_call", "tool_name": "dispatch_action", "metadata": {"risk_level": "low"}},
+        {"event": "tool_call", "tool_name": "dispatch_action", "metadata": {"category": "diagnostic"}},
+    ],
+)
+def test_async_oracle_low_risk_tool_metadata_does_not_require_action_gate(tool_event):
+    assert not _oracle_tool_event_requires_kame_action_gate(tool_event)
 
 
 def test_async_oracle_unflagged_nested_high_risk_tool_call_fails_closed(monkeypatch):

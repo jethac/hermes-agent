@@ -1479,7 +1479,7 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         "terminal_result_status_text"
     ]
     assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_smoke_ok"] is True
-    assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_case_count"] == 8
+    assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_case_count"] == 9
     assert set(voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_categories"]) == {
         "credential",
         "file",
@@ -1529,6 +1529,9 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
         is True
     )
     assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_name"] == "write_memory"
+    assert "dispatch_action" in voice_result["details"]["async_oracle_smoke"][
+        "unflagged_high_risk_tool_names"
+    ]
     assert voice_result["details"]["async_oracle_smoke"]["unflagged_high_risk_tool_spoken"][0] == (
         "Preparing the spend request."
     )

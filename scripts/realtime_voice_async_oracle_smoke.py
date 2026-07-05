@@ -1254,27 +1254,72 @@ async def _run_terminal_result_policy_smoke() -> dict[str, Any]:
 
 async def _run_unflagged_high_risk_tool_smoke() -> dict[str, Any]:
     cases = [
-        ("memory", "write_memory", {"memory": APPROVAL_SECRET_CANARY}),
-        ("file", "write_file", {"path": "/tmp/voiceops-secret.txt", "content": APPROVAL_SECRET_CANARY}),
-        ("shell", "run_command", {"cmd": f"echo {APPROVAL_SECRET_CANARY}"}),
-        ("spend", "stripe_link_purchase", {"amount": 200, "card": APPROVAL_SECRET_CANARY}),
-        ("phone", "phone_call", {"phone_number": "+15551234567", "script": APPROVAL_SECRET_CANARY}),
-        ("message", "whatsapp_send_message", {"to": "+15551234567", "body": APPROVAL_SECRET_CANARY}),
-        ("credential", "credential_write", {"name": "provider_token", "secret": APPROVAL_SECRET_CANARY}),
-        ("provisioning", "provision_service", {"provider": "voip", "api_key": APPROVAL_SECRET_CANARY}),
+        {
+            "category": "memory",
+            "tool_name": "write_memory",
+            "arguments": {"memory": APPROVAL_SECRET_CANARY},
+        },
+        {
+            "category": "file",
+            "tool_name": "write_file",
+            "arguments": {"path": "/tmp/voiceops-secret.txt", "content": APPROVAL_SECRET_CANARY},
+        },
+        {
+            "category": "shell",
+            "tool_name": "run_command",
+            "arguments": {"cmd": f"echo {APPROVAL_SECRET_CANARY}"},
+        },
+        {
+            "category": "spend",
+            "tool_name": "stripe_link_purchase",
+            "arguments": {"amount": 200, "card": APPROVAL_SECRET_CANARY},
+        },
+        {
+            "category": "phone",
+            "tool_name": "phone_call",
+            "arguments": {"phone_number": "+15551234567", "script": APPROVAL_SECRET_CANARY},
+        },
+        {
+            "category": "message",
+            "tool_name": "whatsapp_send_message",
+            "arguments": {"to": "+15551234567", "body": APPROVAL_SECRET_CANARY},
+        },
+        {
+            "category": "credential",
+            "tool_name": "credential_write",
+            "arguments": {"name": "provider_token", "secret": APPROVAL_SECRET_CANARY},
+        },
+        {
+            "category": "provisioning",
+            "tool_name": "provision_service",
+            "arguments": {"provider": "voip", "api_key": APPROVAL_SECRET_CANARY},
+        },
+        {
+            "category": "spend",
+            "tool_name": "dispatch_action",
+            "arguments": {"amount": 200, "card": APPROVAL_SECRET_CANARY},
+            "metadata": {"risk_category": "spend", "risk_level": "high"},
+        },
     ]
 
-    async def run_case(category: str, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def run_case(case: dict[str, Any]) -> dict[str, Any]:
+        category = str(case["category"])
+        tool_name = str(case["tool_name"])
+        arguments = dict(case["arguments"])
         unsafe_text = f"This unsafe tool result for {tool_name} should not be spoken."
 
         class ToolOracle:
             async def stream_answer_for_request(self, _request: Any):
-                yield {
+                event = {
                     "event": "tool_call",
                     "tool_name": tool_name,
                     "tool_call_id": f"call-unflagged-high-risk-{category}",
                     "arguments": arguments,
                 }
+                metadata = case.get("metadata")
+                if isinstance(metadata, dict):
+                    event["metadata"] = metadata
+                yield event
                 yield unsafe_text
 
         engine = SmokeEngine(oracle=ToolOracle())
@@ -1361,7 +1406,7 @@ async def _run_unflagged_high_risk_tool_smoke() -> dict[str, Any]:
             "spoken": spoken,
         }
 
-    case_results = [await run_case(*case) for case in cases]
+    case_results = [await run_case(case) for case in cases]
     legacy_case = next(case for case in case_results if case["tool_name"] == "write_memory")
     all_cases_ok = all(case["ok"] for case in case_results)
     all_progress_suppressed = all(case["progress_suppressed"] for case in case_results)

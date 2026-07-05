@@ -145,7 +145,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["terminal_result_status_available"] is True
     assert "completed: Finished Suppress terminal result." in report["terminal_result_status_text"]
     assert report["unflagged_high_risk_tool_smoke_ok"] is True
-    assert report["unflagged_high_risk_tool_case_count"] == 8
+    assert report["unflagged_high_risk_tool_case_count"] == 9
     assert set(report["unflagged_high_risk_tool_categories"]) == {
         "credential",
         "file",
@@ -158,6 +158,7 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     }
     assert set(report["unflagged_high_risk_tool_names"]) == {
         "credential_write",
+        "dispatch_action",
         "phone_call",
         "provision_service",
         "run_command",

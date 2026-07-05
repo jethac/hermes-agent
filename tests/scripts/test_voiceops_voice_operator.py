@@ -275,9 +275,10 @@ def _async_oracle_smoke_payload() -> dict:
                 ("message", "whatsapp_send_message"),
                 ("credential", "credential_write"),
                 ("provisioning", "provision_service"),
+                ("spend", "dispatch_action"),
             )
         ],
-        "unflagged_high_risk_tool_case_count": 8,
+        "unflagged_high_risk_tool_case_count": 9,
         "unflagged_high_risk_tool_categories": [
             "memory",
             "file",
@@ -287,6 +288,7 @@ def _async_oracle_smoke_payload() -> dict:
             "message",
             "credential",
             "provisioning",
+            "spend",
         ],
         "unflagged_high_risk_tool_names": [
             "write_memory",
@@ -297,6 +299,7 @@ def _async_oracle_smoke_payload() -> dict:
             "whatsapp_send_message",
             "credential_write",
             "provision_service",
+            "dispatch_action",
         ],
         "unflagged_high_risk_tool_all_cases_failed_closed": True,
         "unflagged_high_risk_tool_all_progress_suppressed": True,
@@ -1532,7 +1535,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         "terminal_result_status_text"
     ]
     assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_smoke_ok"] is True
-    assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_case_count"] == 8
+    assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_case_count"] == 9
     assert set(report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_categories"]) == {
         "credential",
         "file",
@@ -1562,6 +1565,7 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
     assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_spoken_payload_clean"] is True
     assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_failure_spoken"] is True
     assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_secret_canary_checked"] is True
+    assert "dispatch_action" in report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_names"]
     assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_name"] == "write_memory"
     assert report["proofs"]["async_oracle_jobs"]["unflagged_high_risk_tool_spoken"][0] == (
         "Preparing the spend request."
