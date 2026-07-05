@@ -1873,6 +1873,29 @@ def test_package_audit_rejects_secret_like_values_in_artifacts(tmp_path):
     )
 
 
+def test_package_audit_rejects_phone_context_without_kame_lineage(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    phone_context_path = artifact_root / "hackathon-voiceops-demo" / "current" / "phone-context.json"
+    phone_context = json.loads(phone_context_path.read_text(encoding="utf-8"))
+    phone_context.pop("evidence_bundle_id")
+    phone_context["context_authority"] = "hypothesis"
+    phone_context["transcript_hypotheses_allowed"] = True
+    phone_context["transcript_hypotheses"] = [{"text": "call my phone"}]
+    for approval in phone_context["pending_approvals"]:
+        if approval["action_id"] == "call-user-phone":
+            approval["tool_disclosure_ref"] = "missing"
+    _write_json(phone_context_path, phone_context)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert "phone_context:evidence_bundle_id_top_level_mismatch" in report["issues"]
+    assert "phone_context:context_authority_not_oracle_promoted" in report["issues"]
+    assert "phone_context:transcript_hypotheses_allowed_not_false" in report["issues"]
+    assert "phone_context:transcript_hypotheses_not_empty" in report["issues"]
+    assert "phone_context:call_user_phone_tool_disclosure_ref_mismatch" in report["issues"]
+
+
 def test_package_audit_rejects_live_dashboard_claim_with_open_gates(tmp_path):
     artifact_root = _generate_package(tmp_path)
     dashboard = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-dashboard.html"

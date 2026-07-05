@@ -551,6 +551,22 @@ def test_voiceops_demo_writes_headless_artifacts(tmp_path):
         } <= {"interpreter_promoted", "oracle_promoted"}
     assert phone_context["target_channel"] == "phone"
     assert phone_context["status"] == "queued_requires_approval"
+    assert phone_context["schema_version"] == "voiceops.phone_context.v1"
+    assert phone_context["artifact_id"] == "voiceops-phone-context"
+    assert phone_context["context_authority"] == "oracle_promoted"
+    assert phone_context["context_authority_ref"] == "oracle_job.phone_handoff_context"
+    assert phone_context["transcript_hypotheses_allowed"] is False
+    assert phone_context["transcript_hypotheses"] == []
+    assert phone_context["raw_witness_text_allowed"] is False
+    assert phone_context["phone_payload_policy"] == "promoted_context_reference_only"
+    assert phone_context["channel_policy_ref"] == "channel_policy.routes.approved_phone_handoff_call"
+    assert phone_context["credential_location_ref"] == "credential_locations.phone_bridge"
+    assert phone_context["source_context"]["source_voice_session_id"] == payload["source_context"]["source_voice_session_id"]
+    assert phone_context["source_context"]["source_oracle_job_id"] == payload["source_context"]["source_oracle_job_id"]
+    for field in ("turn_id", "audio_segment_ref", "evidence_bundle_id", "evidence_merge_key"):
+        assert phone_context["source_context"][field]
+    for field, value in phone_context["source_context"].items():
+        assert phone_context[field] == value
     assert phone_context["kame_evidence_gate"]["requires_promoted_evidence"] is True
     assert phone_context["tool_disclosure_ref"] == "tool_disclosure"
     assert phone_context["pending_approvals"]

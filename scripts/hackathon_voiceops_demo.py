@@ -1626,12 +1626,29 @@ def _validate_nemoclaw_action_packet(packet: Mapping[str, Any]) -> dict[str, Any
 
 def _phone_context_packet(demo: dict[str, Any]) -> dict[str, Any]:
     approval_actions = [action for action in demo["ops_actions"] if action["requires_approval"]]
+    source_context = {
+        **dict(demo["source_context"]),
+        "turn_id": "voiceops-demo-turn-budget",
+        "audio_segment_ref": "artifact://voiceops-demo/discord-budget-turn.wav",
+        "evidence_bundle_id": "kame-evidence-voiceops-demo-budget",
+        "evidence_merge_key": "kame-merge-voiceops-demo-budget",
+    }
     return {
+        "schema_version": "voiceops.phone_context.v1",
+        "artifact_id": "voiceops-phone-context",
         "handoff_id": "voiceops-phone-handoff-001",
         "source_channel": "discord_voice",
         "target_channel": "phone",
-        "source_context": dict(demo["source_context"]),
-        **dict(demo["source_context"]),
+        "source_context": source_context,
+        **source_context,
+        "context_authority": "oracle_promoted",
+        "context_authority_ref": "oracle_job.phone_handoff_context",
+        "transcript_hypotheses_allowed": False,
+        "transcript_hypotheses": [],
+        "raw_witness_text_allowed": False,
+        "phone_payload_policy": "promoted_context_reference_only",
+        "channel_policy_ref": "channel_policy.routes.approved_phone_handoff_call",
+        "credential_location_ref": "credential_locations.phone_bridge",
         "kame_evidence_gate": build_kame_evidence_gate(),
         "tool_disclosure_ref": "tool_disclosure",
         "status": "queued_requires_approval",

@@ -927,6 +927,99 @@ def _audit_action_consistency(
             issues.append(f"audit_ledger:{row.get('action')}:unexpected_executed_result")
 
 
+def _audit_phone_context_contract(
+    *,
+    demo: Mapping[str, Any],
+    phone_context: Mapping[str, Any],
+    packet: Mapping[str, Any],
+    issues: list[str],
+) -> None:
+    if phone_context.get("schema_version") != "voiceops.phone_context.v1":
+        issues.append("phone_context:missing_or_invalid_schema_version")
+    if phone_context.get("artifact_id") != "voiceops-phone-context":
+        issues.append("phone_context:missing_or_invalid_artifact_id")
+    if phone_context.get("target_channel") != "phone":
+        issues.append("phone_context:target_channel_not_phone")
+    if phone_context.get("status") != "queued_requires_approval":
+        issues.append("phone_context:status_not_queued_requires_approval")
+    if phone_context.get("context_authority") != "oracle_promoted":
+        issues.append("phone_context:context_authority_not_oracle_promoted")
+    if phone_context.get("context_authority_ref") != "oracle_job.phone_handoff_context":
+        issues.append("phone_context:context_authority_ref_mismatch")
+    if phone_context.get("transcript_hypotheses_allowed") is not False:
+        issues.append("phone_context:transcript_hypotheses_allowed_not_false")
+    if phone_context.get("transcript_hypotheses") != []:
+        issues.append("phone_context:transcript_hypotheses_not_empty")
+    if phone_context.get("raw_witness_text_allowed") is not False:
+        issues.append("phone_context:raw_witness_text_allowed_not_false")
+    if phone_context.get("phone_payload_policy") != "promoted_context_reference_only":
+        issues.append("phone_context:phone_payload_policy_mismatch")
+    if phone_context.get("channel_policy_ref") != "channel_policy.routes.approved_phone_handoff_call":
+        issues.append("phone_context:channel_policy_ref_mismatch")
+    if phone_context.get("credential_location_ref") != "credential_locations.phone_bridge":
+        issues.append("phone_context:credential_location_ref_mismatch")
+    if phone_context.get("tool_disclosure_ref") != "tool_disclosure":
+        issues.append("phone_context:tool_disclosure_ref_mismatch")
+
+    source_context = phone_context.get("source_context") if isinstance(phone_context.get("source_context"), Mapping) else {}
+    demo_source_context = demo.get("source_context") if isinstance(demo.get("source_context"), Mapping) else {}
+    required_context_fields = (
+        "source_voice_session_id",
+        "source_oracle_job_id",
+        "turn_id",
+        "audio_segment_ref",
+        "evidence_bundle_id",
+        "evidence_merge_key",
+    )
+    for field in required_context_fields:
+        if not str(source_context.get(field) or "").strip():
+            issues.append(f"phone_context:source_context:{field}_missing")
+        if phone_context.get(field) != source_context.get(field):
+            issues.append(f"phone_context:{field}_top_level_mismatch")
+        if field in demo_source_context and demo_source_context.get(field) != source_context.get(field):
+            issues.append(f"phone_context:source_context:{field}_demo_mismatch")
+
+    actions = {
+        str(action.get("action_id")): action
+        for action in packet.get("approval_required_actions", [])
+        if isinstance(action, Mapping)
+    }
+    pending = {
+        str(action.get("action_id")): action
+        for action in phone_context.get("pending_approvals", [])
+        if isinstance(action, Mapping)
+    }
+    if set(pending) != set(actions):
+        issues.append("phone_context:pending_approvals_do_not_match_nemoclaw_actions")
+    call_approval = pending.get("call-user-phone")
+    if not isinstance(call_approval, Mapping):
+        issues.append("phone_context:call_user_phone_pending_approval_missing")
+        return
+    call_evidence = (
+        call_approval.get("kame_evidence")
+        if isinstance(call_approval.get("kame_evidence"), Mapping)
+        else {}
+    )
+    promoted_fields = (
+        call_evidence.get("promoted_fields")
+        if isinstance(call_evidence.get("promoted_fields"), Mapping)
+        else {}
+    )
+    phone_field = (
+        promoted_fields.get("phone_handoff_context")
+        if isinstance(promoted_fields.get("phone_handoff_context"), Mapping)
+        else {}
+    )
+    if phone_field.get("evidence_label") != "oracle_promoted":
+        issues.append("phone_context:call_user_phone_handoff_context_not_oracle_promoted")
+    if call_evidence.get("hypotheses_allowed_for_action") is not False:
+        issues.append("phone_context:call_user_phone_hypotheses_allowed_for_action_not_false")
+    if call_evidence.get("transcript_hypotheses_promoted") is not False:
+        issues.append("phone_context:call_user_phone_transcript_hypotheses_promoted_not_false")
+    if call_approval.get("tool_disclosure_ref") != "tool_disclosure":
+        issues.append("phone_context:call_user_phone_tool_disclosure_ref_mismatch")
+
+
 def _audit_service_claims(operator_state: Mapping[str, Any], issues: list[str]) -> None:
     for issue in validate_operator_state(dict(operator_state)):
         issues.append(f"operator_state:validation:{issue}")
@@ -4333,6 +4426,7 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
     recording_runbook_markdown = _read_text(demo_dir / "recording-runbook.md", issues, "recording_runbook_markdown")
     submission_writeup_markdown = _read_text(demo_dir / "submission-writeup.md", issues, "submission_writeup_markdown")
     operator_state = _read_json(demo_dir / "operator-state.json", issues, "operator_state")
+    phone_context = _read_json(demo_dir / "phone-context.json", issues, "phone_context")
     packet = _read_json(demo_dir / "nemoclaw-action-packet.json", issues, "nemoclaw_packet")
     packet_validation = _read_json(
         demo_dir / "nemoclaw-action-packet.validation.json",
@@ -4474,6 +4568,12 @@ def audit_package(artifact_root: Path = DEFAULT_ARTIFACT_ROOT) -> dict[str, Any]
         audit_rows=audit_rows,
         operator_state_event_rows=operator_state_event_rows,
         dry_run_rows=dry_run_rows,
+        issues=issues,
+    )
+    _audit_phone_context_contract(
+        demo=demo,
+        phone_context=phone_context,
+        packet=packet,
         issues=issues,
     )
     _audit_service_claims(operator_state, issues)
