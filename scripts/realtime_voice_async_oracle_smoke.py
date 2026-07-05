@@ -1777,6 +1777,79 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
             for event in events
         )
     )
+    await engine.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.INTERFACE_ORACLE_REQUEST,
+            session_id="voice-smoke-external-frontend",
+            sequence=4,
+            payload={
+                "protocol": "kame_session_v1",
+                "tool": "ask_brain",
+                "tool_call_id": "voiceclaw-no-asr-1",
+                "provider": "voiceclaw",
+                "turn_id": "voice-smoke-external-frontend:no-asr",
+                "audit_id": "voiceclaw-audit-no-asr-001",
+                "source_audit_id": "discord-audit-no-asr-001",
+                "parent_audit_id": "discord-audit-root-001",
+                "user_id": "jetha",
+                "intent": "Check raw audio interpreter without ASR",
+                "text": "raw audio interpreter pending",
+                "audio_segment_ref": "artifact://voiceclaw/no-asr.wav",
+                "audio_time_range_ms": [2200, 3700],
+                "interface_already_said": "I heard you. Checking the audio.",
+                "requested_response_style": {"spoken": True, "max_sentences": 1},
+            },
+        )
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.TOOL_RESULT
+            and event.payload.get("accepted") is True
+            and event.payload.get("tool_call_id") == "voiceclaw-no-asr-1"
+            for event in events
+        )
+    )
+    no_asr_tool_result = next(
+        event
+        for event in recorder.events
+        if event.type == VoiceEventType.TOOL_RESULT
+        and event.payload.get("accepted") is True
+        and event.payload.get("tool_call_id") == "voiceclaw-no-asr-1"
+    )
+    no_asr_job_id = str(no_asr_tool_result.payload.get("job_id") or "")
+    await engine.receive_event(
+        VoiceEvent(
+            type=VoiceEventType.INTERFACE_ORACLE_UPDATE,
+            session_id="voice-smoke-external-frontend",
+            sequence=5,
+            payload={
+                "job_id": no_asr_job_id,
+                "update_type": "interpreter_evidence",
+                "source": "gemma_interpreter",
+                "corrected_transcript": "check raw audio interpreter without ASR",
+                "normalized_intent": "Check raw audio interpreter without ASR",
+                "confidence": 0.88,
+                "audio_segment_ref": "artifact://voiceclaw/no-asr.wav",
+                "audio_time_range_ms": [2200, 3700],
+                "reason": "prove ASR witness text is optional for raw-audio interpreter submission",
+            },
+        )
+    )
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_STARTED
+            and event.payload.get("job_id") == no_asr_job_id
+            for event in events
+        )
+    )
+    oracle.release("Check raw audio interpreter without ASR")
+    await recorder.wait_for(
+        lambda events: any(
+            event.type == VoiceEventType.ORACLE_JOB_COMPLETED
+            and event.payload.get("job_id") == no_asr_job_id
+            for event in events
+        )
+    )
     status = await engine.get_oracle_job_status()
     await engine.close()
     collector.cancel()
@@ -1802,6 +1875,10 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
     metadata_text = json.dumps(metadata, sort_keys=True)
     status_jobs = status.get("jobs") if isinstance(status.get("jobs"), list) else []
     status_job = next((job for job in status_jobs if job.get("job_id") == job_id), {})
+    no_asr_status_job = next(
+        (job for job in status_jobs if job.get("job_id") == no_asr_job_id),
+        {},
+    )
     accepted_observed = any(
         event.type == VoiceEventType.ORACLE_JOB_ACCEPTED
         and event.payload.get("job_id") == job_id
@@ -2186,6 +2263,77 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and status_bundle.get("authority", {}).get("raw_audio") == "primary_audio"
         and status_bundle.get("authority", {}).get("auxiliary_transcript_hypotheses") == "hypothesis"
     )
+    no_asr_request = next(
+        (
+            seen_request
+            for seen_request in oracle.requests
+            if getattr(seen_request, "interface_tool_call_id", "") == "voiceclaw-no-asr-1"
+        ),
+        None,
+    )
+    no_asr_prompt_packet = no_asr_request.to_interpreter_prompt_packet() if no_asr_request is not None else {}
+    no_asr_prompt_input_order = list(no_asr_prompt_packet.get("prompt_input_order") or [])
+    no_asr_status_bundle = (
+        no_asr_status_job.get("evidence_bundle")
+        if isinstance(no_asr_status_job.get("evidence_bundle"), dict)
+        else {}
+    )
+    no_asr_started_observed = any(
+        event.type == VoiceEventType.ORACLE_JOB_STARTED
+        and event.payload.get("job_id") == no_asr_job_id
+        for event in recorder.events
+    )
+    no_asr_completed_observed = any(
+        event.type == VoiceEventType.ORACLE_JOB_COMPLETED
+        and event.payload.get("job_id") == no_asr_job_id
+        for event in recorder.events
+    )
+    no_asr_hypotheses = (
+        tuple(getattr(no_asr_request, "auxiliary_transcript_hypotheses", ()))
+        if no_asr_request is not None
+        else ()
+    )
+    no_asr_status_hypotheses = (
+        tuple(item for item in no_asr_status_job.get("transcript_hypotheses", ()) if isinstance(item, Mapping))
+        if isinstance(no_asr_status_job.get("transcript_hypotheses"), Sequence)
+        and not isinstance(no_asr_status_job.get("transcript_hypotheses"), (str, bytes, bytearray))
+        else ()
+    )
+    no_asr_hypothesis_kinds = sorted(
+        {
+            str(item.get("kind") or "")
+            for item in (*no_asr_hypotheses, *no_asr_status_hypotheses)
+            if isinstance(item, Mapping) and item.get("kind")
+        }
+    )
+    no_asr_hypothesis_sources = sorted(
+        {
+            str(item.get("source") or "")
+            for item in (*no_asr_hypotheses, *no_asr_status_hypotheses)
+            if isinstance(item, Mapping) and item.get("source")
+        }
+    )
+    no_asr_classic_asr_absent = (
+        "classic_asr_hypothesis" not in no_asr_hypothesis_kinds
+        and all("asr" not in source.lower() for source in no_asr_hypothesis_sources)
+    )
+    no_asr_optional_normal_path_ok = (
+        no_asr_tool_result.payload.get("accepted") is True
+        and bool(no_asr_job_id)
+        and no_asr_request is not None
+        and getattr(no_asr_request, "audio_segment_ref", "") == "artifact://voiceclaw/no-asr.wav"
+        and getattr(no_asr_request, "interpreter_profile", "")
+        == KAME_INTERPRETER_PROFILE_WITNESS_ASSISTED_DIRECT_AUDIO
+        and no_asr_prompt_input_order[:3] == ["raw_audio", "metadata", "reflex"]
+        and no_asr_classic_asr_absent
+        and no_asr_status_bundle.get("raw_audio_available") is True
+        and no_asr_status_bundle.get("authority", {}).get("raw_audio") == "primary_audio"
+        and no_asr_status_job.get("interpreter_promoted", {}).get("authority")
+        == "interpreter_promoted"
+        and no_asr_started_observed
+        and no_asr_completed_observed
+        and no_asr_status_job.get("state") == "completed"
+    )
     durable_session = RealtimeVoiceSession(
         RealtimeVoiceSessionConfig(session_id="voice-smoke-external-frontend"),
         engine=SmokeEngine(oracle=SmokeOracle()),
@@ -2325,6 +2473,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and audit_id_continuity_observed
         and not direct_tool_authority_exposed
         and direct_tool_rejected
+        and no_asr_optional_normal_path_ok
         and provider_alias_normalization_ok
         and external_frontend_tool_result_safe
         and external_frontend_reflex_status_safe
@@ -2356,6 +2505,43 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
             item.get("authority") == "hypothesis" and item.get("tool_authority") is False
             for item in minimum_interpreter_packet_hypotheses
         ),
+        "asr_optional_normal_path_smoke_ok": no_asr_optional_normal_path_ok,
+        "asr_optional_normal_path_job_id": no_asr_job_id,
+        "asr_optional_normal_path_audio_segment_ref": getattr(
+            no_asr_request,
+            "audio_segment_ref",
+            "",
+        )
+        if no_asr_request is not None
+        else "",
+        "asr_optional_normal_path_prompt_input_order": no_asr_prompt_input_order,
+        "asr_optional_normal_path_transcript_hypotheses_count": len(no_asr_hypotheses),
+        "asr_optional_normal_path_status_transcript_hypotheses_count": int(
+            no_asr_status_bundle.get("transcript_hypotheses_count") or 0
+        ),
+        "asr_optional_normal_path_hypothesis_kinds": no_asr_hypothesis_kinds,
+        "asr_optional_normal_path_hypothesis_sources": no_asr_hypothesis_sources,
+        "asr_optional_normal_path_classic_asr_absent": no_asr_classic_asr_absent,
+        "asr_optional_normal_path_raw_audio_available": no_asr_status_bundle.get(
+            "raw_audio_available"
+        )
+        is True,
+        "asr_optional_normal_path_raw_audio_authority": str(
+            no_asr_status_bundle.get("authority", {}).get("raw_audio") or ""
+        ),
+        "asr_optional_normal_path_interpreter_profile": getattr(
+            no_asr_request,
+            "interpreter_profile",
+            "",
+        )
+        if no_asr_request is not None
+        else "",
+        "asr_optional_normal_path_interpreter_promoted_authority": str(
+            no_asr_status_job.get("interpreter_promoted", {}).get("authority") or ""
+        ),
+        "asr_optional_normal_path_started_observed": no_asr_started_observed,
+        "asr_optional_normal_path_completed_observed": no_asr_completed_observed,
+        "asr_optional_normal_path_status_state": str(no_asr_status_job.get("state") or ""),
         "external_frontend_witness_adjudications": external_frontend_witness_adjudications,
         "external_frontend_interpreter_promoted": external_frontend_interpreter_promoted,
         "external_frontend_request_accepted": tool_result.payload.get("accepted") is True,
@@ -5966,6 +6152,58 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "minimum_interpreter_packet_hypotheses_authority": external_frontend_bridge_smoke[
             "minimum_interpreter_packet_hypotheses_authority"
+        ],
+        "asr_optional_normal_path_smoke_ok": external_frontend_bridge_smoke[
+            "asr_optional_normal_path_smoke_ok"
+        ],
+        "asr_optional_normal_path_job_id": external_frontend_bridge_smoke[
+            "asr_optional_normal_path_job_id"
+        ],
+        "asr_optional_normal_path_audio_segment_ref": external_frontend_bridge_smoke[
+            "asr_optional_normal_path_audio_segment_ref"
+        ],
+        "asr_optional_normal_path_prompt_input_order": external_frontend_bridge_smoke[
+            "asr_optional_normal_path_prompt_input_order"
+        ],
+        "asr_optional_normal_path_transcript_hypotheses_count": external_frontend_bridge_smoke[
+            "asr_optional_normal_path_transcript_hypotheses_count"
+        ],
+        "asr_optional_normal_path_status_transcript_hypotheses_count": (
+            external_frontend_bridge_smoke[
+                "asr_optional_normal_path_status_transcript_hypotheses_count"
+            ]
+        ),
+        "asr_optional_normal_path_hypothesis_kinds": external_frontend_bridge_smoke[
+            "asr_optional_normal_path_hypothesis_kinds"
+        ],
+        "asr_optional_normal_path_hypothesis_sources": external_frontend_bridge_smoke[
+            "asr_optional_normal_path_hypothesis_sources"
+        ],
+        "asr_optional_normal_path_classic_asr_absent": external_frontend_bridge_smoke[
+            "asr_optional_normal_path_classic_asr_absent"
+        ],
+        "asr_optional_normal_path_raw_audio_available": external_frontend_bridge_smoke[
+            "asr_optional_normal_path_raw_audio_available"
+        ],
+        "asr_optional_normal_path_raw_audio_authority": external_frontend_bridge_smoke[
+            "asr_optional_normal_path_raw_audio_authority"
+        ],
+        "asr_optional_normal_path_interpreter_profile": external_frontend_bridge_smoke[
+            "asr_optional_normal_path_interpreter_profile"
+        ],
+        "asr_optional_normal_path_interpreter_promoted_authority": (
+            external_frontend_bridge_smoke[
+                "asr_optional_normal_path_interpreter_promoted_authority"
+            ]
+        ),
+        "asr_optional_normal_path_started_observed": external_frontend_bridge_smoke[
+            "asr_optional_normal_path_started_observed"
+        ],
+        "asr_optional_normal_path_completed_observed": external_frontend_bridge_smoke[
+            "asr_optional_normal_path_completed_observed"
+        ],
+        "asr_optional_normal_path_status_state": external_frontend_bridge_smoke[
+            "asr_optional_normal_path_status_state"
         ],
         "external_frontend_witness_adjudications": external_frontend_bridge_smoke[
             "external_frontend_witness_adjudications"

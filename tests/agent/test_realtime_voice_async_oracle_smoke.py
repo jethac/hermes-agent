@@ -365,10 +365,10 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_reflex_status_forbidden_paths"] == []
     assert report["external_frontend_placeholder_forbidden_paths"] == []
     assert report["external_frontend_placeholder"].startswith("Accepted job one")
-    assert report["external_frontend_event_counts"]["tool.result"] == 2
-    assert report["external_frontend_event_counts"]["oracle.job.accepted"] == 1
-    assert report["external_frontend_event_counts"]["oracle.job.started"] == 1
-    assert report["external_frontend_event_counts"]["oracle.job.completed"] == 1
+    assert report["external_frontend_event_counts"]["tool.result"] == 3
+    assert report["external_frontend_event_counts"]["oracle.job.accepted"] == 2
+    assert report["external_frontend_event_counts"]["oracle.job.started"] == 2
+    assert report["external_frontend_event_counts"]["oracle.job.completed"] == 2
     assert report["durable_resume_contract_smoke_ok"] is True
     assert report["durable_resume_contract_schema_version"] == "voiceops.kame_durable_resume_context.v1"
     assert report["durable_resume_promoted_turn_count"] == 4

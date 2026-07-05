@@ -582,11 +582,32 @@ def _async_oracle_smoke_payload() -> dict:
         "minimum_interpreter_packet_witness_count": 1,
         "minimum_interpreter_packet_raw_audio_primary": True,
         "minimum_interpreter_packet_hypotheses_authority": True,
+        "asr_optional_normal_path_smoke_ok": True,
+        "asr_optional_normal_path_job_id": "voice-oracle-002",
+        "asr_optional_normal_path_audio_segment_ref": "artifact://voiceclaw/no-asr.wav",
+        "asr_optional_normal_path_prompt_input_order": [
+            "raw_audio",
+            "metadata",
+            "reflex",
+            "transcript_hypotheses",
+        ],
+        "asr_optional_normal_path_transcript_hypotheses_count": 1,
+        "asr_optional_normal_path_status_transcript_hypotheses_count": 1,
+        "asr_optional_normal_path_hypothesis_kinds": ["frontend_witness_hypothesis"],
+        "asr_optional_normal_path_hypothesis_sources": ["voiceclaw"],
+        "asr_optional_normal_path_classic_asr_absent": True,
+        "asr_optional_normal_path_raw_audio_available": True,
+        "asr_optional_normal_path_raw_audio_authority": "primary_audio",
+        "asr_optional_normal_path_interpreter_profile": "witness_assisted_direct_audio",
+        "asr_optional_normal_path_interpreter_promoted_authority": "interpreter_promoted",
+        "asr_optional_normal_path_started_observed": True,
+        "asr_optional_normal_path_completed_observed": True,
+        "asr_optional_normal_path_status_state": "completed",
         "external_frontend_event_counts": {
-            "tool.result": 2,
-            "oracle.job.accepted": 1,
-            "oracle.job.started": 1,
-            "oracle.job.completed": 1,
+            "tool.result": 3,
+            "oracle.job.accepted": 2,
+            "oracle.job.started": 2,
+            "oracle.job.completed": 2,
         },
         "unpromoted_hypothesis_smoke_ok": True,
         "unpromoted_hypothesis_job_id": "voice-oracle-002",
@@ -3472,6 +3493,18 @@ def test_write_voice_operator_report_artifacts(tmp_path):
     assert sidecar_fail_closed_smoke["ok"] is True
     assert sidecar_fail_closed_smoke["scenario"] == "sidecar_send_fail_closed_after_acceptance"
     assert async_oracle_smoke["ok"] is True
+    assert async_oracle_smoke["asr_optional_normal_path_smoke_ok"] is True
+    assert async_oracle_smoke["asr_optional_normal_path_audio_segment_ref"] == "artifact://voiceclaw/no-asr.wav"
+    assert async_oracle_smoke["asr_optional_normal_path_prompt_input_order"][:3] == [
+        "raw_audio",
+        "metadata",
+        "reflex",
+    ]
+    assert async_oracle_smoke["asr_optional_normal_path_classic_asr_absent"] is True
+    assert "classic_asr_hypothesis" not in async_oracle_smoke["asr_optional_normal_path_hypothesis_kinds"]
+    assert async_oracle_smoke["asr_optional_normal_path_raw_audio_available"] is True
+    assert async_oracle_smoke["asr_optional_normal_path_interpreter_promoted_authority"] == "interpreter_promoted"
+    assert async_oracle_smoke["asr_optional_normal_path_status_state"] == "completed"
     assert async_oracle_smoke["max_running"] == 4
     assert discord_cleanup_smoke["ok"] is True
     assert discord_cleanup_smoke["cancel_all_before_session_closed"] is True

@@ -259,6 +259,12 @@ Acceptance evidence for this directive should show one `turn_id`, one
 one oracle job lifecycle across all witness arrival phases:
 `before_raw_audio`, `with_raw_audio`, and `after_interpreter_start`.
 
+The current headless acceptance suite also includes a no-classic-ASR normal
+path: raw audio, metadata, and reflex state are enough to start the Gemma
+interpreter and complete the oracle job. That proof is recorded through the
+`asr_optional_normal_path_*` fields and package-audited so future changes cannot
+quietly reintroduce an ASR gate.
+
 2026-07-05 amendment: the intended shape is not "reflex plus STT plus oracle"
 and not "Gemma ASR in parallel." It is a three-tier sensor-fan-in loop:
 

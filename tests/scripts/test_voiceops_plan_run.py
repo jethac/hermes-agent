@@ -2094,6 +2094,29 @@ def test_plan_run_generates_all_headless_milestone_artifacts(tmp_path):
     assert minimum_packet["reflex"]["tool_authority"] is False
     assert minimum_packet["transcript_hypotheses"][0]["text_redacted"] is True
     assert "text" not in minimum_packet["transcript_hypotheses"][0]
+    assert voice_result["details"]["async_oracle_smoke"]["asr_optional_normal_path_smoke_ok"] is True
+    assert (
+        voice_result["details"]["async_oracle_smoke"]["asr_optional_normal_path_audio_segment_ref"]
+        == "artifact://voiceclaw/no-asr.wav"
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["asr_optional_normal_path_prompt_input_order"][:3] == [
+        "raw_audio",
+        "metadata",
+        "reflex",
+    ]
+    assert voice_result["details"]["async_oracle_smoke"]["asr_optional_normal_path_classic_asr_absent"] is True
+    assert (
+        "classic_asr_hypothesis"
+        not in voice_result["details"]["async_oracle_smoke"]["asr_optional_normal_path_hypothesis_kinds"]
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["asr_optional_normal_path_raw_audio_available"] is True
+    assert (
+        voice_result["details"]["async_oracle_smoke"][
+            "asr_optional_normal_path_interpreter_promoted_authority"
+        ]
+        == "interpreter_promoted"
+    )
+    assert voice_result["details"]["async_oracle_smoke"]["asr_optional_normal_path_status_state"] == "completed"
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_with_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_late_single_bundle"] is True
     assert voice_result["details"]["async_oracle_smoke"]["witness_fusion_no_duplicate_oracle_jobs"] is True

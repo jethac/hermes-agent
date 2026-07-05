@@ -219,6 +219,30 @@ correct, or reject the witness.
 This is not a parallel STT architecture. The accepted speech cut is the unit of
 work. All sensor text attaches to that unit.
 
+## Headless Proof Lock
+
+The implementation now carries a no-ASR normal-path proof. The async oracle
+smoke submits a VoiceClaw/OpenClaw-style turn with raw audio, metadata, and
+reflex state, but without a classic ASR hypothesis. The acceptance artifacts
+must show:
+
+- `asr_optional_normal_path_smoke_ok = true`
+- `asr_optional_normal_path_prompt_input_order` starts with `raw_audio`,
+  `metadata`, and `reflex`
+- `asr_optional_normal_path_classic_asr_absent = true`
+- `asr_optional_normal_path_raw_audio_authority = "primary_audio"`
+- `asr_optional_normal_path_interpreter_profile =
+  "witness_assisted_direct_audio"`
+- `asr_optional_normal_path_interpreter_promoted_authority =
+  "interpreter_promoted"`
+- `asr_optional_normal_path_status_state = "completed"`
+
+That proof is deliberately narrower than "no transcript context ever." A
+frontend witness hypothesis may still be present, including Moshi/Open-S2S text
+when available, but no `classic_asr_hypothesis` or ASR-sourced transcript may be
+required for the speech cut to start interpreter work or complete the oracle
+job. Package audit treats drift in this proof as a readiness artifact failure.
+
 ## Three-Tier Sensor Fan-In
 
 The current design should be read as three tiers, not as an ASR pipeline with

@@ -2473,6 +2473,20 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
             for item in minimum_packet_hypotheses
         )
         and "prepare an external came hand off" not in minimum_packet_text,
+        "asr_optional_normal_path_no_wait": smoke.get("asr_optional_normal_path_smoke_ok") is True
+        and smoke.get("asr_optional_normal_path_audio_segment_ref") == "artifact://voiceclaw/no-asr.wav"
+        and list(smoke.get("asr_optional_normal_path_prompt_input_order") or [])[:3]
+        == ["raw_audio", "metadata", "reflex"]
+        and smoke.get("asr_optional_normal_path_classic_asr_absent") is True
+        and smoke.get("asr_optional_normal_path_raw_audio_available") is True
+        and smoke.get("asr_optional_normal_path_raw_audio_authority") == "primary_audio"
+        and smoke.get("asr_optional_normal_path_interpreter_profile")
+        == "witness_assisted_direct_audio"
+        and smoke.get("asr_optional_normal_path_interpreter_promoted_authority")
+        == "interpreter_promoted"
+        and smoke.get("asr_optional_normal_path_started_observed") is True
+        and smoke.get("asr_optional_normal_path_completed_observed") is True
+        and smoke.get("asr_optional_normal_path_status_state") == "completed",
         "durable_promoted_turn_resume_contract": smoke.get("durable_resume_contract_smoke_ok") is True
         and smoke.get("durable_resume_contract_schema_version") == "voiceops.kame_durable_resume_context.v1"
         and int(smoke.get("durable_resume_promoted_turn_count") or 0) >= 4
@@ -2968,6 +2982,18 @@ def _async_oracle_acceptance_matrix(async_oracle_coverage: Mapping[str, bool]) -
             test_refs=[
                 "tests/scripts/test_voiceops_plan_run.py::test_plan_run_generates_all_headless_milestone_artifacts",
                 "tests/scripts/test_voiceops_artifact_package_audit.py::test_package_audit_accepts_generated_headless_package",
+            ],
+            verification_mode="loopback_smoke_plus_package_audit",
+            runtime_verified_by_this_report=True,
+        ),
+        "asr_optional_normal_path_no_wait": _async_oracle_acceptance_row(
+            ok=smoke_ok and bool(async_oracle_coverage.get("asr_optional_normal_path_no_wait")),
+            evidence="async_oracle_smoke_asr_optional_normal_path",
+            test_refs=[
+                "tests/scripts/test_voiceops_plan_run.py::test_plan_run_generates_all_headless_milestone_artifacts",
+                "tests/scripts/test_voiceops_voice_operator.py::test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract",
+                "tests/scripts/test_voiceops_artifact_package_audit.py::test_package_audit_accepts_generated_headless_package",
+                "tests/scripts/test_voiceops_artifact_package_audit.py::test_package_audit_rejects_asr_optional_normal_path_drift",
             ],
             verification_mode="loopback_smoke_plus_package_audit",
             runtime_verified_by_this_report=True,
@@ -3646,6 +3672,54 @@ def build_voice_operator_report(
             ),
             "minimum_interpreter_packet_hypotheses_authority": bool(
                 async_oracle_smoke.get("minimum_interpreter_packet_hypotheses_authority")
+            ),
+            "asr_optional_normal_path_smoke_ok": bool(
+                async_oracle_smoke.get("asr_optional_normal_path_smoke_ok")
+            ),
+            "asr_optional_normal_path_job_id": async_oracle_smoke.get(
+                "asr_optional_normal_path_job_id"
+            ),
+            "asr_optional_normal_path_audio_segment_ref": async_oracle_smoke.get(
+                "asr_optional_normal_path_audio_segment_ref"
+            ),
+            "asr_optional_normal_path_prompt_input_order": list(
+                async_oracle_smoke.get("asr_optional_normal_path_prompt_input_order") or []
+            ),
+            "asr_optional_normal_path_transcript_hypotheses_count": async_oracle_smoke.get(
+                "asr_optional_normal_path_transcript_hypotheses_count"
+            ),
+            "asr_optional_normal_path_status_transcript_hypotheses_count": async_oracle_smoke.get(
+                "asr_optional_normal_path_status_transcript_hypotheses_count"
+            ),
+            "asr_optional_normal_path_hypothesis_kinds": list(
+                async_oracle_smoke.get("asr_optional_normal_path_hypothesis_kinds") or []
+            ),
+            "asr_optional_normal_path_hypothesis_sources": list(
+                async_oracle_smoke.get("asr_optional_normal_path_hypothesis_sources") or []
+            ),
+            "asr_optional_normal_path_classic_asr_absent": bool(
+                async_oracle_smoke.get("asr_optional_normal_path_classic_asr_absent")
+            ),
+            "asr_optional_normal_path_raw_audio_available": bool(
+                async_oracle_smoke.get("asr_optional_normal_path_raw_audio_available")
+            ),
+            "asr_optional_normal_path_raw_audio_authority": async_oracle_smoke.get(
+                "asr_optional_normal_path_raw_audio_authority"
+            ),
+            "asr_optional_normal_path_interpreter_profile": async_oracle_smoke.get(
+                "asr_optional_normal_path_interpreter_profile"
+            ),
+            "asr_optional_normal_path_interpreter_promoted_authority": async_oracle_smoke.get(
+                "asr_optional_normal_path_interpreter_promoted_authority"
+            ),
+            "asr_optional_normal_path_started_observed": bool(
+                async_oracle_smoke.get("asr_optional_normal_path_started_observed")
+            ),
+            "asr_optional_normal_path_completed_observed": bool(
+                async_oracle_smoke.get("asr_optional_normal_path_completed_observed")
+            ),
+            "asr_optional_normal_path_status_state": async_oracle_smoke.get(
+                "asr_optional_normal_path_status_state"
             ),
             "external_frontend_witness_adjudications": list(
                 async_oracle_smoke.get("external_frontend_witness_adjudications") or []

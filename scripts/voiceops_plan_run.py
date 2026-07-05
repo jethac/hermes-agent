@@ -2292,6 +2292,62 @@ async def build_plan_run_async(
                     "minimum_interpreter_packet_hypotheses_authority": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["minimum_interpreter_packet_hypotheses_authority"],
+                    "asr_optional_normal_path_smoke_ok": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["asr_optional_normal_path_smoke_ok"],
+                    "asr_optional_normal_path_job_id": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["asr_optional_normal_path_job_id"],
+                    "asr_optional_normal_path_audio_segment_ref": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["asr_optional_normal_path_audio_segment_ref"],
+                    "asr_optional_normal_path_prompt_input_order": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "asr_optional_normal_path_prompt_input_order"
+                        ]
+                    ),
+                    "asr_optional_normal_path_transcript_hypotheses_count": voice_operator[
+                        "proofs"
+                    ]["async_oracle_jobs"]["asr_optional_normal_path_transcript_hypotheses_count"],
+                    "asr_optional_normal_path_status_transcript_hypotheses_count": (
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "asr_optional_normal_path_status_transcript_hypotheses_count"
+                        ]
+                    ),
+                    "asr_optional_normal_path_hypothesis_kinds": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "asr_optional_normal_path_hypothesis_kinds"
+                        ]
+                    ),
+                    "asr_optional_normal_path_hypothesis_sources": list(
+                        voice_operator["proofs"]["async_oracle_jobs"][
+                            "asr_optional_normal_path_hypothesis_sources"
+                        ]
+                    ),
+                    "asr_optional_normal_path_classic_asr_absent": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["asr_optional_normal_path_classic_asr_absent"],
+                    "asr_optional_normal_path_raw_audio_available": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["asr_optional_normal_path_raw_audio_available"],
+                    "asr_optional_normal_path_raw_audio_authority": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["asr_optional_normal_path_raw_audio_authority"],
+                    "asr_optional_normal_path_interpreter_profile": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["asr_optional_normal_path_interpreter_profile"],
+                    "asr_optional_normal_path_interpreter_promoted_authority": voice_operator[
+                        "proofs"
+                    ]["async_oracle_jobs"]["asr_optional_normal_path_interpreter_promoted_authority"],
+                    "asr_optional_normal_path_started_observed": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["asr_optional_normal_path_started_observed"],
+                    "asr_optional_normal_path_completed_observed": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["asr_optional_normal_path_completed_observed"],
+                    "asr_optional_normal_path_status_state": voice_operator["proofs"][
+                        "async_oracle_jobs"
+                    ]["asr_optional_normal_path_status_state"],
                     "provider_text_alias_normalization_smoke_ok": voice_operator["proofs"][
                         "async_oracle_jobs"
                     ]["provider_text_alias_normalization_smoke_ok"],

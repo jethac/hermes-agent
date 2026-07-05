@@ -2327,6 +2327,11 @@ def _audit_voice_operator_async_oracle_plan_projection(
         prefix="plan_run:voice_operator.async_oracle_smoke",
         issues=issues,
     )
+    _audit_asr_optional_normal_path(
+        async_smoke=projected,
+        prefix="plan_run:voice_operator.async_oracle_smoke",
+        issues=issues,
+    )
     _audit_promoted_request_summary_contract(
         proof.get("external_frontend_promoted_request_summary"),
         label=(
@@ -3107,6 +3112,52 @@ def _audit_minimum_interpreter_packet(
         issues.append(f"{prefix}.minimum_interpreter_packet_hypotheses_authority_not_true")
 
 
+def _audit_asr_optional_normal_path(
+    *,
+    async_smoke: Mapping[str, Any],
+    prefix: str,
+    issues: list[str],
+) -> None:
+    if async_smoke.get("asr_optional_normal_path_smoke_ok") is not True:
+        issues.append(f"{prefix}.asr_optional_normal_path_smoke_not_ok")
+    if async_smoke.get("asr_optional_normal_path_audio_segment_ref") != "artifact://voiceclaw/no-asr.wav":
+        issues.append(f"{prefix}.asr_optional_normal_path_audio_segment_ref_mismatch")
+    if list(async_smoke.get("asr_optional_normal_path_prompt_input_order") or [])[:3] != [
+        "raw_audio",
+        "metadata",
+        "reflex",
+    ]:
+        issues.append(f"{prefix}.asr_optional_normal_path_prompt_input_order_mismatch")
+    if async_smoke.get("asr_optional_normal_path_classic_asr_absent") is not True:
+        issues.append(f"{prefix}.asr_optional_normal_path_classic_asr_not_absent")
+    raw_kinds = async_smoke.get("asr_optional_normal_path_hypothesis_kinds")
+    kinds = {str(value) for value in raw_kinds if value} if isinstance(raw_kinds, (list, tuple)) else set()
+    raw_sources = async_smoke.get("asr_optional_normal_path_hypothesis_sources")
+    sources = (
+        {str(value).lower() for value in raw_sources if value}
+        if isinstance(raw_sources, (list, tuple))
+        else set()
+    )
+    if "classic_asr_hypothesis" in kinds:
+        issues.append(f"{prefix}.asr_optional_normal_path_classic_asr_kind_present")
+    if any("asr" in source for source in sources):
+        issues.append(f"{prefix}.asr_optional_normal_path_asr_source_present")
+    if async_smoke.get("asr_optional_normal_path_raw_audio_available") is not True:
+        issues.append(f"{prefix}.asr_optional_normal_path_raw_audio_not_available")
+    if async_smoke.get("asr_optional_normal_path_raw_audio_authority") != "primary_audio":
+        issues.append(f"{prefix}.asr_optional_normal_path_raw_audio_authority_mismatch")
+    if async_smoke.get("asr_optional_normal_path_interpreter_profile") != "witness_assisted_direct_audio":
+        issues.append(f"{prefix}.asr_optional_normal_path_interpreter_profile_mismatch")
+    if async_smoke.get("asr_optional_normal_path_interpreter_promoted_authority") != "interpreter_promoted":
+        issues.append(f"{prefix}.asr_optional_normal_path_interpreter_promoted_authority_mismatch")
+    if async_smoke.get("asr_optional_normal_path_started_observed") is not True:
+        issues.append(f"{prefix}.asr_optional_normal_path_started_not_observed")
+    if async_smoke.get("asr_optional_normal_path_completed_observed") is not True:
+        issues.append(f"{prefix}.asr_optional_normal_path_completed_not_observed")
+    if async_smoke.get("asr_optional_normal_path_status_state") != "completed":
+        issues.append(f"{prefix}.asr_optional_normal_path_status_not_completed")
+
+
 def _audit_witness_fusion_multi_speaker_binding(
     *,
     async_smoke: Mapping[str, Any],
@@ -3247,6 +3298,11 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
         issues=issues,
     )
     _audit_minimum_interpreter_packet(
+        async_smoke=async_smoke,
+        prefix="voice_operator_readiness:async_oracle_smoke",
+        issues=issues,
+    )
+    _audit_asr_optional_normal_path(
         async_smoke=async_smoke,
         prefix="voice_operator_readiness:async_oracle_smoke",
         issues=issues,
