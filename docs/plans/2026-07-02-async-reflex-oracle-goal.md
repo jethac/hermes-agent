@@ -1416,8 +1416,9 @@ Add a local smoke report mode that proves:
 - provisional request summaries used for queueing, narration, and status must
   be explicit non-authoritative fields. The smoke, job status, VoiceOps report,
   and plan-run projection should expose `provisional_request_summary` with
-  `authority = "reflex_hypothesis"` and `tool_authority = false` rather than
-  treating the summary as a verified transcript or tool argument.
+  `kind = "reflex_hypothesis"`, `authority = "hypothesis"`, and
+  `tool_authority = false` rather than treating the summary as a verified
+  transcript or tool argument.
 - every unpromoted reflex, Moshi/open-S2S, VoiceClaw/OpenClaw, and classic-ASR
   transcript hypothesis in the smoke and VoiceOps artifacts should carry
   `tool_authority = false`. Headless proof should fail if a witness hypothesis

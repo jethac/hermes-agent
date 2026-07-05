@@ -34,6 +34,15 @@ useful for clipped starts, names, numbers, and code-switches without making it
 the transcript of record or the thing that authorizes Stripe, NemoClaw, phone,
 memory, files, tools, or external messages.
 
+That also answers the open-model frontend question. A Moshi/Open-S2S transcript
+can be shown to Gemma beside the raw voice, but it is not the ASR lane that
+drives Hermes. In the demo artifact, it should appear as a
+`transcript_hypotheses[]` row on the same `turn_id`, `audio_segment_ref`, and
+`evidence_bundle_id` as the waveform. The useful proof is that Gemma can accept
+or correct that witness into promoted wording while the original witness text
+stays out of the spend reason, provider choice, phone script, durable history,
+memory/file writes, external messages, and tool arguments.
+
 The demo artifact should show this as one packet, not as three competing
 prompts:
 

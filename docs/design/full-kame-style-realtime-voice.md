@@ -699,10 +699,10 @@ is degraded text-only evidence, not direct-audio KAME evidence.
 
 Queue/status surfaces may expose a compact `provisional_request_summary` so the
 reflex can narrate what it is asking the oracle to do, but that summary is not
-the user's verified transcript. It must carry `authority = "reflex_hypothesis"`
-and `tool_authority = false`, and it cannot satisfy spend, call, tool, memory,
-file, or external-message action gates before raw-audio-grounded interpreter
-promotion.
+the user's verified transcript. It must carry `kind = "reflex_hypothesis"`,
+`authority = "hypothesis"`, and `tool_authority = false`, and it cannot satisfy
+spend, call, tool, memory, file, or external-message action gates before
+raw-audio-grounded interpreter promotion.
 
 Partial witness hypotheses are active only until a newer same-source,
 same-kind witness supersedes them. When Moshi, OpenClaw, VoiceClaw, or classic
@@ -1184,7 +1184,8 @@ Canonical shape:
     "intent": "calculate a power",
     "interface_already_said": "I'm checking that.",
     "ack_event_id": "voice-ack-001",
-    "authority": "reflex_hypothesis"
+    "kind": "reflex_hypothesis",
+    "authority": "hypothesis"
   },
   "transcript_hypotheses": [
     {
@@ -1874,11 +1875,13 @@ Modes:
   available.
 - `from_reflex`: only transcript hypotheses emitted by the reflex/S2S model are
   forwarded as evidence.
-- `on_escalation`: dedicated ASR runs only after the reflex chooses `defer` or
-  `oracle_direct`.
-- `speculative`: dedicated ASR may start asynchronously at speech end for
+- `on_escalation`: dedicated ASR witness capture may run only after the reflex
+  chooses `defer` or `oracle_direct`; its output is still a hypothesis attached
+  to the same raw-audio bundle.
+- `diagnostic_witness`: dedicated ASR may start asynchronously at speech end for
   explicit comparison, captions, or literal-evidence experiments, but its
-  output is discarded for local turns and never drives the reflex.
+  output remains `transcript_hypotheses[]`, is discarded for local turns when
+  unneeded, and never drives the reflex.
 - `debug`: transcript evidence runs for comparison, captions, and diagnostics.
 - `fallback`: transcript evidence feeds the reflex only when the realtime reflex
   audio path is unavailable.
@@ -1888,17 +1891,18 @@ otherwise `disabled`. Dedicated ASR should be enabled only for explicit
 fallback, diagnostics, captions, or literal-evidence checks, and its output must
 stay off the acknowledgement critical path.
 
-`speculative` is disabled by default and should stay an explicit diagnostic or
-comparison mode. It can be enabled if measurements show value in hiding optional
-transcript-hypothesis latency behind the reflex decision. Even then, transcript
-evidence remains an interpreter hypothesis input plus optional labeled audit
-context for the oracle, not a reflex dependency, not a peer conversation path,
-and not a readiness requirement for direct-audio KAME turns.
+`diagnostic_witness` is disabled by default and should stay an explicit
+diagnostic or comparison mode. It can be enabled if measurements show value in
+collecting optional transcript-hypothesis evidence without blocking the reflex.
+Even then, transcript evidence remains an interpreter hypothesis input plus
+optional labeled audit context for the oracle, not a reflex dependency, not a
+peer conversation path, and not a readiness requirement for direct-audio KAME
+turns.
 
-`speculative` is also not a request to make ASR authoritative. It exists only to
-hide optional comparison latency behind the reflex decision. If speculative ASR
-or a Moshi transcript disagrees with raw-audio interpretation, the disagreement
-must be visible in interpreter evidence and the oracle request must prefer the
+`diagnostic_witness` is also not a request to make ASR authoritative. It exists
+only to collect optional comparison evidence. If diagnostic ASR or a Moshi
+transcript disagrees with raw-audio interpretation, the disagreement must be
+visible in interpreter evidence and the oracle request must prefer the
 interpreter-promoted wording for tool-critical arguments.
 
 Acceptance gates:
@@ -2087,7 +2091,8 @@ The interface should submit a compact structured oracle job request:
   "evidence_merge_key": "audio-aware-join-proof",
   "provisional_request_summary": {
     "text": "compact provisional request summary for queueing and narration",
-    "authority": "reflex_hypothesis",
+    "kind": "reflex_hypothesis",
+    "authority": "hypothesis",
     "tool_authority": false
   },
   "reflex_intent": "compact live intent",

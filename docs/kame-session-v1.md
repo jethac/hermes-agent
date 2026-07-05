@@ -94,6 +94,22 @@ after the interpreter has started, it must merge into the same bundle and job.
 If no raw audio exists, the turn is degraded compatibility mode and high-risk
 action gates fail closed.
 
+The adapter should treat this as witness attachment, not transcript
+translation. A field named `stt`, `transcript`, `caption`, `query`, or
+`user_text` may be useful, but it is never trusted by name. When raw audio is
+present, the adapter binds that text to the same accepted cut as
+`transcript_hypotheses[]` and records enough provenance for Gemma to adjudicate
+it: source, source kind, text digest, arrival phase, confidence when available,
+latency when available, speaker/channel guesses, and the shared
+`evidence_merge_key`.
+
+This preserves the useful part of Moshi/Open-S2S output without reintroducing
+an ASR control path. Gemma sees the waveform and the frontend's best guess in
+one packet, then decides whether the witness was supporting, incomplete,
+wrong-speaker, wrong-channel, stale, low-energy, hallucinated, or contradicted
+by the waveform. Until that decision creates `interpreter_promoted` or
+`oracle_promoted` evidence, the original witness text is audit context only.
+
 Implementation rule: prefer submitting the raw-audio interpreter packet over
 waiting for Moshi/Open-S2S text. Witness text is valuable context, but it is not
 the critical path for acknowledgement or interpreter scheduling. The adapter may
@@ -587,7 +603,8 @@ Minimum external frontend evidence/job-envelope shape:
   "arguments": {
     "provisional_request_summary": "prepare the phone handoff",
     "reflex_intent": "Prepare the phone handoff.",
-    "authority": "reflex_hypothesis",
+    "kind": "reflex_hypothesis",
+    "authority": "hypothesis",
     "tool_authority": false,
     "interface_already_said": "I'm preparing the handoff.",
     "requested_response_style": {"spoken": true, "max_sentences": 1}

@@ -25,6 +25,39 @@ That text is a witness claim about what a frontend believed it heard. It is not
 the transcript of record, not a second Hermes user turn, not `oracle_text`, not
 a spend reason, and not tool authority.
 
+## Current Design Amendment
+
+The direct answer to the Moshi question is yes: when a Moshi/Open-S2S frontend
+can provide both the clipped waveform and a transcript-like string for the same
+accepted speech cut, Hermes should provide both to Gemma. The waveform is the
+primary interpreter evidence. The transcript-like string is context about what
+the realtime frontend believed it heard.
+
+This is not "keeping STT in parallel." It is one interpreter bundle with sensor
+fan-in. The Moshi/Open-S2S string may help Gemma recover a clipped prefix,
+name, number, language switch, or rough intent, but it stays a witness until
+Gemma emits `interpreter_promoted` evidence or the Hermes oracle emits
+`oracle_promoted` evidence. The adapter must therefore preserve the original
+text as a hypothesis with source, timing, speaker/channel binding, and digest,
+while durable prompts and action payloads use only promoted wording.
+
+For implementation, the rule is:
+
+```text
+same speech cut:
+  raw waveform -> Gemma primary evidence
+  Moshi/Open-S2S/reflex/classic-ASR text -> transcript_hypotheses[]
+  Gemma adjudication -> interpreter_promoted
+  Hermes active /model -> durable oracle work
+```
+
+If the Moshi/Open-S2S text arrives before the waveform, hold it on the pending
+bundle. If it arrives with the waveform, include it after metadata and reflex
+state. If it arrives after Gemma has started, append it as late evidence on the
+same bundle and job. In all three cases it must not create a second Hermes turn
+or become a spend, phone, file, memory, message, or tool argument by arriving
+first.
+
 ## 2026-07-05 Runtime Lock
 
 The current implementation target is not "replace STT with Gemma" and not

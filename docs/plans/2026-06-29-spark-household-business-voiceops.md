@@ -811,8 +811,9 @@ Target:
   hypotheses for multilingual correction and oracle evidence
 - dedicated classic ASR is an optional witness/fallback transcript-hypothesis lane and
   fallback, not the reflex driver
-- speculative ASR or S2S transcript capture may run to hide latency, but the
-  result stays a labeled hypothesis until raw-audio-grounded interpreter
+- diagnostic ASR or S2S transcript capture may run as same-bundle witness
+  evidence, but it never blocks acknowledgement, schedules a second turn, or
+  becomes durable/actionable text before raw-audio-grounded interpreter
   promotion
 - local Nemotron Speech or equivalent streaming ASR only as optional fallback,
   diagnostic, caption, or literal-evidence hypothesis input
