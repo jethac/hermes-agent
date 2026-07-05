@@ -486,6 +486,45 @@ def test_package_audit_rejects_missing_witness_assisted_direct_audio_profile(
     )
 
 
+def test_package_audit_rejects_witness_adjudication_rows_that_do_not_cover_hypotheses(
+    tmp_path,
+):
+    artifact_root = _generate_package(tmp_path)
+    voice_dir = artifact_root / "voiceops-voice-operator" / "current"
+
+    smoke_path = voice_dir / "async-oracle-smoke.json"
+    smoke = json.loads(smoke_path.read_text(encoding="utf-8"))
+    smoke["external_frontend_witness_adjudications"] = [
+        {
+            "source": "moshi",
+            "kind": "frontend_witness_hypothesis",
+            "text_digest": "sha256:wrong",
+            "adjudication": "corrected_by_audio",
+        }
+    ]
+    _write_json(smoke_path, smoke)
+
+    readiness_path = voice_dir / "voice-operator-readiness.json"
+    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    readiness["async_oracle_smoke"]["external_frontend_witness_adjudications"] = [
+        {
+            "source": "moshi",
+            "kind": "frontend_witness_hypothesis",
+            "text_digest": "sha256:wrong",
+            "adjudication": "corrected_by_audio",
+        }
+    ]
+    _write_json(readiness_path, readiness)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "voice_operator_readiness:async_oracle_smoke.external_frontend_witness_adjudications_mismatch"
+        in report["issues"]
+    )
+
+
 def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     artifact_root = _generate_package(tmp_path)
     readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"

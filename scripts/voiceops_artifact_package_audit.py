@@ -2136,6 +2136,33 @@ def _audit_external_frontend_hypothesis_adjudication(
             issues.append(f"voice_operator_readiness:{label}.{index}_invalid_rejection_reasons")
 
 
+def _canonical_witness_adjudication_rows(hypotheses: list[Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for hypothesis in hypotheses:
+        if not isinstance(hypothesis, Mapping):
+            continue
+        adjudication = str(hypothesis.get("adjudication") or "").strip()
+        if not adjudication:
+            continue
+        row: dict[str, Any] = {
+            "source": str(hypothesis.get("source") or "").strip(),
+            "kind": str(hypothesis.get("kind") or "").strip(),
+            "text_digest": str(hypothesis.get("text_digest") or "").strip(),
+            "adjudication": adjudication,
+        }
+        reasons = hypothesis.get("rejection_reasons")
+        if isinstance(reasons, list):
+            compact_reasons = [
+                str(reason).strip()
+                for reason in reasons
+                if str(reason).strip()
+            ]
+            if compact_reasons:
+                row["rejection_reasons"] = compact_reasons
+        rows.append({key: value for key, value in row.items() if value not in ("", [], {})})
+    return rows
+
+
 def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], issues: list[str]) -> None:
     proofs = readiness.get("proofs") if isinstance(readiness.get("proofs"), Mapping) else {}
     smoke = readiness.get("smoke") if isinstance(readiness.get("smoke"), Mapping) else {}
@@ -2205,6 +2232,15 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
     if not isinstance(witness_adjudications, list) or not witness_adjudications:
         issues.append(
             "voice_operator_readiness:async_oracle_smoke.external_frontend_witness_adjudications_missing"
+        )
+    elif (
+        isinstance(external_frontend_transcript_hypotheses, list)
+        and external_frontend_transcript_hypotheses
+        and witness_adjudications
+        != _canonical_witness_adjudication_rows(external_frontend_transcript_hypotheses)
+    ):
+        issues.append(
+            "voice_operator_readiness:async_oracle_smoke.external_frontend_witness_adjudications_mismatch"
         )
     interpreter_promoted = async_smoke.get("external_frontend_interpreter_promoted")
     if not isinstance(interpreter_promoted, Mapping):
