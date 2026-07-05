@@ -2774,6 +2774,62 @@ def test_package_audit_rejects_next_action_handoff_summary_drift(tmp_path):
     assert "operator_handoff:local_spark_stack_matrix:operator_step_missing" in report["issues"]
 
 
+def test_package_audit_rejects_review_action_handoff_summary_drift(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    plan_run_path = artifact_root / "voiceops-plan" / "current" / "voiceops-plan-run.json"
+    closure_path = artifact_root / "voiceops-plan" / "current" / "readiness-closure-index.json"
+
+    plan_run = json.loads(plan_run_path.read_text(encoding="utf-8"))
+    closure = json.loads(closure_path.read_text(encoding="utf-8"))
+
+    for payload in (closure, plan_run["closure_index"]):
+        action = payload["review_actions"][0]
+        action["status"] = "pending_human_review"
+        action["can_run_here_now"] = False
+        action["blocked_by_current_environment"] = {"needs_operator_review": True}
+        action["review_command"] = (
+            "uv run python scripts/voiceops_channel_policy.py "
+            "--output-dir artifacts/voiceops-channel-policy/current --unexpected"
+        )
+        action["review_artifacts"] = action["review_artifacts"][:-1]
+        action["required_review"] = ["business_owner"]
+        action["success_check"] = "approved when the operator says so"
+        action["real_egress_enabled"] = True
+        action["secret_policy"] = "paste channel credentials into the review"
+    plan_run["review_actions"] = plan_run["closure_index"]["review_actions"]
+
+    _write_json(plan_run_path, plan_run)
+    _write_json(closure_path, closure)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "operator_handoff:multi_channel_policy_review:can_run_here_now_mismatch_with_review_phase"
+        in report["issues"]
+    )
+    assert (
+        "operator_handoff:multi_channel_policy_review:blocked_by_current_environment_mismatch_with_review_phase"
+        in report["issues"]
+    )
+    assert (
+        "operator_handoff:multi_channel_policy_review:review_command_mismatch_with_review_phase"
+        in report["issues"]
+    )
+    assert (
+        "demo_handoff:multi_channel_policy_review:review_artifacts_mismatch_with_review_phase"
+        in report["issues"]
+    )
+    assert (
+        "demo_handoff:multi_channel_policy_review:required_review_mismatch_with_review_phase"
+        in report["issues"]
+    )
+    assert (
+        "operator_handoff:multi_channel_policy_review:secret_policy_missing_review_secret_rule"
+        in report["issues"]
+    )
+
+
 def test_package_audit_rejects_handoff_validation_command_without_safety_label(tmp_path):
     artifact_root = _generate_package(tmp_path)
     handoff_path = artifact_root / "voiceops-plan" / "current" / "operator-handoff.json"

@@ -1251,6 +1251,18 @@ def _audit_plan_consistency(
     )
     _audit_handoff_review_phase_contract("operator_handoff", plan_handoff, issues)
     _audit_handoff_review_phase_contract("demo_handoff", demo_handoff, issues)
+    _audit_review_action_handoff_consistency(
+        "operator_handoff",
+        plan_closure.get("review_actions"),
+        plan_handoff,
+        issues,
+    )
+    _audit_review_action_handoff_consistency(
+        "demo_handoff",
+        plan_closure.get("review_actions"),
+        demo_handoff,
+        issues,
+    )
     if demo_handoff.get("review_phases") != plan_handoff.get("review_phases"):
         issues.append("demo_handoff:review_phases_mismatch")
     demo_phases = _handoff_phases_by_id(demo_handoff)
@@ -1606,6 +1618,50 @@ def _audit_handoff_validation_command_safety(
         for command_key in validation_commands:
             if command_key not in command_safety:
                 issues.append(f"{label}:{gate_id}:validation_command_missing_safety:{command_key}")
+
+
+def _audit_review_action_handoff_consistency(
+    label: str,
+    review_actions: Any,
+    handoff: Mapping[str, Any],
+    issues: list[str],
+) -> None:
+    if not isinstance(review_actions, list):
+        issues.append(f"{label}:review_actions_missing_for_review_phase_consistency")
+        return
+    phases_by_id = _handoff_review_phases_by_id(handoff)
+    actions_by_id = {
+        str(action.get("phase_id")): action
+        for action in review_actions
+        if isinstance(action, Mapping) and str(action.get("phase_id") or "").strip()
+    }
+    for phase_id, action in actions_by_id.items():
+        phase = phases_by_id.get(phase_id)
+        if not isinstance(phase, Mapping):
+            issues.append(f"{label}:{phase_id}:missing_review_phase_for_action")
+            continue
+        for field in (
+            "order",
+            "milestone",
+            "status",
+            "decision_artifact",
+            "decision_status",
+            "can_run_here_now",
+            "blocked_by_current_environment",
+            "first_safe_command",
+            "review_command",
+            "review_artifacts",
+            "required_review",
+            "success_check",
+            "changes_readiness_by_itself",
+            "changes_policy_by_itself",
+            "real_egress_enabled",
+        ):
+            if action.get(field) != phase.get(field):
+                issues.append(f"{label}:{phase_id}:{field}_mismatch_with_review_phase")
+        secret_policy = str(action.get("secret_policy") or "")
+        if "never paste channel credentials or message recipient values" not in secret_policy:
+            issues.append(f"{label}:{phase_id}:secret_policy_missing_review_secret_rule")
 
 
 def _audit_handoff_command_precedence(
