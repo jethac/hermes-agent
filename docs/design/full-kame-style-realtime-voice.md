@@ -83,11 +83,12 @@ present.
 
 The implementation target is now **witness-assisted direct-audio**. This means
 Hermes should prefer a single interpreter packet that contains the bounded raw
-audio cut plus every same-cut hearing hypothesis the frontend can provide. A
+audio cut plus any same-cut hearing hypotheses the frontend can provide. A
 Moshi/Open-S2S transcript, VoiceClaw/OpenClaw caption, reflex caption, or
-classic-ASR string may be sent to Gemma with the waveform, but only as context
-for adjudication. It is not a separate ASR lane, not a second Hermes user turn,
-and not a fallback source of action authority.
+classic-ASR string may be sent to Gemma with the waveform, but only as optional
+context for adjudication or degraded fallback evidence. It is not a separate
+ASR lane, not a second Hermes user turn, not a required normal-path proof, and
+not a fallback source of action authority.
 
 The normative packet contract for that behavior is `docs/kame-session-v1.md`.
 When this design document and implementation details disagree, prefer the

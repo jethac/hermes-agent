@@ -121,6 +121,18 @@ those aliases bypass `transcript_hypotheses[]`, appear in `oracle_text`, or
 populate Stripe, NemoClaw, phone, file, memory, message, durable-history, or
 tool sinks before promotion.
 
+Adapter normalization is therefore mechanical:
+
+| Provider field | Raw audio present | Raw audio absent |
+| --- | --- | --- |
+| `stt`, `transcript`, `caption` | Normalize into `transcript_hypotheses[]` with `provider_alias_key` preserved and hypothesis authority. | Degraded text-only compatibility; no full-KAME readiness or high-risk action release. |
+| `query`, `user_text`, `command` | Normalize into `transcript_hypotheses[]` unless a separate promoted interpreter/oracle field exists. | Degraded consult text only; must not populate `oracle_text` for high-risk actions. |
+| `intent`, `route`, `acknowledgement` | Treat as reflex/provisional state, not verified wording. | Reflex/status context only; cannot become durable user text without promotion. |
+| `interpreter_promoted`, `oracle_promoted` | Eligible for Hermes active `/model` and action sinks when bound to the same speech cut. | Eligible only if provenance proves a trusted promotion source; provider self-labeling is not enough. |
+
+This table is intentionally stricter than most provider APIs. Hermes routes by
+authority and evidence binding, not by a provider's field name.
+
 Implementation rule: prefer submitting the raw-audio interpreter packet over
 waiting for Moshi/Open-S2S text. Witness text is valuable context, but it is not
 the critical path for acknowledgement or interpreter scheduling. The adapter may

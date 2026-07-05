@@ -62,11 +62,12 @@ raw audio, metadata, and reflex state. The active Hermes `/model` receives only
 promoted wording, intent, entities, and compact labeled evidence.
 
 Name this runtime profile `witness_assisted_direct_audio`. It is the default
-full-KAME shape whenever raw audio and Moshi/Open-S2S/reflex/classic-ASR text
-are both available for the same speech cut. The profile exists to make the
-implementation and audits unambiguous: provider text is welcome beside the
-waveform, but the waveform is primary, Gemma adjudicates each witness, and the
-oracle sees only promoted fields.
+full-KAME shape whenever raw audio is available; Moshi/Open-S2S/reflex/classic
+ASR text may join only as optional same-cut witness context. The profile exists
+to make the implementation and audits unambiguous: provider text is welcome
+beside the waveform, but the waveform is primary, Gemma adjudicates each
+witness, ASR is fallback/diagnostic evidence only, and the oracle sees only
+promoted fields.
 
 The implementation should optimize for this ordering:
 
