@@ -15076,6 +15076,8 @@ def test_external_kame_provider_text_aliases_become_witness_hypotheses_with_raw_
             "query": "call my phone now",
             "user_text": "prepare the phone handoff",
             "user_text_arrival_phase": "with_raw_audio",
+            "command": "provision the phone service immediately",
+            "command_arrival_phase": "with_raw_audio",
         },
         session_id="external-kame-provider-aliases",
         turn_id="external-kame-provider-aliases:1",
@@ -15095,6 +15097,14 @@ def test_external_kame_provider_text_aliases_become_witness_hypotheses_with_raw_
         "prepare phone handoff",
         "call my phone now",
         "prepare the phone handoff",
+        "provision the phone service immediately",
+    }
+    assert {item["provider_alias_key"] for item in hypotheses} == {
+        "stt",
+        "caption",
+        "query",
+        "user_text",
+        "command",
     }
     assert all(item["role"] == "witness_context" for item in hypotheses)
     assert all(item["authority"] == "hypothesis" for item in hypotheses)
@@ -15107,6 +15117,7 @@ def test_external_kame_provider_text_aliases_become_witness_hypotheses_with_raw_
     assert metadata["kame_transcript_hypotheses"] == hypotheses
     assert "spend two hundred dollars" not in request.oracle_text
     assert "call my phone now" not in request.oracle_text
+    assert "provision the phone service immediately" not in request.oracle_text
 
 
 def test_external_kame_bridge_argument_provider_aliases_inherit_top_level_audio_binding():
@@ -15120,6 +15131,7 @@ def test_external_kame_bridge_argument_provider_aliases_inherit_top_level_audio_
                 "caption": "misheard spend authorization",
                 "caption_confidence": 0.54,
                 "user_text": "wrong room command",
+                "command": "purchase service credits",
                 "interface_already_said": "I'm preparing the handoff.",
             },
             "audio_segment_ref": "artifact://voiceclaw/bridge-aliases.wav",
@@ -15139,6 +15151,12 @@ def test_external_kame_bridge_argument_provider_aliases_inherit_top_level_audio_
     assert {item["text"] for item in hypotheses} == {
         "misheard spend authorization",
         "wrong room command",
+        "purchase service credits",
+    }
+    assert {item["provider_alias_key"] for item in hypotheses} == {
+        "caption",
+        "user_text",
+        "command",
     }
     assert all(item["kind"] == "frontend_witness_hypothesis" for item in hypotheses)
     assert all(item["source"] == "voiceclaw" for item in hypotheses)
@@ -15147,6 +15165,7 @@ def test_external_kame_bridge_argument_provider_aliases_inherit_top_level_audio_
     assert all(item["channel_or_surface_ref"] == "discord_voice:channel:general" for item in hypotheses)
     assert "misheard spend authorization" not in request.oracle_text
     assert "wrong room command" not in request.oracle_text
+    assert "purchase service credits" not in request.oracle_text
 
 
 def test_external_kame_cannot_self_promote_transcript_as_interpreter_evidence():

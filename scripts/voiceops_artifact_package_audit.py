@@ -103,7 +103,7 @@ VALID_WITNESS_ARRIVAL_PHASES = {
     "with_raw_audio",
     "after_interpreter_start",
 }
-EXPECTED_PROVIDER_TEXT_ALIAS_KEYS = ("stt", "caption", "transcript", "query", "user_text")
+EXPECTED_PROVIDER_TEXT_ALIAS_KEYS = ("stt", "caption", "transcript", "query", "user_text", "command")
 EXPECTED_KAME_LATENCY_BREAKDOWN_SEGMENTS = (
     "speech_end_to_reflex_ack_ms",
     "audio_cut_to_interpreter_submit_ms",

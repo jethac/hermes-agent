@@ -222,8 +222,16 @@ KAME_FRONTEND_BRAIN_BRIDGE_NAMES = frozenset(
         "openclaw_agent_consult",
     }
 )
-KAME_PROVIDER_TEXT_ALIAS_KEYS = ("stt", "stt_text", "caption", "transcript", "query", "user_text")
-KAME_BRIDGE_ARGUMENT_PROVIDER_TEXT_ALIAS_KEYS = ("stt", "stt_text", "caption", "user_text")
+KAME_PROVIDER_TEXT_ALIAS_KEYS = (
+    "stt",
+    "stt_text",
+    "caption",
+    "transcript",
+    "query",
+    "user_text",
+    "command",
+)
+KAME_BRIDGE_ARGUMENT_PROVIDER_TEXT_ALIAS_KEYS = ("stt", "stt_text", "caption", "user_text", "command")
 
 
 def kame_reflex_decision_json_schema() -> dict[str, Any]:
@@ -475,7 +483,7 @@ class KameOracleRequest:
                 continue
             seen.add(key)
             normalized.append(hypothesis)
-            if len(normalized) >= 5:
+            if len(normalized) >= 8:
                 break
         fallback_speaker = dict(self.speaker_metadata or {})
         fallback_channel = dict(self.channel_metadata or {})
@@ -1336,6 +1344,9 @@ def _canonical_transcript_hypothesis(value: object) -> dict[str, Any]:
         "promotion_required": KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
         "tool_authority": False,
     }
+    provider_alias_key = _optional_text(value.get("provider_alias_key"))
+    if provider_alias_key:
+        hypothesis["provider_alias_key"] = provider_alias_key[:80]
     confidence = _confidence(value.get("confidence"))
     if confidence is not None:
         hypothesis["confidence"] = confidence
@@ -1601,7 +1612,7 @@ def _auxiliary_transcript_hypotheses(payload: Mapping[str, Any]) -> tuple[Mappin
             continue
         seen.add(key)
         hypotheses.append(hypothesis)
-        if len(hypotheses) >= 5:
+        if len(hypotheses) >= 8:
             break
     return tuple(hypotheses)
 
@@ -2068,7 +2079,7 @@ def _external_brain_route(value: Any) -> KameRoute:
 
 
 def _frontend_bridge_name(payload: Mapping[str, Any]) -> str:
-    for key in ("tool_name", "name", "function_name"):
+    for key in ("tool_name", "tool", "name", "function_name"):
         text = _optional_text(payload.get(key)).lower()
         if text:
             return text

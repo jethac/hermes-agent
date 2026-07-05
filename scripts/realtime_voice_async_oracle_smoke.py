@@ -2359,6 +2359,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         "transcript": "provider alias transcript should stay a hypothesis",
         "query": "provider alias query should stay a hypothesis",
         "user_text": "provider alias user text should stay a hypothesis",
+        "command": "provider alias command should stay a hypothesis",
     }
     provider_alias_request = kame_external_brain_request_to_oracle_request(
         {
@@ -2404,6 +2405,10 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
             "user_text_confidence": 0.7,
             "user_text_latency_ms": 55,
             "user_text_arrival_phase": "with_raw_audio",
+            "command_source": "voiceclaw_command",
+            "command_confidence": 0.69,
+            "command_latency_ms": 56,
+            "command_arrival_phase": "with_raw_audio",
             **provider_alias_texts,
         },
         session_id="voice-smoke-external-frontend",
