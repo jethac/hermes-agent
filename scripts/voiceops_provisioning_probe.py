@@ -1688,6 +1688,16 @@ def _run_readonly_discovery_probe(
     if not path or not run_discovery:
         return result
     command_result = runner(probe.argv, timeout_seconds)
+    status = "pass"
+    safe_nonzero_observed = False
+    if command_result.timed_out:
+        status = "fail"
+    elif command_result.exit_code != 0:
+        if probe.required:
+            status = "fail"
+        else:
+            status = "observed"
+            safe_nonzero_observed = True
     result.update(
         {
             "executed": True,
@@ -1696,7 +1706,8 @@ def _run_readonly_discovery_probe(
             "timeout_seconds": timeout_seconds,
             "stdout_excerpt": _excerpt(command_result.stdout),
             "stderr_excerpt": _excerpt(command_result.stderr),
-            "status": "pass" if command_result.exit_code == 0 and not command_result.timed_out else "fail",
+            "status": status,
+            "safe_nonzero_observed": safe_nonzero_observed,
         }
     )
     return result
@@ -1720,7 +1731,12 @@ def _build_readonly_discovery_report(
         for probe in _readonly_discovery_manifest()
     ]
     executed = [probe for probe in probes if probe["executed"]]
-    failed = [probe["probe_id"] for probe in executed if probe["status"] != "pass"]
+    failed = [probe["probe_id"] for probe in executed if probe["status"] == "fail"]
+    observed_nonzero = [
+        probe["probe_id"]
+        for probe in executed
+        if probe.get("safe_nonzero_observed") is True
+    ]
     missing = [probe["probe_id"] for probe in probes if probe["status"] == "missing"]
     status = "not_requested"
     if run_discovery:
@@ -1739,6 +1755,7 @@ def _build_readonly_discovery_report(
         "timeout_seconds": timeout_seconds if run_discovery else None,
         "status": status,
         "failed_probe_ids": failed,
+        "observed_nonzero_probe_ids": observed_nonzero,
         "timed_out_probe_ids": [
             probe["probe_id"]
             for probe in executed
@@ -1850,7 +1867,10 @@ def _readonly_discovery_validation_issues(discovery: Mapping[str, Any]) -> list[
         seen.add(probe_id)
         if list(probe.get("argv") or []) != list(expected.argv):
             issues.append(f"read_only_discovery:{probe_id}:argv_mismatch")
-        if str(probe.get("status") or "") != "pass":
+        allowed_statuses = {"pass"}
+        if expected.required is False:
+            allowed_statuses.add("observed")
+        if str(probe.get("status") or "") not in allowed_statuses:
             issues.append(f"read_only_discovery:{probe_id}:status_not_pass")
         if probe.get("executed") is not True:
             issues.append(f"read_only_discovery:{probe_id}:not_executed")
@@ -3757,6 +3777,7 @@ def _read_only_discovery_markdown(discovery: dict[str, Any]) -> str:
         f"- Redacted outputs only: {'yes' if discovery['redacted_outputs_only'] else 'no'}",
         f"- Timeout seconds: {discovery.get('timeout_seconds') if discovery.get('timeout_seconds') is not None else 'not applicable'}",
         f"- Failed probes: {', '.join(discovery['failed_probe_ids']) if discovery['failed_probe_ids'] else 'none'}",
+        f"- Observed nonzero probes: {', '.join(discovery.get('observed_nonzero_probe_ids', [])) if discovery.get('observed_nonzero_probe_ids') else 'none'}",
         f"- Timed-out probes: {', '.join(discovery.get('timed_out_probe_ids', [])) if discovery.get('timed_out_probe_ids') else 'none'}",
         f"- Missing probes: {', '.join(discovery['missing_probe_ids']) if discovery['missing_probe_ids'] else 'none'}",
         "",
@@ -3792,6 +3813,7 @@ def _read_only_discovery_manifest(discovery: dict[str, Any], *, report_sha256: s
         "run_requested": discovery["run_requested"],
         "status": discovery["status"],
         "failed_probe_ids": discovery["failed_probe_ids"],
+        "observed_nonzero_probe_ids": discovery.get("observed_nonzero_probe_ids", []),
         "timed_out_probe_ids": discovery.get("timed_out_probe_ids", []),
         "missing_probe_ids": discovery["missing_probe_ids"],
         "timeout_seconds": discovery.get("timeout_seconds"),
@@ -3804,6 +3826,7 @@ def _read_only_discovery_manifest(discovery: dict[str, Any], *, report_sha256: s
                 "status": probe["status"],
                 "executed": probe["executed"],
                 "timed_out": probe.get("timed_out", False),
+                "safe_nonzero_observed": probe.get("safe_nonzero_observed", False),
             }
             for probe in discovery["probes"]
         ],
@@ -4604,6 +4627,10 @@ def main(argv: list[str] | None = None) -> int:
                 "area_status": report["area_status"],
                 "read_only_discovery_status": report["read_only_discovery"]["status"],
                 "read_only_discovery_failed_probe_ids": report["read_only_discovery"]["failed_probe_ids"],
+                "read_only_discovery_observed_nonzero_probe_ids": report["read_only_discovery"].get(
+                    "observed_nonzero_probe_ids",
+                    [],
+                ),
                 "read_only_discovery_missing_probe_ids": report["read_only_discovery"]["missing_probe_ids"],
                 "read_only_discovery_timed_out_probe_ids": report["read_only_discovery"].get("timed_out_probe_ids", []),
                 "output_dir": str(args.output_dir),

@@ -477,6 +477,47 @@ def test_readonly_discovery_reports_timeouts_without_granting_readiness(tmp_path
     assert report["ready"] is False
 
 
+def test_readonly_discovery_observes_optional_nonzero_without_failing_gate(tmp_path):
+    calls: list[list[str]] = []
+
+    def fake_which(command: str) -> str | None:
+        return f"/usr/local/bin/{command}" if command in {"stripe", "link-cli", "mppx"} else None
+
+    def fake_readonly_runner(argv: Sequence[str], _timeout_seconds: int) -> CommandResult:
+        calls.append(list(argv))
+        if list(argv) == ["stripe", "projects", "list", "--limit", "10"]:
+            return CommandResult(
+                exit_code=126,
+                stderr="refusing read-only Stripe Projects probe because the CLI auto-installs the projects plugin",
+            )
+        return CommandResult(exit_code=1, stderr="not authenticated")
+
+    report = build_probe_report(
+        env={"VOICEOPS_DEMO_PHONE_NUMBER": "+15551234567", "TWILIO_ACCOUNT_SID": "AC123"},
+        env_files=[],
+        which=fake_which,
+        runner=lambda _argv, _timeout_seconds: CommandResult(exit_code=0),
+        readonly_discovery_runner=fake_readonly_runner,
+        run_readonly_discovery=True,
+    )
+
+    discovery = report["read_only_discovery"]
+    assert calls == [
+        ["stripe", "projects", "list", "--limit", "10"],
+        ["link-cli", "auth", "status"],
+    ]
+    assert discovery["status"] == "pass"
+    assert discovery["failed_probe_ids"] == []
+    assert discovery["observed_nonzero_probe_ids"] == [
+        "stripe_projects_catalog_list",
+        "stripe_link_auth_status",
+    ]
+    assert all(probe["status"] == "observed" for probe in discovery["probes"])
+    assert all(probe["safe_nonzero_observed"] is True for probe in discovery["probes"])
+    assert "read_only_discovery_passed" not in report["required_failures"]
+    assert report["ready"] is False
+
+
 def test_real_readonly_runner_refuses_stripe_projects_auto_install(monkeypatch):
     def fail_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
         raise AssertionError("stripe projects discovery must not reach subprocess auto-install path")
