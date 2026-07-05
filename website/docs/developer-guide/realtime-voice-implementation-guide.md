@@ -209,7 +209,7 @@ Client events:
 {"type":"session.closed","session_id":"...","sequence":3,"payload":{"reason":"client_closed"}}
 ```
 
-Client `audio.input.chunk` events may include a `transcript` string for browser or sidecar experiments that produce text before raw-audio interpretation. Set `end_of_utterance`, `final`, or `is_final` to `false` for partial transcript captions. Only text-oracle and fallback modes should start a Hermes oracle turn directly from a final transcript payload. In full KAME mode, transcript payloads are hypotheses attached to the clipped raw audio and interpreter evidence bundle.
+Client `audio.input.chunk` events may include a `transcript` string for browser or sidecar experiments that produce text before raw-audio interpretation. Set `end_of_utterance`, `final`, or `is_final` to `false` for partial transcript captions. Only explicitly degraded text-oracle and fallback modes may start a Hermes oracle turn directly from a final transcript payload. In full KAME mode, transcript payloads are hypotheses attached to the clipped raw audio and interpreter evidence bundle; they must not become `oracle_text`, durable history, or action arguments before interpreter/oracle promotion.
 
 For Moshi/OpenClaw/VoiceClaw-style frontends, the preferred implementation is
 not "send transcript to Hermes." It is "send raw audio plus the frontend's
@@ -227,12 +227,23 @@ Full KAME events should normalize toward this bundle shape:
   "turn_id": "...",
   "audio_segment_ref": "artifact://voice/turn.wav",
   "interpreter_input_order": ["raw_audio", "metadata", "reflex", "transcript_hypotheses"],
-  "audio": {"segment_ref": "artifact://voice/turn.wav", "authority": "primary_audio"},
+  "audio": {
+    "segment_ref": "artifact://voice/turn.wav",
+    "authority": "primary_audio",
+    "audio_time_range_ms": [1200, 3420]
+  },
+  "metadata": {
+    "speaker_or_actor_ref": "speaker:jetha",
+    "channel_or_surface_ref": "discord:general"
+  },
   "reflex": {"route": "oracle_direct", "acknowledgement_spoken": "I'm checking that."},
   "transcript_hypotheses": [
     {
       "kind": "frontend_witness_hypothesis",
       "source": "moshi",
+      "audio_time_range_ms": [1200, 3420],
+      "speaker_or_actor_ref": "speaker:jetha",
+      "channel_or_surface_ref": "discord:general",
       "role": "witness_context",
       "authority": "hypothesis",
       "promotion_required": "interpreter_promoted_or_oracle_promoted",
@@ -702,7 +713,7 @@ WS /v1/realtime-text/session
 
 Hermes sends a `session.config` frame first, then forwards `audio.input.chunk`, `barge_in`, and assistant text chunks with `{"speak": true}`. Forwarded `audio.input.chunk` events include the active `input_generation`; sidecars should echo it on transcript events so Hermes can reject stale STT output after barge-in or newer input. Forwarded `barge_in` events include the active `playback_generation` so sidecars can cancel or tag stale output work deterministically. The sidecar returns `transcript.partial`, `transcript.final`, `frontend.state`, `audio.output.chunk`, or `session.error` events using the shared wire protocol.
 
-Hermes sanitizes sidecar transcript payloads before forwarding them or, in fallback/text-oracle mode, starting oracle work. Transcript events may keep `text`, `confidence`, `stability`, `input_generation`, `playback_generation`, and sanitized `language`/`locale`/`script`; provider URLs, secrets, raw metadata blobs, and malformed language tokens are dropped. In full KAME mode, transcript payloads attach to `transcript_hypotheses[]` and oracle work should use promoted interpreter/oracle evidence rather than raw transcript text.
+Hermes sanitizes sidecar transcript payloads before forwarding them or, in explicitly degraded fallback/text-oracle mode, starting oracle work. Transcript events may keep `text`, `confidence`, `stability`, `input_generation`, `playback_generation`, and sanitized `language`/`locale`/`script`; provider URLs, secrets, raw metadata blobs, and malformed language tokens are dropped. In full KAME mode, transcript payloads attach to `transcript_hypotheses[]` and oracle work must use promoted interpreter/oracle evidence rather than raw transcript text.
 
 Hermes and the reference sidecar use the same binary audio envelope as the desktop hot path for sidecar-facing `audio.input.chunk` and `audio.output.chunk` events: a 4-byte big-endian JSON header length, a UTF-8 `VoiceEvent` header without `payload.data_b64`, then the raw audio bytes. JSON/base64 audio events remain valid for compatibility sidecars and tests, and raw binary output bytes without the envelope are still accepted as legacy Opus output from older sidecars.
 

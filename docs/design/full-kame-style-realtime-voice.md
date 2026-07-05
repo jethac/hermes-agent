@@ -38,6 +38,16 @@ but durable wording starts only at `interpreter_promoted` or
 `oracle_promoted`. Stripe, NemoClaw, phone, memory, file, message, and tool
 payloads must never be populated from unpromoted witness text.
 
+The design intentionally allows a Moshi/open-S2S transcript to improve Gemma's
+understanding without making it the system transcript. Treat provider text as
+an evidence claim about a bounded audio segment: "this frontend believed the
+human said X during this time window." The interpreter compares that claim with
+the waveform, energy gate, speaker/channel metadata, reflex route, and session
+state. It may accept the claim, correct it from audio, or reject it as stale,
+wrong-speaker, wrong-channel, low-energy, hallucinated, or provider-conflicting.
+The oracle receives only the interpreter's promoted result and compact witness
+audit metadata.
+
 This means "Moshi STT" is adapter-edge shorthand only. Inside Hermes the
 supported operation is "attach the Moshi witness to the raw-audio interpreter
 bundle." If the frontend provides text without raw audio, that is degraded
@@ -97,6 +107,12 @@ This separation is mandatory for household/business actions. The oracle can be
 slow, local, hosted, Nemotron, or any model selected by Hermes' normal `/model`
 interface; the voice stack must still hand it only promoted evidence plus
 compact provenance, never raw witness strings masquerading as verified speech.
+
+Prompting rule: do not prompt Gemma to "choose the transcript" or "run ASR in
+parallel." Prompt it to adjudicate an evidence bundle. The prompt should state
+that raw audio is primary, witness text is context, every hypothesis needs an
+outcome, and only `interpreter_promoted` fields can be used by Hermes'
+active `/model`.
 
 ## Source Of Truth
 

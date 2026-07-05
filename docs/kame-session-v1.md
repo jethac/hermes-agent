@@ -64,6 +64,14 @@ transcript is not "the ASR result" from Hermes' point of view. It is a
 same-cut witness reading that helps Gemma compare what the live frontend
 believed it heard against the actual waveform.
 
+This is also the preferred way to use open speech-to-speech systems that expose
+caption, transcript, or command text. The provider may call the field `stt`,
+`transcript`, `caption`, `query`, or `user_text`; Hermes must normalize it by
+role, not by provider vocabulary. If the same accepted speech cut has a
+waveform, the provider text is a witness supplied to the direct-audio
+interpreter. If the waveform is absent, the packet is degraded text-only
+compatibility and cannot close full-KAME or high-risk action gates.
+
 A normal Moshi/Open-S2S packet therefore has three binding requirements:
 
 - the waveform and witness share the same `turn_id`, `audio_segment_ref`,
@@ -90,6 +98,24 @@ waiting for Moshi/Open-S2S text. Witness text is valuable context, but it is not
 the critical path for acknowledgement or interpreter scheduling. The adapter may
 attach witness text before, with, or after raw audio, provided the merge keys
 prove that every attachment belongs to the same accepted speech cut.
+
+### Witness Source Taxonomy
+
+Use the narrowest non-authoritative kind the adapter can prove:
+
+- `frontend_witness_hypothesis`: default for Moshi/OpenClaw/VoiceClaw/open-S2S
+  text when the adapter cannot prove whether it came from the reflex model, a
+  caption head, or an internal ASR head
+- `s2s_transcript_hypothesis`: provider text from a known speech-to-speech
+  transcript/caption output
+- `reflex_transcript_hypothesis`: text emitted by the low-latency reflex model
+  as part of floor control or provisional routing
+- `classic_asr_hypothesis`: text emitted by a dedicated ASR service used for
+  fallback, captions, diagnostics, or literal-evidence support
+
+All four kinds remain `authority = "hypothesis"` until Gemma emits
+`interpreter_promoted` evidence for the same raw-audio cut or the Hermes oracle
+emits `oracle_promoted` evidence. Source kind is provenance, not permission.
 
 Interpreter prompts for this packet must be phrased as witness adjudication, not
 ASR selection. The prompt contract is:

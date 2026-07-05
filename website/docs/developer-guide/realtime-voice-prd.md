@@ -122,7 +122,8 @@ mic audio
 This fallback exists so realtime voice can run on machines without local
 audio-model capacity and so providers can be benchmarked. In full KAME mode,
 STT output is hypothesis evidence for the interpreter/oracle, not the reflex
-driver.
+driver. This fallback is explicitly degraded/text-oracle behavior unless the
+same turn also carries a raw-audio interpreter bundle with promoted evidence.
 
 ## Product Requirements
 
@@ -171,12 +172,15 @@ Allowed transcript-hypothesis sources include:
 - `classic_asr_hypothesis`: text from a dedicated ASR fallback or diagnostic
   lane.
 
-Every hypothesis must keep source, timing, partial/final state, confidence when
-available, and `authority = "hypothesis"`. Hypotheses may help Gemma recover
-clipped prefixes, names, numbers, and code-switched phrases, but they must not
-create a second oracle turn, overwrite `oracle_text`, satisfy a high-risk action
-approval, or become durable user history unless the interpreter or oracle emits
-promoted evidence.
+Every hypothesis must keep source, speaker/channel binding,
+`audio_time_range_ms` when available, timing, partial/final state, confidence
+when available, `role = "witness_context"`, `authority = "hypothesis"`,
+`promotion_required = "interpreter_promoted_or_oracle_promoted"`, and
+`tool_authority = false`. Hypotheses may help Gemma recover clipped prefixes,
+names, numbers, and code-switched phrases, but they must not create a second
+oracle turn, overwrite `oracle_text`, satisfy a high-risk action approval, or
+become durable user history unless the interpreter or oracle emits promoted
+evidence.
 
 Partial hypotheses are transient. A partial from the reflex, Moshi/Open-S2S, or
 classic ASR may be used for UI/debug latency visibility while a speech cut is

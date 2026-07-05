@@ -136,7 +136,7 @@ Then use these commands inside the CLI:
 3. **Speak** — a live audio level bar shows your input: `● [▁▂▃▅▇▇▅▂] ❯`
 4. **Stop speaking** — after 3 seconds of silence, recording auto-stops
 5. **Two beeps** play (660Hz) confirming the recording ended
-6. Audio is transcribed via Whisper and sent to the agent
+6. In classic CLI voice mode, audio is transcribed via Whisper and sent to the agent
 7. If TTS is enabled, the agent's reply is spoken aloud
 8. Recording **automatically restarts** — speak again without pressing any key
 
@@ -353,7 +353,9 @@ Discord voice has two supported paths.
 **Classic STT fallback path:** the bot listens for an utterance, detects
 silence, transcribes the clip through Whisper-compatible STT, sends the
 transcript through the normal Hermes message pipeline, then speaks the reply
-through TTS. This remains useful for compatibility and degraded operation.
+through TTS. This remains useful for compatibility and degraded operation, but
+it is not the full KAME path and should not be used to authorize high-risk
+actions from transcript text alone.
 
 **Realtime / full KAME path:** a fast reflex handles floor control, barge-in,
 and acknowledgement; Gemma or another direct-audio interpreter reviews the
@@ -385,7 +387,11 @@ In the classic fallback path, when the bot joins a voice channel, it:
 
 When the bot is in a voice channel:
 
-- Transcripts appear in the text channel: `[Voice] @user: what you said`
+- In classic/degraded mode, transcripts appear in the text channel:
+  `[Voice] @user: what you said`
+- In realtime/full-KAME mode, displayed voice text should come from promoted
+  interpreter/oracle wording; raw Moshi/STT/reflex witness text is audit
+  context until promoted.
 - Agent responses are sent as text in the channel AND spoken in the VC
 - The text channel is the one where `/voice join` was issued
 

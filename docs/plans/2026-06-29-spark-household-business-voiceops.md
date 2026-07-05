@@ -84,6 +84,15 @@ Moshi/reflex/classic-ASR hypotheses in one packet, and Hermes' active `/model`
 only sees promoted wording, intent, entities, and compact audit evidence before
 doing Stripe, NemoClaw, phone, memory, file, message, or tool work.
 
+Adapter requirement: normalize by authority, not by field name. Provider fields
+named `stt`, `caption`, `transcript`, `query`, or `user_text` are acceptable at
+the adapter edge, but inside Hermes they become `transcript_hypotheses[]` rows
+bound to the same `turn_id`, `audio_segment_ref`, `evidence_bundle_id`, and
+`evidence_merge_key` as the waveform. If the waveform is missing, the turn is
+degraded compatibility. If the waveform is present, the Gemma interpreter must
+adjudicate the witness before any spoken content reaches durable history,
+Stripe, NemoClaw, phone, memory, files, external messages, or tools.
+
 Latest clarification: we are not adding a separate Gemma-ASR lane beside the
 reflex. We are feeding a bounded speech cut to a Gemma direct-audio interpreter
 and attaching every same-cut transcript-looking signal as witness evidence.
@@ -182,6 +191,10 @@ Target KAME layout:
   separate ASR conversation. It is one clipped raw-audio turn, one reflex route,
   and one interpreter bundle. Moshi/open-S2S, VoiceClaw/OpenClaw, reflex, and
   classic ASR text all enter as witness hypotheses when available.
+- Provider-vocabulary rule: the adapter may receive provider-specific names
+  such as `stt`, `caption`, `transcript`, `query`, or `user_text`, but those
+  names do not carry authority. With raw audio present, normalize them into
+  `transcript_hypotheses[]`; without raw audio, mark degraded compatibility.
 - Witness-assisted direct audio: when the same turn has raw audio plus a Moshi
   or equivalent transcript, the interpreter packet must declare the
   `witness_assisted_direct_audio` profile and keep `witness_adjudications`

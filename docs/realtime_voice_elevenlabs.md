@@ -35,6 +35,14 @@ only interpreter context until raw-audio-grounded promotion. Provider STT text
 must not become `oracle_text`, durable user history, or tool/action arguments
 by arriving before the interpreter result.
 
+When ElevenLabs text is retained in full KAME mode, normalize it as
+`classic_asr_hypothesis` with the same witness metadata required by
+`kame_session_v1`: `role = "witness_context"`,
+`authority = "hypothesis"`,
+`promotion_required = "interpreter_promoted_or_oracle_promoted"`,
+`tool_authority = false`, speaker/channel binding, arrival phase, confidence
+when available, and the bounded audio time range it claims to describe.
+
 ## Provider-Neutral Architecture
 
 The realtime voice sidecar speaks the same provider-neutral streaming contract
