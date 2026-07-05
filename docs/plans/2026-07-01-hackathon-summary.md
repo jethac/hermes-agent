@@ -55,6 +55,13 @@ raw audio + timing + speaker/channel + reflex route + Moshi/Open-S2S witness
 That packet is the hackathon proof that the voice interface is fast without
 letting a quick transcript hallucination spend money or place a call.
 
+For the video, the first audible win should be the reflex acknowledgement. The
+system should not wait for Moshi/Open-S2S or classic ASR to finish before
+saying that it is handling the request. The later proof panel can then show the
+Gemma interpreter packet: raw audio first, metadata and reflex state second,
+witness hypotheses last, followed by promoted evidence flowing into the active
+Hermes `/model`.
+
 If the video has room, show two witness cases. In the first, Moshi/Open-S2S or
 reflex text agrees with the waveform and helps Gemma promote a concise request.
 In the second, a conflicting or text-only witness is rejected or held

@@ -126,6 +126,24 @@ audio first, witness hypotheses last, Gemma `witness_adjudications`, Gemma
 `interpreter_promoted` fields, and Hermes' active `/model` receiving only
 promoted wording plus compact audit metadata.
 
+Implementation priority, 2026-07-05: optimize the first user-visible response
+around the reflex, not around ASR completion. The reflex should acknowledge
+immediately after a valid energy-gated cut and narrate the concise thing it is
+asking Hermes to do. In parallel with that spoken acknowledgement, the adapter
+should submit the raw-audio interpreter packet to Gemma. Moshi/Open-S2S or
+classic-ASR text can join that packet as witness context before, with, or after
+submission, but it is not required for acknowledgement and cannot itself release
+Stripe, NemoClaw, phone, memory, file, message, external-channel, or tool
+actions.
+
+The useful open-S2S role for the hackathon demo is therefore "fast witness and
+floor-control frontend," not "authoritative STT." A Moshi/Open-S2S model may
+produce a transcript-like string, but the artifact should show that string
+attached to the Gemma packet as `transcript_hypotheses[]` while the active
+Hermes `/model` sees only Gemma-promoted evidence. This is the clean three-tier
+story for judges: fast voice UX, raw-audio-grounded interpretation, and normal
+Hermes model/tool authority.
+
 ## Spark Model Strategy
 
 There are two related but distinct model strategies.

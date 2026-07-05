@@ -25,6 +25,32 @@ That text is a witness claim about what a frontend believed it heard. It is not
 the transcript of record, not a second Hermes user turn, not `oracle_text`, not
 a spend reason, and not tool authority.
 
+## Current Architecture Choice
+
+The practical design choice is:
+
+```text
+fast reflex model
+  -> owns floor timing, barge-in, noise rejection, acknowledgement, and rough route
+Gemma direct-audio interpreter
+  -> receives the accepted waveform plus same-cut witness text
+Hermes active /model
+  -> receives only promoted wording, intent, entities, and compact audit metadata
+```
+
+Moshi/Open-S2S text is valuable in this shape, but not because it replaces the
+interpreter. It is the frontend's witness statement: "this is what the live
+voice layer thought it heard during this audio cut." Send it to Gemma with the
+raw voice so Gemma can use it for multilingual/code-switched recovery, clipped
+prefixes, names, numbers, and rough intent. Do not send it to the Hermes oracle
+as the user prompt, and do not schedule a second Hermes turn from that text.
+
+This also means the reflex model does not need to be the best literal ASR model.
+Its first job is latency and turn-taking. The transcript-like strings it emits,
+or that a Moshi/Open-S2S companion emits, are useful only after they are bound
+to the same accepted speech cut and labeled as hypotheses. Gemma is the first
+component allowed to promote wording for Hermes' durable/actionable model path.
+
 ## Current Design Amendment
 
 The direct answer to the Moshi question is yes: when a Moshi/Open-S2S frontend
