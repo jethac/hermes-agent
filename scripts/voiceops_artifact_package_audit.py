@@ -2398,6 +2398,86 @@ def _canonical_witness_adjudication_rows(hypotheses: list[Any]) -> list[dict[str
     return rows
 
 
+def _iter_nested_strings(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, Mapping):
+        strings: list[str] = []
+        for item in value.values():
+            strings.extend(_iter_nested_strings(item))
+        return strings
+    if isinstance(value, list):
+        strings: list[str] = []
+        for item in value:
+            strings.extend(_iter_nested_strings(item))
+        return strings
+    return []
+
+
+def _iter_nested_authorities(value: Any) -> list[str]:
+    authorities: list[str] = []
+    if isinstance(value, Mapping):
+        raw_authority = value.get("authority")
+        if isinstance(raw_authority, str) and raw_authority.strip():
+            authorities.append(raw_authority.strip())
+        for item in value.values():
+            authorities.extend(_iter_nested_authorities(item))
+    elif isinstance(value, list):
+        for item in value:
+            authorities.extend(_iter_nested_authorities(item))
+    return authorities
+
+
+def _audit_witness_assisted_action_sinks(
+    *,
+    async_smoke: Mapping[str, Any],
+    issues: list[str],
+) -> None:
+    sink_values = async_smoke.get("witness_assisted_voiceops_action_sink_values")
+    if not isinstance(sink_values, Mapping):
+        issues.append(
+            "voice_operator_readiness:async_oracle_smoke.witness_assisted_voiceops_action_sink_values_not_object"
+        )
+        return
+
+    witness_text = str(
+        async_smoke.get("witness_assisted_voiceops_action_witness_text") or ""
+    ).strip()
+    allowed_authorities = {"interpreter_promoted", "oracle_promoted"}
+
+    for sink_key, sink_value in sink_values.items():
+        sink_label = str(sink_key)
+        if witness_text:
+            for nested_text in _iter_nested_strings(sink_value):
+                if witness_text in nested_text:
+                    issues.append(
+                        "voice_operator_readiness:async_oracle_smoke."
+                        f"witness_assisted_voiceops_action_sink_values_raw_witness_present:{sink_label}"
+                    )
+                    break
+
+        authorities = _iter_nested_authorities(sink_value)
+        if not authorities and "." in sink_label:
+            parent_value = sink_values.get(sink_label.split(".", 1)[0])
+            authorities = _iter_nested_authorities(parent_value)
+
+        if not authorities:
+            issues.append(
+                "voice_operator_readiness:async_oracle_smoke."
+                f"witness_assisted_voiceops_action_sink_values_missing_promoted_source:{sink_label}"
+            )
+            continue
+
+        invalid_authorities = [
+            authority for authority in authorities if authority not in allowed_authorities
+        ]
+        if invalid_authorities:
+            issues.append(
+                "voice_operator_readiness:async_oracle_smoke."
+                f"witness_assisted_voiceops_action_sink_values_unpromoted_source:{sink_label}"
+            )
+
+
 def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], issues: list[str]) -> None:
     proofs = readiness.get("proofs") if isinstance(readiness.get("proofs"), Mapping) else {}
     smoke = readiness.get("smoke") if isinstance(readiness.get("smoke"), Mapping) else {}
@@ -2408,6 +2488,7 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
         async_unpromoted_sink_values = {}
     elif async_unpromoted_sink_values:
         issues.append("voice_operator_readiness:async_oracle_smoke.unpromoted_hypothesis_action_sink_values_not_empty")
+    _audit_witness_assisted_action_sinks(async_smoke=async_smoke, issues=issues)
     external_frontend_transcript_hypotheses = async_smoke.get(
         "external_frontend_transcript_hypotheses"
     )

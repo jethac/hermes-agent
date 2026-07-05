@@ -1295,6 +1295,87 @@ def test_package_audit_rejects_unpromoted_hypothesis_sink_values_in_async_smoke(
     )
 
 
+def test_package_audit_rejects_witness_assisted_raw_witness_in_action_sink(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
+    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    witness_text = readiness["async_oracle_smoke"]["witness_assisted_voiceops_action_witness_text"]
+    contaminated_values = dict(
+        readiness["async_oracle_smoke"]["witness_assisted_voiceops_action_sink_values"]
+    )
+    contaminated_values["spend_reason"] = {
+        "authority": "interpreter_promoted",
+        "text": witness_text,
+    }
+    readiness["async_oracle_smoke"]["witness_assisted_voiceops_action_sink_values"] = contaminated_values
+    readiness["proofs"]["async_oracle_jobs"]["witness_assisted_voiceops_action_sink_values"] = (
+        contaminated_values
+    )
+    readiness_path.write_text(json.dumps(readiness, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    async_smoke_path = (
+        artifact_root
+        / "voiceops-voice-operator"
+        / "current"
+        / "async-oracle-smoke.json"
+    )
+    async_smoke = json.loads(async_smoke_path.read_text(encoding="utf-8"))
+    async_smoke["witness_assisted_voiceops_action_sink_values"] = contaminated_values
+    async_smoke_path.write_text(json.dumps(async_smoke, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "voice_operator_readiness:async_oracle_smoke."
+        "witness_assisted_voiceops_action_sink_values_raw_witness_present:spend_reason"
+        in report["issues"]
+    )
+
+
+def test_package_audit_rejects_witness_assisted_action_sink_without_promoted_source(tmp_path):
+    artifact_root = _generate_package(tmp_path)
+    readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
+    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    contaminated_values = dict(
+        readiness["async_oracle_smoke"]["witness_assisted_voiceops_action_sink_values"]
+    )
+    contaminated_values["message_payload"] = {
+        "authority": "hypothesis",
+        "summary": "prepare Stripe approval for twenty dollars of phone credits and a phone handoff",
+    }
+    contaminated_values["durable_history"] = (
+        "prepare Stripe approval for twenty dollars of phone credits and a phone handoff"
+    )
+    readiness["async_oracle_smoke"]["witness_assisted_voiceops_action_sink_values"] = contaminated_values
+    readiness["proofs"]["async_oracle_jobs"]["witness_assisted_voiceops_action_sink_values"] = (
+        contaminated_values
+    )
+    readiness_path.write_text(json.dumps(readiness, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    async_smoke_path = (
+        artifact_root
+        / "voiceops-voice-operator"
+        / "current"
+        / "async-oracle-smoke.json"
+    )
+    async_smoke = json.loads(async_smoke_path.read_text(encoding="utf-8"))
+    async_smoke["witness_assisted_voiceops_action_sink_values"] = contaminated_values
+    async_smoke_path.write_text(json.dumps(async_smoke, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "voice_operator_readiness:async_oracle_smoke."
+        "witness_assisted_voiceops_action_sink_values_unpromoted_source:message_payload"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:async_oracle_smoke."
+        "witness_assisted_voiceops_action_sink_values_missing_promoted_source:durable_history"
+        in report["issues"]
+    )
+
+
 def test_package_audit_rejects_operator_state_event_drift_from_operator_state(tmp_path):
     artifact_root = _generate_package(tmp_path)
     events_path = artifact_root / "hackathon-voiceops-demo" / "current" / "operator-state-events.jsonl"
