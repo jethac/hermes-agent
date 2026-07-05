@@ -5,6 +5,8 @@ description: "Product requirements for a KAME-inspired realtime voice subsystem 
 
 # Realtime Voice PRD
 
+Canonical KAME amendment: `docs/design/kame-witness-assisted-direct-audio.md`
+
 ## Summary
 
 Hermes currently treats voice as a message convenience: record audio, transcribe a complete blob, submit the transcript as a normal user message, then synthesize the assistant's streamed text. That works for dictation and hands-free turns, but it is not a live conversation.

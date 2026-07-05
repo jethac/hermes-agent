@@ -6,6 +6,7 @@ Target deployment: one DGX Spark as the intended local appliance path. Hackathon
 artifacts may prove the workflow and evidence gates before Spark-local
 readiness is proven; cloud providers remain allowed only as clearly labeled
 bring-up fallbacks.
+Canonical amendment: `docs/design/kame-witness-assisted-direct-audio.md`
 Preferred local reflex: fastest stable floor-control model, such as Moshi/PersonaPlex-class S2S or a smaller timing/noise-gated model
 Preferred local interpreter: Gemma 4 E2B/E4B/12B audio-multimodal, consuming bounded raw-audio cuts plus witness hypotheses
 Preferred local oracle target: Hermes active `/model`, with Nemotron 3 Super as the first Spark-local NVIDIA target to measure before readiness claims

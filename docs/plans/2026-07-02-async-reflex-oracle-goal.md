@@ -5,6 +5,7 @@ date: 2026-07-02
 type: goal
 target_repo: hermes-agent
 successor_design: docs/design/full-kame-style-realtime-voice.md
+witness_design: docs/design/kame-witness-assisted-direct-audio.md
 ---
 
 # goal: Make the KAME reflex and Hermes oracle truly async

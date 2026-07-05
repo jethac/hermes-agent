@@ -3,6 +3,7 @@
 Status: draft contract for external realtime frontends
 Owner: Hermes realtime voice / VoiceOps
 Protocol id: `kame_session_v1`
+Design amendment: `docs/design/kame-witness-assisted-direct-audio.md`
 
 This contract is the transport-neutral boundary for Discord voice,
 VoiceClaw/OpenClaw-style frontends, phone/SIP, WhatsApp voice, desktop mic, and

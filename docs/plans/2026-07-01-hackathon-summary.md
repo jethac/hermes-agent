@@ -1,5 +1,7 @@
 # Hermes VoiceOps Business Agent Hackathon Summary
 
+Canonical voice design: `docs/design/kame-witness-assisted-direct-audio.md`
+
 ## One-Line Pitch
 
 Hermes becomes a VoiceOps hackathon proof targeting Spark/PGX: a household and business operator that can be spoken to over Discord, given a spending budget through Stripe, provision services for itself, and carry the same operating context into a phone call.

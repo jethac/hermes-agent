@@ -1,5 +1,11 @@
 # Spark Household and Business VoiceOps Goal
 
+Design references:
+
+- `docs/design/full-kame-style-realtime-voice.md`
+- `docs/design/kame-witness-assisted-direct-audio.md`
+- `docs/kame-session-v1.md`
+
 ## North Star
 
 Run a household and small business from Hermes VoiceOps, conversationally, with
