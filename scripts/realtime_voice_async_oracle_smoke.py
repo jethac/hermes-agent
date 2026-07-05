@@ -26,6 +26,7 @@ from agent.realtime_voice import (
 from agent.realtime_voice_kame import (
     INTERPRETER_PROMPT_POLICY,
     INTERPRETER_PROMPT_POLICY_VERSION,
+    KAME_INTERPRETER_PROFILE_WITNESS_ASSISTED_DIRECT_AUDIO,
     KameOracleRequest,
     KameRoute,
     kame_evidence_merge_key,
@@ -1871,6 +1872,81 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
     else:
         proof_hypotheses = tuple(item for item in auxiliary_hypotheses if isinstance(item, Mapping))
     external_frontend_transcript_hypotheses = [dict(item) for item in proof_hypotheses]
+    prompt_packet = request.to_interpreter_prompt_packet() if request is not None else {}
+    prompt_input_order = list(prompt_packet.get("prompt_input_order") or [])
+    external_frontend_mode = str(
+        status_job.get("mode")
+        or status_job.get("interpreter_profile")
+        or metadata.get("kame_interpreter_profile")
+        or prompt_packet.get("interpreter_profile")
+        or ""
+    )
+    external_frontend_interpreter_profile = str(
+        status_job.get("interpreter_profile")
+        or metadata.get("kame_interpreter_profile")
+        or prompt_packet.get("interpreter_profile")
+        or ""
+    )
+    external_frontend_interpreter_input_order = prompt_input_order
+    external_frontend_latest_interpreter_evidence_input_order = list(
+        status_job.get("latest_interpreter_prompt_input_order") or []
+    )
+    raw_witness_adjudications = status_job.get("witness_adjudications")
+    if isinstance(raw_witness_adjudications, Sequence) and not isinstance(
+        raw_witness_adjudications, (str, bytes, bytearray)
+    ):
+        external_frontend_witness_adjudications = [
+            dict(item) for item in raw_witness_adjudications if isinstance(item, Mapping)
+        ]
+    else:
+        external_frontend_witness_adjudications = [
+            {
+                "source": str(item.get("source") or ""),
+                "kind": str(item.get("kind") or ""),
+                "text_digest": str(item.get("text_digest") or ""),
+                "adjudication": str(item.get("adjudication") or ""),
+                **(
+                    {"rejection_reasons": list(item.get("rejection_reasons") or [])}
+                    if item.get("rejection_reasons")
+                    else {}
+                ),
+            }
+            for item in proof_hypotheses
+            if isinstance(item, Mapping) and item.get("adjudication")
+        ]
+    raw_interpreter_promoted = status_job.get("interpreter_promoted")
+    external_frontend_interpreter_promoted = (
+        dict(raw_interpreter_promoted)
+        if isinstance(raw_interpreter_promoted, Mapping)
+        else {
+            "corrected_transcript": str(status_job.get("interpreter_corrected_transcript") or ""),
+            "normalized_intent": str(status_job.get("interpreter_normalized_intent") or ""),
+            "confidence": status_job.get("interpreter_confidence"),
+            "entities": list(status_job.get("interpreter_entities") or []),
+            "authority": "interpreter_promoted",
+        }
+    )
+    external_frontend_interpreter_promoted = {
+        key: value
+        for key, value in external_frontend_interpreter_promoted.items()
+        if value not in ("", None, [], ())
+    }
+    external_frontend_witness_direct_audio_profile_ok = (
+        external_frontend_mode == KAME_INTERPRETER_PROFILE_WITNESS_ASSISTED_DIRECT_AUDIO
+        and external_frontend_interpreter_profile
+        == KAME_INTERPRETER_PROFILE_WITNESS_ASSISTED_DIRECT_AUDIO
+        and external_frontend_interpreter_input_order
+        == ["raw_audio", "metadata", "reflex", "transcript_hypotheses"]
+        and bool(external_frontend_witness_adjudications)
+        and all(
+            item.get("adjudication") in {"accepted_as_supporting_evidence", "corrected_by_audio"}
+            for item in external_frontend_witness_adjudications
+            if isinstance(item, Mapping)
+        )
+        and external_frontend_interpreter_promoted.get("authority") == "interpreter_promoted"
+        and "prepare an external came hand off"
+        not in json.dumps(external_frontend_interpreter_promoted, sort_keys=True).lower()
+    )
     first_auxiliary_hypothesis = (
         proof_hypotheses[0]
         if proof_hypotheses and isinstance(proof_hypotheses[0], Mapping)
@@ -1994,6 +2070,7 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and provisional_summary_non_authoritative
         and evidence_bundle_propagated
         and evidence_bundle_single_turn
+        and external_frontend_witness_direct_audio_profile_ok
         and durable_hypothesis_not_promoted
         and terminal_correlation_observed
         and audit_id_continuity_observed
@@ -2005,6 +2082,17 @@ async def _run_external_frontend_bridge_smoke() -> dict[str, Any]:
         and status_job.get("state") == "completed",
         "external_frontend_protocol": "kame_session_v1",
         "external_frontend_protocol_contract": "docs/kame-session-v1.md",
+        "external_frontend_mode": external_frontend_mode,
+        "external_frontend_interpreter_profile": external_frontend_interpreter_profile,
+        "external_frontend_interpreter_input_order": external_frontend_interpreter_input_order,
+        "external_frontend_latest_interpreter_evidence_input_order": (
+            external_frontend_latest_interpreter_evidence_input_order
+        ),
+        "external_frontend_witness_direct_audio_profile_ok": (
+            external_frontend_witness_direct_audio_profile_ok
+        ),
+        "external_frontend_witness_adjudications": external_frontend_witness_adjudications,
+        "external_frontend_interpreter_promoted": external_frontend_interpreter_promoted,
         "external_frontend_request_accepted": tool_result.payload.get("accepted") is True,
         "external_frontend_tool_result_observed": True,
         "external_frontend_job_id": job_id,
@@ -5254,6 +5342,22 @@ async def run_smoke() -> dict[str, Any]:
         ],
         "external_frontend_protocol_contract": external_frontend_bridge_smoke[
             "external_frontend_protocol_contract"
+        ],
+        "external_frontend_mode": external_frontend_bridge_smoke["external_frontend_mode"],
+        "external_frontend_interpreter_profile": external_frontend_bridge_smoke[
+            "external_frontend_interpreter_profile"
+        ],
+        "external_frontend_interpreter_input_order": external_frontend_bridge_smoke[
+            "external_frontend_interpreter_input_order"
+        ],
+        "external_frontend_witness_direct_audio_profile_ok": external_frontend_bridge_smoke[
+            "external_frontend_witness_direct_audio_profile_ok"
+        ],
+        "external_frontend_witness_adjudications": external_frontend_bridge_smoke[
+            "external_frontend_witness_adjudications"
+        ],
+        "external_frontend_interpreter_promoted": external_frontend_bridge_smoke[
+            "external_frontend_interpreter_promoted"
         ],
         "external_frontend_request_accepted": external_frontend_bridge_smoke[
             "external_frontend_request_accepted"

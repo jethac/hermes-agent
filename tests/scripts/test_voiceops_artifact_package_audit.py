@@ -419,6 +419,73 @@ def test_package_audit_rejects_unadjudicated_external_frontend_transcript_hypoth
     )
 
 
+def test_package_audit_rejects_missing_witness_assisted_direct_audio_profile(
+    tmp_path,
+):
+    artifact_root = _generate_package(tmp_path)
+    voice_dir = artifact_root / "voiceops-voice-operator" / "current"
+
+    smoke_path = voice_dir / "async-oracle-smoke.json"
+    smoke = json.loads(smoke_path.read_text(encoding="utf-8"))
+    smoke["external_frontend_mode"] = "legacy_stt"
+    smoke["external_frontend_interpreter_profile"] = "legacy_stt"
+    smoke["external_frontend_interpreter_input_order"] = [
+        "transcript_hypotheses",
+        "raw_audio",
+    ]
+    smoke["external_frontend_witness_direct_audio_profile_ok"] = False
+    smoke["external_frontend_witness_adjudications"] = []
+    smoke["external_frontend_interpreter_promoted"]["authority"] = "hypothesis"
+    _write_json(smoke_path, smoke)
+
+    readiness_path = voice_dir / "voice-operator-readiness.json"
+    readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    readiness["async_oracle_smoke"].update(
+        {
+            "external_frontend_mode": "legacy_stt",
+            "external_frontend_interpreter_profile": "legacy_stt",
+            "external_frontend_interpreter_input_order": [
+                "transcript_hypotheses",
+                "raw_audio",
+            ],
+            "external_frontend_witness_direct_audio_profile_ok": False,
+            "external_frontend_witness_adjudications": [],
+        }
+    )
+    readiness["async_oracle_smoke"]["external_frontend_interpreter_promoted"][
+        "authority"
+    ] = "hypothesis"
+    _write_json(readiness_path, readiness)
+
+    report = audit_package(artifact_root)
+
+    assert report["ok"] is False
+    assert (
+        "voice_operator_readiness:async_oracle_smoke.external_frontend_mode_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:async_oracle_smoke.external_frontend_interpreter_profile_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:async_oracle_smoke.external_frontend_interpreter_input_order_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:async_oracle_smoke.external_frontend_witness_direct_audio_profile_not_ok"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:async_oracle_smoke.external_frontend_witness_adjudications_missing"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:async_oracle_smoke.external_frontend_interpreter_promoted_authority_mismatch"
+        in report["issues"]
+    )
+
+
 def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     artifact_root = _generate_package(tmp_path)
     readiness_path = artifact_root / "voiceops-voice-operator" / "current" / "voice-operator-readiness.json"
@@ -448,6 +515,17 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_transcript_hypotheses"] = []
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_protocol"] = "legacy_voiceclaw"
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_protocol_contract"] = "docs/old.md"
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_mode"] = "legacy_stt"
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_interpreter_profile"] = "legacy_stt"
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_interpreter_input_order"] = [
+        "transcript_hypotheses",
+        "raw_audio",
+    ]
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_direct_audio_profile_ok"] = False
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_adjudications"] = []
+    readiness["proofs"]["async_oracle_jobs"]["external_frontend_interpreter_promoted"] = {
+        "authority": "hypothesis",
+    }
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_status_audit_id"] = "wrong-status-audit"
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_completion_audit_id"] = "wrong-completion-audit"
     readiness["proofs"]["async_oracle_jobs"]["external_frontend_witness_kind"] = "s2s_transcript_hypothesis"
@@ -662,6 +740,30 @@ def test_package_audit_rejects_async_oracle_proof_drift(tmp_path):
     )
     assert (
         "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_protocol_contract_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_mode_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_interpreter_profile_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_interpreter_input_order_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_witness_direct_audio_profile_ok_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_witness_adjudications_mismatch"
+        in report["issues"]
+    )
+    assert (
+        "voice_operator_readiness:proofs.async_oracle_jobs.external_frontend_interpreter_promoted_mismatch"
         in report["issues"]
     )
     assert (

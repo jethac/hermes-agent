@@ -20,6 +20,9 @@ from agent.realtime_voice_errors import sanitize_realtime_voice_error
 from agent.realtime_voice_kame import (
     INTERPRETER_PROMPT_INPUT_ORDER,
     INTERPRETER_PROMPT_POLICY,
+    KAME_INTERPRETER_PROFILE_DEGRADED_TEXT_ONLY,
+    KAME_INTERPRETER_PROFILE_DIRECT_AUDIO,
+    KAME_INTERPRETER_PROFILE_WITNESS_ASSISTED_DIRECT_AUDIO,
     KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED,
     KAME_TRANSCRIPT_HYPOTHESIS_ROLE,
     KAME_WITNESS_ARRIVAL_PHASES,
@@ -176,6 +179,12 @@ class OracleJob:
         if self.request is not None:
             status["raw_audio_available"] = self.request.raw_audio_available
             status["evidence_bundle_status"] = self.request.evidence_bundle_status
+            status["interpreter_profile"] = self.request.interpreter_profile
+            if (
+                self.request.interpreter_profile
+                == KAME_INTERPRETER_PROFILE_WITNESS_ASSISTED_DIRECT_AUDIO
+            ):
+                status["mode"] = KAME_INTERPRETER_PROFILE_WITNESS_ASSISTED_DIRECT_AUDIO
             status["provisional_request_summary"] = dict(self.request.provisional_request_summary)
             if self.request.degraded_reason:
                 status["degraded_reason"] = self.request.degraded_reason
@@ -211,6 +220,9 @@ class OracleJob:
         if transcript_hypotheses:
             status["transcript_hypotheses_count"] = len(transcript_hypotheses)
             status["transcript_hypotheses"] = transcript_hypotheses
+            witness_adjudications = _job_witness_adjudications(transcript_hypotheses)
+            if witness_adjudications:
+                status["witness_adjudications"] = witness_adjudications
             arrival_phases = _transcript_hypotheses_arrival_phases(transcript_hypotheses)
             if arrival_phases:
                 status["witness_arrival_phases"] = arrival_phases
@@ -223,6 +235,9 @@ class OracleJob:
             status["interpreter_confidence"] = self.interpreter_confidence
         if self.interpreter_entities:
             status["interpreter_entities"] = self.interpreter_entities
+        interpreter_promoted = _job_interpreter_promoted(self)
+        if interpreter_promoted:
+            status["interpreter_promoted"] = interpreter_promoted
         if self.interpreter_disagreements:
             status["interpreter_disagreements"] = self.interpreter_disagreements
         if self.updates:
@@ -243,6 +258,9 @@ class OracleJob:
             latest_prompt_order = latest_evidence.get("interpreter_prompt_input_order")
             if isinstance(latest_prompt_order, tuple) and latest_prompt_order:
                 status["latest_interpreter_prompt_input_order"] = latest_prompt_order
+            latest_profile = str(latest_evidence.get("interpreter_profile") or "").strip()
+            if latest_profile:
+                status["latest_interpreter_profile"] = latest_profile[:80]
             latest_prompt_policy = latest_evidence.get("interpreter_prompt_policy")
             if isinstance(latest_prompt_policy, Mapping) and latest_prompt_policy:
                 status["latest_interpreter_prompt_policy"] = {
@@ -1208,6 +1226,72 @@ def _job_evidence_authority(job: OracleJob) -> dict[str, str]:
     return authority
 
 
+def _job_witness_adjudications(
+    transcript_hypotheses: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    adjudications: list[dict[str, Any]] = []
+    for hypothesis in transcript_hypotheses:
+        if not isinstance(hypothesis, Mapping):
+            continue
+        adjudication = _compact_evidence_text(hypothesis.get("adjudication"), limit=80)
+        if not adjudication:
+            continue
+        item: dict[str, Any] = {
+            "source": _compact_evidence_text(hypothesis.get("source"), limit=80),
+            "kind": _compact_evidence_text(hypothesis.get("kind"), limit=80),
+            "text_digest": _compact_evidence_text(hypothesis.get("text_digest"), limit=96),
+            "adjudication": adjudication,
+        }
+        reasons = hypothesis.get("rejection_reasons")
+        if isinstance(reasons, Sequence) and not isinstance(reasons, (str, bytes, bytearray)):
+            compact_reasons = tuple(
+                reason
+                for reason in (
+                    _compact_evidence_text(value, limit=80)
+                    for value in reasons
+                )
+                if reason
+            )[:6]
+            if compact_reasons:
+                item["rejection_reasons"] = compact_reasons
+        adjudications.append(
+            {
+                key: value
+                for key, value in item.items()
+                if value not in ("", (), [])
+            }
+        )
+    return tuple(adjudications)
+
+
+def _job_interpreter_promoted(job: OracleJob) -> dict[str, Any]:
+    promoted: dict[str, Any] = {}
+    if job.interpreter_corrected_transcript:
+        promoted["corrected_transcript"] = job.interpreter_corrected_transcript
+    if job.interpreter_normalized_intent:
+        promoted["normalized_intent"] = job.interpreter_normalized_intent
+    if job.interpreter_confidence is not None:
+        promoted["confidence"] = job.interpreter_confidence
+    if job.interpreter_entities:
+        promoted["entities"] = job.interpreter_entities
+    if promoted:
+        promoted["authority"] = "interpreter_promoted"
+    return promoted
+
+
+def _interpreter_evidence_profile(evidence: Mapping[str, Any]) -> str:
+    has_audio = bool(_compact_evidence_text(evidence.get("audio_segment_ref"), limit=240))
+    has_witness = bool(
+        evidence.get("reflex_transcript_hypothesis")
+        or evidence.get("auxiliary_transcript_hypotheses")
+    )
+    if has_audio and has_witness:
+        return KAME_INTERPRETER_PROFILE_WITNESS_ASSISTED_DIRECT_AUDIO
+    if has_audio:
+        return KAME_INTERPRETER_PROFILE_DIRECT_AUDIO
+    return KAME_INTERPRETER_PROFILE_DEGRADED_TEXT_ONLY
+
+
 def _job_evidence_bundle(
     job: OracleJob,
     *,
@@ -1627,6 +1711,9 @@ def _compact_interpreter_evidence(
         evidence["confidence"] = parsed_confidence
     if compact_disagreements:
         evidence["disagreements"] = compact_disagreements
+    interpreter_profile = _interpreter_evidence_profile(evidence)
+    if interpreter_profile:
+        evidence["interpreter_profile"] = interpreter_profile
     prompt_input_order = _interpreter_prompt_input_order(evidence)
     if prompt_input_order:
         evidence["interpreter_prompt_input_order"] = prompt_input_order

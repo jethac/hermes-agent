@@ -20,6 +20,10 @@ from scripts.voiceops_voice_operator import (
 from toolsets import _HERMES_CORE_TOOLS
 
 
+def _text_digest(value: str) -> str:
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 def _smoke_payload() -> dict:
     return {
         "ok": True,
@@ -316,6 +320,35 @@ def _async_oracle_smoke_payload() -> dict:
         "external_frontend_tool_result_observed": True,
         "external_frontend_protocol": "kame_session_v1",
         "external_frontend_protocol_contract": "docs/kame-session-v1.md",
+        "external_frontend_mode": "witness_assisted_direct_audio",
+        "external_frontend_interpreter_profile": "witness_assisted_direct_audio",
+        "external_frontend_interpreter_input_order": [
+            "raw_audio",
+            "metadata",
+            "reflex",
+            "transcript_hypotheses",
+        ],
+        "external_frontend_witness_direct_audio_profile_ok": True,
+        "external_frontend_witness_adjudications": [
+            {
+                "source": "moshi",
+                "kind": "frontend_witness_hypothesis",
+                "text_digest": _text_digest("prepare an external came hand off"),
+                "adjudication": "corrected_by_audio",
+            },
+            {
+                "source": "voiceclaw",
+                "kind": "frontend_witness_hypothesis",
+                "text_digest": _text_digest("prepare an external came hand off"),
+                "adjudication": "corrected_by_audio",
+            },
+        ],
+        "external_frontend_interpreter_promoted": {
+            "corrected_transcript": "prepare an external KAME handoff",
+            "normalized_intent": "Prepare external KAME handoff",
+            "confidence": 0.91,
+            "authority": "interpreter_promoted",
+        },
         "external_frontend_job_id": "voice-oracle-001",
         "external_frontend_provider": "voiceclaw",
         "external_frontend_tool": "ask_brain",
@@ -1475,6 +1508,44 @@ def test_voice_operator_report_maps_loopback_smoke_to_milestone_1_contract():
         report["proofs"]["async_oracle_jobs"]["external_frontend_protocol_contract"]
         == "docs/kame-session-v1.md"
     )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_mode"]
+        == "witness_assisted_direct_audio"
+    )
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_interpreter_profile"]
+        == "witness_assisted_direct_audio"
+    )
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_interpreter_input_order"] == [
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    ]
+    assert (
+        report["proofs"]["async_oracle_jobs"]["external_frontend_witness_direct_audio_profile_ok"]
+        is True
+    )
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_witness_adjudications"] == [
+        {
+            "source": "moshi",
+            "kind": "frontend_witness_hypothesis",
+            "text_digest": _text_digest("prepare an external came hand off"),
+            "adjudication": "corrected_by_audio",
+        },
+        {
+            "source": "voiceclaw",
+            "kind": "frontend_witness_hypothesis",
+            "text_digest": _text_digest("prepare an external came hand off"),
+            "adjudication": "corrected_by_audio",
+        },
+    ]
+    assert report["proofs"]["async_oracle_jobs"]["external_frontend_interpreter_promoted"] == {
+        "corrected_transcript": "prepare an external KAME handoff",
+        "normalized_intent": "Prepare external KAME handoff",
+        "confidence": 0.91,
+        "authority": "interpreter_promoted",
+    }
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_provider"] == "voiceclaw"
     assert report["proofs"]["async_oracle_jobs"]["external_frontend_tool"] == "ask_brain"
     assert (

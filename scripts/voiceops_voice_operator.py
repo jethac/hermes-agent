@@ -2385,6 +2385,15 @@ def _coverage_from_async_oracle_smoke(smoke: Mapping[str, Any]) -> dict[str, boo
         and smoke.get("external_frontend_evidence_bundle_single_turn") is True
         and smoke.get("external_frontend_evidence_bundle_status") == "primary_audio"
         and int(smoke.get("external_frontend_evidence_bundle_transcript_hypotheses_count") or 0) >= 1
+        and smoke.get("external_frontend_mode") == "witness_assisted_direct_audio"
+        and smoke.get("external_frontend_interpreter_profile") == "witness_assisted_direct_audio"
+        and smoke.get("external_frontend_interpreter_input_order")
+        == ["raw_audio", "metadata", "reflex", "transcript_hypotheses"]
+        and smoke.get("external_frontend_witness_direct_audio_profile_ok") is True
+        and bool(smoke.get("external_frontend_witness_adjudications"))
+        and isinstance(smoke.get("external_frontend_interpreter_promoted"), Mapping)
+        and (smoke.get("external_frontend_interpreter_promoted") or {}).get("authority")
+        == "interpreter_promoted"
         and smoke.get("external_frontend_witness_kind_frontend_hypothesis") is True
         and smoke.get("external_frontend_witness_metadata_complete") is True
         and smoke.get("external_frontend_hypothesis_not_durable_oracle_text") is True
@@ -3482,6 +3491,22 @@ def build_voice_operator_report(
             "external_frontend_protocol": async_oracle_smoke.get("external_frontend_protocol"),
             "external_frontend_protocol_contract": async_oracle_smoke.get(
                 "external_frontend_protocol_contract"
+            ),
+            "external_frontend_mode": async_oracle_smoke.get("external_frontend_mode"),
+            "external_frontend_interpreter_profile": async_oracle_smoke.get(
+                "external_frontend_interpreter_profile"
+            ),
+            "external_frontend_interpreter_input_order": list(
+                async_oracle_smoke.get("external_frontend_interpreter_input_order") or []
+            ),
+            "external_frontend_witness_direct_audio_profile_ok": bool(
+                async_oracle_smoke.get("external_frontend_witness_direct_audio_profile_ok")
+            ),
+            "external_frontend_witness_adjudications": list(
+                async_oracle_smoke.get("external_frontend_witness_adjudications") or []
+            ),
+            "external_frontend_interpreter_promoted": dict(
+                async_oracle_smoke.get("external_frontend_interpreter_promoted") or {}
             ),
             "external_frontend_job_id": async_oracle_smoke.get("external_frontend_job_id"),
             "external_frontend_provider": async_oracle_smoke.get("external_frontend_provider"),

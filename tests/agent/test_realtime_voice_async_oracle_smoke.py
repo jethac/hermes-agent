@@ -203,6 +203,35 @@ async def test_async_oracle_smoke_proves_concurrency_local_turn_and_cancellation
     assert report["external_frontend_tool_result_observed"] is True
     assert report["external_frontend_protocol"] == "kame_session_v1"
     assert report["external_frontend_protocol_contract"] == "docs/kame-session-v1.md"
+    assert report["external_frontend_mode"] == "witness_assisted_direct_audio"
+    assert report["external_frontend_interpreter_profile"] == "witness_assisted_direct_audio"
+    assert report["external_frontend_interpreter_input_order"] == [
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    ]
+    assert report["external_frontend_witness_direct_audio_profile_ok"] is True
+    assert report["external_frontend_witness_adjudications"] == [
+        {
+            "source": "moshi",
+            "kind": "frontend_witness_hypothesis",
+            "text_digest": _text_digest("prepare an external came hand off"),
+            "adjudication": "corrected_by_audio",
+        },
+        {
+            "source": "voiceclaw",
+            "kind": "frontend_witness_hypothesis",
+            "text_digest": _text_digest("prepare an external came hand off"),
+            "adjudication": "corrected_by_audio",
+        },
+    ]
+    assert report["external_frontend_interpreter_promoted"] == {
+        "corrected_transcript": "prepare an external KAME handoff",
+        "normalized_intent": "Prepare external KAME handoff",
+        "confidence": 0.91,
+        "authority": "interpreter_promoted",
+    }
     assert report["external_frontend_job_id"] == "voice-oracle-001"
     assert report["external_frontend_provider"] == "voiceclaw"
     assert report["external_frontend_tool"] == "ask_brain"

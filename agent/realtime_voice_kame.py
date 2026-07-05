@@ -114,6 +114,9 @@ KAME_WITNESS_ARRIVAL_PHASES = frozenset(
 )
 KAME_TRANSCRIPT_HYPOTHESIS_ROLE = "witness_context"
 KAME_TRANSCRIPT_HYPOTHESIS_PROMOTION_REQUIRED = "interpreter_promoted_or_oracle_promoted"
+KAME_INTERPRETER_PROFILE_WITNESS_ASSISTED_DIRECT_AUDIO = "witness_assisted_direct_audio"
+KAME_INTERPRETER_PROFILE_DIRECT_AUDIO = "direct_audio"
+KAME_INTERPRETER_PROFILE_DEGRADED_TEXT_ONLY = "degraded_text_only"
 INTERPRETER_PROMPT_POLICY = {
     "version": INTERPRETER_PROMPT_POLICY_VERSION,
     "primary_evidence": "raw_audio",
@@ -549,6 +552,16 @@ class KameOracleRequest:
         )
 
     @property
+    def interpreter_profile(self) -> str:
+        """Return the KAME interpreter packet profile for this request."""
+
+        if self.raw_audio_available and self.transcript_hypotheses:
+            return KAME_INTERPRETER_PROFILE_WITNESS_ASSISTED_DIRECT_AUDIO
+        if self.raw_audio_available:
+            return KAME_INTERPRETER_PROFILE_DIRECT_AUDIO
+        return KAME_INTERPRETER_PROFILE_DEGRADED_TEXT_ONLY
+
+    @property
     def oracle_text(self) -> str:
         """Return promoted text for the user's oracle-facing message."""
 
@@ -736,6 +749,7 @@ class KameOracleRequest:
             )
 
         return {
+            "interpreter_profile": self.interpreter_profile,
             "prompt_input_order": [section["name"] for section in sections],
             "interpreter_prompt_policy": dict(INTERPRETER_PROMPT_POLICY),
             "sections": tuple(sections),
@@ -768,6 +782,7 @@ class KameOracleRequest:
             "kame_evidence_bundle_status": self.evidence_bundle_status,
             "kame_evidence_bundle_id": self.evidence_bundle_id,
             "kame_evidence_merge_key": self.evidence_merge_key,
+            "kame_interpreter_profile": self.interpreter_profile,
             "kame_evidence_authority": dict(self.evidence_authority),
             "max_spoken_sentences": self.max_spoken_sentences,
             "voice_response_policy": response_style.get("policy") or "sentence_cap",

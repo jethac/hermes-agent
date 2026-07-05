@@ -2182,6 +2182,39 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
         issues.append(
             "voice_operator_readiness:async_oracle_smoke.external_frontend_transcript_hypotheses_auxiliary_mismatch"
         )
+    if async_smoke.get("external_frontend_mode") != "witness_assisted_direct_audio":
+        issues.append("voice_operator_readiness:async_oracle_smoke.external_frontend_mode_mismatch")
+    if async_smoke.get("external_frontend_interpreter_profile") != "witness_assisted_direct_audio":
+        issues.append(
+            "voice_operator_readiness:async_oracle_smoke.external_frontend_interpreter_profile_mismatch"
+        )
+    if async_smoke.get("external_frontend_interpreter_input_order") != [
+        "raw_audio",
+        "metadata",
+        "reflex",
+        "transcript_hypotheses",
+    ]:
+        issues.append(
+            "voice_operator_readiness:async_oracle_smoke.external_frontend_interpreter_input_order_mismatch"
+        )
+    if async_smoke.get("external_frontend_witness_direct_audio_profile_ok") is not True:
+        issues.append(
+            "voice_operator_readiness:async_oracle_smoke.external_frontend_witness_direct_audio_profile_not_ok"
+        )
+    witness_adjudications = async_smoke.get("external_frontend_witness_adjudications")
+    if not isinstance(witness_adjudications, list) or not witness_adjudications:
+        issues.append(
+            "voice_operator_readiness:async_oracle_smoke.external_frontend_witness_adjudications_missing"
+        )
+    interpreter_promoted = async_smoke.get("external_frontend_interpreter_promoted")
+    if not isinstance(interpreter_promoted, Mapping):
+        issues.append(
+            "voice_operator_readiness:async_oracle_smoke.external_frontend_interpreter_promoted_missing"
+        )
+    elif interpreter_promoted.get("authority") != "interpreter_promoted":
+        issues.append(
+            "voice_operator_readiness:async_oracle_smoke.external_frontend_interpreter_promoted_authority_mismatch"
+        )
     cleanup_smoke = (
         readiness.get("discord_session_cleanup_smoke")
         if isinstance(readiness.get("discord_session_cleanup_smoke"), Mapping)
@@ -2523,6 +2556,24 @@ def _audit_voice_operator_proof_consistency(*, readiness: Mapping[str, Any], iss
             "external_frontend_protocol": async_smoke.get("external_frontend_protocol"),
             "external_frontend_protocol_contract": async_smoke.get(
                 "external_frontend_protocol_contract"
+            ),
+            "external_frontend_mode": async_smoke.get("external_frontend_mode"),
+            "external_frontend_interpreter_profile": async_smoke.get(
+                "external_frontend_interpreter_profile"
+            ),
+            "external_frontend_interpreter_input_order": async_smoke.get(
+                "external_frontend_interpreter_input_order"
+            )
+            or [],
+            "external_frontend_witness_direct_audio_profile_ok": bool(
+                async_smoke.get("external_frontend_witness_direct_audio_profile_ok")
+            ),
+            "external_frontend_witness_adjudications": async_smoke.get(
+                "external_frontend_witness_adjudications"
+            )
+            or [],
+            "external_frontend_interpreter_promoted": dict(
+                async_smoke.get("external_frontend_interpreter_promoted") or {}
             ),
             "external_frontend_job_id": async_smoke.get("external_frontend_job_id"),
             "external_frontend_provider": async_smoke.get("external_frontend_provider"),
