@@ -854,6 +854,7 @@ LEGACY_AUTHOR_MAP = {
     "lazycat.manatee@gmail.com": "manateelazycat",
     "bzarnitz13@gmail.com": "Beandon13",
     "tony@tonysimons.dev": "asimons81",
+    "jetha@google.com": "jethac",
     "vishal.dharm@gmail.com": "vishal-dharm",
     "jethachan@gmail.com": "jethac",
     "jani@0xhoneyjar.xyz": "deep-name",
