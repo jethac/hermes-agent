@@ -562,13 +562,19 @@ class TestSessionCreationPersistsAgentId:
     async def test_create_session_persists_routed_agent_id(self, tmp_path):
         """POST /api/sessions with X-Hermes-Chat-Id → routed agent persisted.
 
-        Why: The core regression guard.  Before the fix, create_session was
-        called without agent_id so the row defaulted to 'main'.
-        What: Routes 'coder' chat_id to the 'coder' agent; asserts that
-        db.create_session receives agent_id='coder'.
-        Test: Revert the fix (comment out the resolved_agent_id kwarg) and
-        this test fails because create_session is called without agent_id.
+        Why: The core regression guard.  Before the fix, the atomic
+        check-insert-title write (_handle_create_session's TOCTOU-safe
+        rewrite of the old direct create_session call) never bound
+        agent_id, so every row defaulted to 'main' regardless of routing.
+        What: Routes 'coder' chat_id to the 'coder' agent against a real
+        SessionDB (the atomic path runs a raw INSERT via db._execute_write,
+        so a MagicMock can't observe it meaningfully); asserts the persisted
+        row's agent_id via db.get_session.
+        Test: Revert the resolved_agent_id bind in the INSERT and this test
+        fails because the persisted row's agent_id reverts to 'main'.
         """
+        from hermes_state import SessionDB
+
         coder = AgentProfile(id="coder", home_dir=tmp_path / "coder")
         main = AgentProfile(id="main")
         registry = {"main": main, "coder": coder}
@@ -577,62 +583,58 @@ class TestSessionCreationPersistsAgentId:
         ]
         adapter = _make_adapter(routes=routes, registry=registry)
 
-        mock_db = MagicMock()
-        mock_db.get_session.return_value = None  # no pre-existing session
-        # create_session returns the session_id by convention
-        mock_db.create_session.side_effect = lambda sid, *args, **kwargs: sid
-        adapter._ensure_session_db = lambda: mock_db
+        real_db = SessionDB(db_path=tmp_path / "state.db")
+        adapter._session_db = real_db
 
         req = _make_routed_request(
             headers={"X-Hermes-Chat-Id": "coder"},
             body={"id": "sess-coder-001"},
         )
 
-        resp = await adapter._handle_create_session(req)
-
-        assert resp.status == 201
-        mock_db.create_session.assert_called_once()
-        call_kwargs = mock_db.create_session.call_args
-        # Positional: (session_id, source); keyword: agent_id=
-        assert call_kwargs.args[0] == "sess-coder-001"
-        assert call_kwargs.args[1] == "api_server"
-        assert call_kwargs.kwargs.get("agent_id") == "coder", (
-            "agent_id must be 'coder' — the routed agent resolved from X-Hermes-Chat-Id. "
-            "If this fails, the fix was not applied or was reverted."
-        )
+        try:
+            resp = await adapter._handle_create_session(req)
+            assert resp.status == 201
+            assert real_db.get_session("sess-coder-001")["agent_id"] == "coder", (
+                "agent_id must be 'coder' — the routed agent resolved from X-Hermes-Chat-Id. "
+                "If this fails, the fix was not applied or was reverted."
+            )
+        finally:
+            real_db.close()
 
     @pytest.mark.asyncio
-    async def test_create_session_defaults_to_main_without_routing_header(self):
+    async def test_create_session_defaults_to_main_without_routing_header(self, tmp_path):
         """POST /api/sessions with no routing header → agent_id persisted as 'main'.
 
         Why: Regression guard for the default path.  No routing header means no
         agent match; the default agent_id ('main') must be written explicitly
         (not just relying on the column default) so callers can see it in
         db.get_session().
-        What: No X-Hermes-Chat-Id supplied; assert agent_id='main'.
+        What: No X-Hermes-Chat-Id supplied; assert the persisted row's
+        agent_id is 'main' via a real SessionDB (see the sibling test above
+        for why a MagicMock can't observe the atomic INSERT path).
         Test: Pass a header that matches and assert this test fails to prove
         test sensitivity.
         """
+        from hermes_state import SessionDB
+
         main = AgentProfile(id="main")
         registry = {"main": main}
         adapter = _make_adapter(routes=[], registry=registry)
 
-        mock_db = MagicMock()
-        mock_db.get_session.return_value = None
-        mock_db.create_session.side_effect = lambda sid, *args, **kwargs: sid
-        adapter._ensure_session_db = lambda: mock_db
+        real_db = SessionDB(db_path=tmp_path / "state.db")
+        adapter._session_db = real_db
 
         req = _make_routed_request(
             headers={},  # no routing headers
             body={"id": "sess-main-001"},
         )
 
-        resp = await adapter._handle_create_session(req)
-
-        assert resp.status == 201
-        mock_db.create_session.assert_called_once()
-        call_kwargs = mock_db.create_session.call_args
-        assert call_kwargs.kwargs.get("agent_id") == "main"
+        try:
+            resp = await adapter._handle_create_session(req)
+            assert resp.status == 201
+            assert real_db.get_session("sess-main-001")["agent_id"] == "main"
+        finally:
+            real_db.close()
 
     @pytest.mark.asyncio
     async def test_fork_session_inherits_source_agent_id(self, tmp_path):
@@ -670,7 +672,7 @@ class TestSessionCreationPersistsAgentId:
         mock_db.replace_messages.return_value = None
         mock_db.get_next_title_in_lineage.return_value = "my conv fork"
         mock_db.set_session_title.return_value = None
-        adapter._ensure_session_db = lambda: mock_db
+        adapter._session_db = mock_db
 
         req = _make_routed_request(
             headers={},  # fork endpoint: no routing headers
@@ -745,7 +747,7 @@ class TestSessionChatRunsUnderSessionAgent:
         mock_db = MagicMock()
         mock_db.get_session.return_value = coder_session
         mock_db.get_messages_as_conversation.return_value = []
-        adapter._ensure_session_db = lambda: mock_db
+        adapter._session_db = mock_db
 
         captured = {}
 
@@ -787,7 +789,7 @@ class TestSessionChatRunsUnderSessionAgent:
         mock_db = MagicMock()
         mock_db.get_session.return_value = coder_session
         mock_db.get_messages_as_conversation.return_value = []
-        adapter._ensure_session_db = lambda: mock_db
+        adapter._session_db = mock_db
 
         captured = {}
 
@@ -846,7 +848,7 @@ class TestSessionChatRunsUnderSessionAgent:
         mock_db = MagicMock()
         mock_db.get_session.return_value = legacy_session
         mock_db.get_messages_as_conversation.return_value = []
-        adapter._ensure_session_db = lambda: mock_db
+        adapter._session_db = mock_db
 
         captured = {}
 
