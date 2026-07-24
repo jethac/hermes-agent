@@ -1345,6 +1345,15 @@ def init_agent(
         agent._tool_snapshot_generation = _snapshot_registry._generation
     except Exception:
         agent._tool_snapshot_generation = 0
+    # Stamp the profile this agent was BUILT under so later snapshot rebuilds
+    # (refresh_agent_mcp_tools — e.g. the gateway /reload-mcp loop that
+    # iterates every cached agent under the REQUESTER's profile binding) can
+    # re-apply this agent's own receptor scoping, not the caller's.
+    try:
+        from agent.profile import get_active_profile as _gap
+        agent._receptor_profile = _gap()
+    except Exception:
+        agent._receptor_profile = None
     agent.tools = _ra().get_tool_definitions(
         enabled_toolsets=enabled_toolsets,
         disabled_toolsets=disabled_toolsets,

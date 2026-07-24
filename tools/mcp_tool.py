@@ -4085,6 +4085,13 @@ _parallel_safe_servers: set = set()
 # guessing.
 _mcp_tool_server_names: Dict[str, str] = {}
 
+# RAW provenance for receptor (per-agent MCP scoping) checks: prefixed tool
+# name -> (raw config server name, raw MCP tool name). Unlike
+# ``_mcp_tool_server_names`` (which stores the SANITIZED server component),
+# this keeps the exact ``mcp_servers:`` config key so receptor patterns in
+# ``agents.<id>.receptors`` match what the user wrote (e.g. "stripe-link").
+_mcp_tool_provenance: Dict[str, tuple] = {}
+
 # Dedicated event loop running in a background daemon thread.
 _mcp_loop: Optional[asyncio.AbstractEventLoop] = None
 _mcp_thread: Optional[threading.Thread] = None
@@ -5378,17 +5385,60 @@ _UTILITY_CAPABILITY_ATTRS = {
 }
 
 
-def _track_mcp_tool_server(tool_name: str, server_name: str) -> None:
+def _track_mcp_tool_server(tool_name: str, server_name: str, source_tool_name: str = "") -> None:
     """Remember the exact MCP server that registered *tool_name*."""
     safe_server_name = sanitize_mcp_name_component(server_name)
     with _lock:
         _mcp_tool_server_names[tool_name] = safe_server_name
+        _mcp_tool_provenance[tool_name] = (str(server_name), str(source_tool_name))
 
 
 def _forget_mcp_tool_server(tool_name: str) -> None:
     """Forget MCP server provenance for a deregistered tool."""
     with _lock:
         _mcp_tool_server_names.pop(tool_name, None)
+        _mcp_tool_provenance.pop(tool_name, None)
+
+
+def get_mcp_tool_provenance(tool_name: str) -> Optional[tuple]:
+    """Return ``(raw_server_name, raw_tool_name)`` for a registered MCP tool.
+
+    Returns ``None`` for tools that were not registered by an MCP server.
+    Used by the receptor filter in ``model_tools.get_tool_definitions`` to
+    decide whether the active :class:`~agent.profile.AgentProfile` may see
+    this tool.
+    """
+    with _lock:
+        return _mcp_tool_provenance.get(tool_name)
+
+
+def _wrap_with_receptor_guard(server_name: str, source_tool_name: str, handler):
+    """Enforce per-agent receptors at CALL time, not just at listing time.
+
+    The visibility filter in ``get_tool_definitions`` hides denied MCP tools
+    from an agent's tool list, but tool_search-deferred catalogs and any
+    stale snapshot could still name them — so the registry handler itself is
+    the fail-closed backstop. When no profile is bound (legacy single-agent
+    CLI) the guard is a no-op.
+    """
+
+    def _guarded(args: dict, **kwargs) -> str:
+        profile = None
+        try:
+            from agent.profile import get_active_profile
+            profile = get_active_profile()
+        except Exception:
+            profile = None
+        if profile is not None and not profile.allows_mcp(server_name, source_tool_name):
+            return json.dumps({
+                "error": (
+                    f"MCP tool '{source_tool_name}' on server '{server_name}' "
+                    f"is not available to agent '{profile.id}' (receptors policy)."
+                )
+            }, ensure_ascii=False)
+        return handler(args, **kwargs)
+
+    return _guarded
 
 
 def _select_utility_schemas(server_name: str, server: MCPServerTask, config: dict) -> List[dict]:
@@ -5520,12 +5570,15 @@ def _register_server_tools(name: str, server: MCPServerTask, config: dict) -> Li
             name=tool_name_prefixed,
             toolset=toolset_name,
             schema=schema,
-            handler=_make_tool_handler(name, mcp_tool.name, server.tool_timeout),
+            handler=_wrap_with_receptor_guard(
+                name, mcp_tool.name,
+                _make_tool_handler(name, mcp_tool.name, server.tool_timeout),
+            ),
             check_fn=_make_check_fn(name),
             is_async=False,
             description=schema["description"],
         )
-        _track_mcp_tool_server(tool_name_prefixed, name)
+        _track_mcp_tool_server(tool_name_prefixed, name, mcp_tool.name)
         registered_names.append(tool_name_prefixed)
 
     # Register MCP Resources & Prompts utility tools, filtered by config and
@@ -5557,12 +5610,12 @@ def _register_server_tools(name: str, server: MCPServerTask, config: dict) -> Li
             name=util_name,
             toolset=toolset_name,
             schema=schema,
-            handler=handler,
+            handler=_wrap_with_receptor_guard(name, handler_key, handler),
             check_fn=check_fn,
             is_async=False,
             description=schema["description"],
         )
-        _track_mcp_tool_server(util_name, name)
+        _track_mcp_tool_server(util_name, name, handler_key)
         registered_names.append(util_name)
 
     if registered_names:
@@ -6040,14 +6093,31 @@ def refresh_agent_mcp_tools(
     # Computed OUTSIDE the lock (get_tool_definitions can be slow); the diff and
     # publish below happen together in ONE critical section so two concurrent
     # callers can't torn-publish or compute overlapping ``added`` sets.
-    new_defs = list(
-        get_tool_definitions(
-            enabled_toolsets=enabled,
-            disabled_toolsets=disabled,
-            quiet_mode=quiet_mode,
+    #
+    # Receptor scoping: rebuild under the AGENT'S OWN profile (stamped at
+    # build time in agent_init as ``_receptor_profile``), NOT whatever profile
+    # happens to be bound in the caller's context. The gateway /reload-mcp
+    # path iterates EVERY cached agent while the requesting persona's profile
+    # is bound — without this rebinding, agent A's snapshot would be filtered
+    # by agent B's receptors. Falls back to the caller's active profile (the
+    # between-turns refresh runs inside the turn's own binding), then to None
+    # (legacy single-agent: use_profile(None) is a no-op).
+    try:
+        from agent.profile import use_profile as _use_profile, get_active_profile as _gap
+        _refresh_profile = getattr(agent, "_receptor_profile", None) or _gap()
+    except Exception:
+        from contextlib import nullcontext as _nullcontext
+        _use_profile = lambda _p: _nullcontext()  # noqa: E731
+        _refresh_profile = None
+    with _use_profile(_refresh_profile):
+        new_defs = list(
+            get_tool_definitions(
+                enabled_toolsets=enabled,
+                disabled_toolsets=disabled,
+                quiet_mode=quiet_mode,
+            )
+            or []
         )
-        or []
-    )
     new_names = {t["function"]["name"] for t in new_defs}
 
     # Re-append the post-build injected families that get_tool_definitions does

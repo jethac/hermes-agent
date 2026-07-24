@@ -54,7 +54,46 @@ class AgentProfile:
     api_key_env: Optional[str] = None
     enabled_toolsets: Optional[List[str]] = None
     disabled_toolsets: Optional[List[str]] = None
+    receptors: Optional[List[str]] = None
     config_overrides: Dict[str, Any] = field(default_factory=dict)
+
+    def allows_mcp(self, server_name: str, tool_name: str = "") -> bool:
+        """Receptor check: may this profile see/call *tool_name* on *server_name*?
+
+        ``receptors`` grammar (per ``agents.<id>.receptors`` in config.yaml):
+
+        * ``None`` (key absent)  → **fail-closed**: NO MCP tools at all.
+        * ``[]``                 → same as absent: no MCP tools.
+        * ``["*"]``              → all servers, all tools.
+        * ``["gbrain"]``         → every tool on server ``gbrain``.
+        * ``["sensei.scan_*"]``  → fnmatch glob on ``server.tool``; the part
+          before the FIRST dot is the server pattern, the rest the tool
+          pattern (MCP tool names conventionally contain no dots).
+
+        *server_name* must be the RAW config key from ``mcp_servers:`` (not
+        the sanitized ``mcp__``-prefix component). An empty *tool_name* asks
+        the server-level question "is any tool on this server allowed?" and
+        matches ``server.tool`` patterns on the server part alone.
+        """
+        receptors = self.receptors
+        if not receptors:
+            return False  # fail-closed: no receptors key → no MCP surface
+        from fnmatch import fnmatchcase
+        for raw in receptors:
+            pat = str(raw).strip()
+            if not pat:
+                continue
+            if pat == "*":
+                return True
+            if "." in pat:
+                server_pat, tool_pat = pat.split(".", 1)
+                if not fnmatchcase(server_name, server_pat):
+                    continue
+                if not tool_name or fnmatchcase(tool_name, tool_pat):
+                    return True
+            elif fnmatchcase(server_name, pat):
+                return True
+        return False
 
     @property
     def resolved_home(self) -> Path:
@@ -180,6 +219,21 @@ def _build_profile(agent_id: str, raw: Dict[str, Any]) -> AgentProfile:
     enabled_toolsets = raw.pop("enabled_toolsets", None)
     disabled_toolsets = raw.pop("disabled_toolsets", None)
 
+    receptors_raw = raw.pop("receptors", None)
+    receptors: Optional[List[str]]
+    if receptors_raw is None:
+        receptors = None
+    elif isinstance(receptors_raw, str):
+        receptors = [receptors_raw]
+    elif isinstance(receptors_raw, (list, tuple)):
+        receptors = [str(r) for r in receptors_raw]
+    else:
+        logger.warning(
+            "agents.%s.receptors ignored: expected list, got %s (fail-closed)",
+            agent_id, type(receptors_raw).__name__,
+        )
+        receptors = []  # malformed → fail-closed, not fail-open
+
     return AgentProfile(
         id=agent_id,
         home_dir=home_dir,
@@ -189,5 +243,6 @@ def _build_profile(agent_id: str, raw: Dict[str, Any]) -> AgentProfile:
         api_key_env=api_key_env,
         enabled_toolsets=enabled_toolsets,
         disabled_toolsets=disabled_toolsets,
+        receptors=receptors,
         config_overrides=raw,
     )

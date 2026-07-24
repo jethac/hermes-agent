@@ -276,6 +276,58 @@ def _clear_tool_defs_cache() -> None:
     _tool_defs_cache.clear()
 
 
+def _filter_defs_for_receptors(defs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Drop MCP tool definitions the active AgentProfile's receptors deny.
+
+    Applied to every ``get_tool_definitions`` result (cache hit or miss) so
+    the memo cache stays profile-independent while each profile sees only its
+    permitted MCP surface. Semantics:
+
+    * No profile bound (legacy CLI / single-agent) → defs unchanged.
+    * Profile bound, ``receptors`` absent → FAIL-CLOSED: all MCP tools dropped.
+    * ``receptors: ["*"]`` → all MCP tools kept.
+    * Otherwise keep exactly the intersection (server names / server.tool
+      globs; see ``AgentProfile.allows_mcp``).
+
+    Non-MCP tools always pass through. Never mutates *defs* entries (cache
+    dicts are shared); builds a new list. Call-time enforcement lives in
+    ``tools.mcp_tool._wrap_with_receptor_guard`` — this is the listing-side
+    half of the same policy.
+    """
+    if not defs:
+        return defs
+    try:
+        from agent.profile import get_active_profile
+        profile = get_active_profile()
+    except Exception:
+        return defs
+    if profile is None:
+        return defs
+    try:
+        from tools.mcp_tool import get_mcp_tool_provenance, MCP_TOOL_NAME_PREFIX
+    except Exception:
+        return defs
+    out: List[Dict[str, Any]] = []
+    for t in defs:
+        try:
+            name = t.get("function", {}).get("name", "")
+        except AttributeError:
+            out.append(t)
+            continue
+        if not name.startswith(MCP_TOOL_NAME_PREFIX):
+            out.append(t)
+            continue
+        prov = get_mcp_tool_provenance(name)
+        if prov is None:
+            # Not actually MCP-registered (name collision) → not ours to gate.
+            out.append(t)
+            continue
+        server_name, source_tool = prov
+        if profile.allows_mcp(server_name, source_tool):
+            out.append(t)
+    return out
+
+
 def get_tool_definitions(
     enabled_toolsets: Optional[List[str]] = None,
     disabled_toolsets: Optional[List[str]] = None,
@@ -326,13 +378,17 @@ def get_tool_definitions(
         )
         cached = _tool_defs_cache.get(cache_key)
         if cached is not None:
+            # Receptor scoping is applied OUTSIDE the cache (the cache stores
+            # the profile-independent list) so distinct agent profiles can
+            # share one memoized computation without leaking tools.
+            filtered = _filter_defs_for_receptors(list(cached))
             # Update _last_resolved_tool_names so downstream callers see
             # consistent state even on a cache hit.
             global _last_resolved_tool_names
-            _last_resolved_tool_names = [t["function"]["name"] for t in cached]
+            _last_resolved_tool_names = [t["function"]["name"] for t in filtered]
             # Return a shallow copy of the list but share the dict references —
             # schemas are treated as read-only by all known callers.
-            return list(cached)
+            return filtered
 
     result = _compute_tool_definitions(enabled_toolsets, disabled_toolsets, quiet_mode,
                                        skip_tool_search_assembly=skip_tool_search_assembly)
@@ -350,8 +406,15 @@ def get_tool_definitions(
         if len(_tool_defs_cache) >= _TOOL_DEFS_CACHE_MAX:
             _tool_defs_cache.pop(next(iter(_tool_defs_cache)))  # evict oldest
         _tool_defs_cache[cache_key] = result
-        return list(result)
-    return result
+        result = list(result)
+    filtered = _filter_defs_for_receptors(result)
+    if filtered is not result:
+        # Receptors dropped MCP tools — keep the "last resolved" mirror
+        # (set unfiltered inside _compute_tool_definitions) consistent.
+        globals()["_last_resolved_tool_names"] = [
+            t["function"]["name"] for t in filtered
+        ]
+    return filtered
 
 
 def _compute_tool_definitions(
